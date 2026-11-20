@@ -1,5 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
+import { composePrompt, selectContext } from './index/context';
+import { IndexService } from './index/service';
 import { WriteGate } from './mcp/gate';
 import { NodeReadFs } from './mcp/nodeFs';
 import { RunningServer, startMcpServer } from './mcp/server';
@@ -43,13 +45,31 @@ export function activate(context: vscode.ExtensionContext): void {
   const provider = new ProposedContentProvider();
   context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider(PROPOSED_SCHEME, provider));
 
-  // Editor-tool host (created only when a folder is open).
+  // Paths the agent read with read_file during the current run ("files read versus total").
+  const readThisRun = new Set<string>();
+  let postReads: (() => void) | undefined;
+
+  // Editor-tool host (created only when a folder is open). The index is persisted in VS Code's
+  // workspace storage, never inside the repository.
   const host = folder
     ? (() => {
         const fs = new NodeReadFs(folder.uri.fsPath);
         const gate = new WriteGate(fs, new VsCodeApplier(folder.uri), new VsCodeReviewer(folder.uri, provider));
         const tests = new VsCodeTestRunner(folder.uri.fsPath, () => vscode.workspace.getConfiguration('codecraft').get<string>('testCommand', 'npm test'));
-        return { fs, gate, handlers: createHandlers({ fs, gate, tests, onActivity: (l) => out.appendLine(`[tool] ${l}`) }) };
+        const storeFile = context.storageUri ? vscode.Uri.joinPath(context.storageUri, 'codecraft-index.json').fsPath : undefined;
+        const index = new IndexService(folder.uri.fsPath, storeFile);
+        const handlers = createHandlers({
+          fs,
+          gate,
+          tests,
+          index,
+          onActivity: (l) => out.appendLine(`[tool] ${l}`),
+          onRead: (p) => {
+            readThisRun.add(p);
+            postReads?.();
+          },
+        });
+        return { fs, gate, index, handlers };
       })()
     : undefined;
 
@@ -101,8 +121,24 @@ export function activate(context: vscode.ExtensionContext): void {
     try {
       const cfg = readConfig();
       const client = await ensureSetup(cfg);
+
+      // Repository context within the budget; the panel shows exactly what was included and why.
+      let prompt = text;
+      if (host) {
+        const index = await host.index.get();
+        out.appendLine(`[index] ${index.stats.totalFiles} files, ${index.stats.symbolCount} symbols, ${index.stats.edgeCount} edges, ${index.stats.buildMs} ms (${index.stats.reusedFiles} reused)`);
+        const budget = Math.max(0, Math.min(200_000, vscode.workspace.getConfiguration('codecraft').get<number>('contextBudget', 6000)));
+        const { report, contextText } = await selectContext({ index, text, budgetTokens: budget, read: (p) => host.fs.read(p) });
+        post({ type: 'context', report });
+        out.appendLine(`[context] ${report.items.filter((i) => i.included).length} file(s), ~${report.usedTokens}/${budget} tokens${report.unresolved.length ? `; not found: ${report.unresolved.join(', ')}` : ''}`);
+        prompt = composePrompt(contextText, text);
+        readThisRun.clear();
+        postReads = () => post({ type: 'reads', read: readThisRun.size, total: index.stats.totalFiles, paths: [...readThisRun] });
+        postReads();
+      }
+
       const attempts = [attemptFor(client, PRIMARY_AGENT_NAME, cfg.primaryModel), attemptFor(client, FALLBACK_AGENT_NAME, cfg.fallbackModel)];
-      const result = await runWithFailover(text, attempts, {
+      const result = await runWithFailover(prompt, attempts, {
         signal: abort.signal,
         onSwitch: (s) => {
           out.appendLine(`[failover] ${s.from} failed (${redact(s.reason)}); switching to ${s.to}`);

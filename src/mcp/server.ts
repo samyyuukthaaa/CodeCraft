@@ -34,6 +34,24 @@ function buildServer(h: Handlers): McpServer {
     async (a) => wrap(await h.search_text(a)),
   );
   server.registerTool(
+    'search_symbols',
+    {
+      description: 'Find classes, functions and methods by name in the repository index (Python, TypeScript, JavaScript). Returns path and line.',
+      inputSchema: schemas.search_symbols,
+      annotations: { readOnlyHint: true },
+    },
+    async (a) => wrap(await h.search_symbols(a)),
+  );
+  server.registerTool(
+    'list_related',
+    {
+      description: 'For a file: the workspace files it imports, the files that import it, and matching test files.',
+      inputSchema: schemas.list_related,
+      annotations: { readOnlyHint: true },
+    },
+    async (a) => wrap(await h.list_related(a)),
+  );
+  server.registerTool(
     'propose_write',
     {
       description:

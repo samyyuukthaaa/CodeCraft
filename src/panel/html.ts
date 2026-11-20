@@ -27,6 +27,11 @@ export function buildHtml(opts: { cspSource: string; nonce: string; scriptUri: s
   #events { font-family: var(--vscode-editor-font-family); font-size: 12px; list-style: none; padding: 0; }
   #events li.failed { color: var(--vscode-errorForeground); }
   #status { font-size: 12px; opacity: .8; }
+  #context table { border-collapse: collapse; font-size: 12px; width: 100%; }
+  #context td, #context th { text-align: left; padding: 2px 6px; border-bottom: 1px solid var(--vscode-panel-border, transparent); }
+  #context td.num, #context th.num { text-align: right; }
+  #context tr.excluded { opacity: .6; }
+  .muted { font-size: 12px; opacity: .8; }
 </style>
 </head>
 <body>
@@ -35,6 +40,12 @@ export function buildHtml(opts: { cspSource: string; nonce: string; scriptUri: s
   <textarea id="prompt" maxlength="8000">Say hello.</textarea>
   <div><button id="send" type="button">Send</button> <span id="status" role="status" aria-live="polite">idle</span></div>
   <div id="answer" aria-live="polite"></div>
+  <section id="context" aria-labelledby="context-h">
+    <h4 id="context-h">Context used</h4>
+    <p id="context-summary" class="muted">No request yet.</p>
+    <p id="reads" class="muted"></p>
+    <table><thead><tr><th>File</th><th>Reason</th><th class="num">Tokens (est.)</th></tr></thead><tbody id="context-rows"></tbody></table>
+  </section>
   <h4>Event stream</h4>
   <ul id="events" aria-label="Live event stream"></ul>
   <script nonce="${nonce}" src="${scriptUri}"></script>

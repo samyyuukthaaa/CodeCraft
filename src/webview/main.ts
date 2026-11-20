@@ -11,6 +11,16 @@ const status = document.getElementById('status') as HTMLElement;
 const answer = document.getElementById('answer') as HTMLElement;
 const events = document.getElementById('events') as HTMLElement;
 const MAX_ROWS = 500;
+const ctxSummary = document.getElementById('context-summary') as HTMLElement;
+const ctxRows = document.getElementById('context-rows') as HTMLElement;
+const reads = document.getElementById('reads') as HTMLElement;
+
+function cell(row: HTMLElement, text: string, cls?: string): void {
+  const td = document.createElement('td');
+  td.textContent = text;
+  if (cls) td.className = cls;
+  row.appendChild(td);
+}
 
 send.addEventListener('click', () => {
   answer.textContent = '';
@@ -22,6 +32,26 @@ window.addEventListener('message', (e: MessageEvent<HostToWebview>) => {
   if (m.type === 'status') {
     send.disabled = m.state === 'running';
     status.textContent = m.note ? `${m.state}: ${m.note}` : m.state;
+    return;
+  }
+  if (m.type === 'context') {
+    const r = m.report;
+    const inc = r.items.filter((i) => i.included);
+    ctxSummary.textContent = `${inc.length} file(s), about ${r.usedTokens} of ${r.budgetTokens} tokens (estimated), from ${r.totalFiles} indexed files.` + (r.unresolved.length ? ` Not found: ${r.unresolved.join(', ')}.` : '');
+    ctxRows.textContent = '';
+    for (const it of r.items) {
+      const tr = document.createElement('tr');
+      if (!it.included) tr.className = 'excluded';
+      cell(tr, it.included ? it.path : `${it.path} (not included)`);
+      cell(tr, it.reason);
+      cell(tr, String(it.tokens), 'num');
+      ctxRows.appendChild(tr);
+    }
+    reads.textContent = '';
+    return;
+  }
+  if (m.type === 'reads') {
+    reads.textContent = `Files read by the agent: ${m.read} of ${m.total}` + (m.paths.length ? ` (${m.paths.slice(0, 8).join(', ')}${m.paths.length > 8 ? ', ...' : ''})` : '');
     return;
   }
   if (m.type === 'event') {

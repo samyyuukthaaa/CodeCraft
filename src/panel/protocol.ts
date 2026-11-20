@@ -1,5 +1,6 @@
 // Messages between the webview (untrusted) and the extension host. The host validates every
 // incoming message; the webview only ever receives sanitized DisplayEvent records.
+import type { ContextReport } from '../index/context';
 import type { DisplayEvent } from '../trueforge/events';
 
 export const MAX_PROMPT_CHARS = 8000;
@@ -8,7 +9,9 @@ export type WebviewToHost = { type: 'prompt'; text: string };
 
 export type HostToWebview =
   | { type: 'event'; event: DisplayEvent }
-  | { type: 'status'; state: 'idle' | 'running'; note?: string };
+  | { type: 'status'; state: 'idle' | 'running'; note?: string }
+  | { type: 'context'; report: ContextReport }
+  | { type: 'reads'; read: number; total: number; paths: string[] };
 
 /** Validates untrusted input from the webview. Returns undefined for anything unexpected. */
 export function parseWebviewMessage(raw: unknown): WebviewToHost | undefined {

@@ -7,6 +7,8 @@
 | `read_file(path)` | no | Returns content (limit 200,000 chars) and records its hash so a later write can be stale-checked |
 | `list_files(prefix?)` | no | Workspace files, max 500, excludes `.git`, `node_modules`, `.env*`, keys, `out/` |
 | `search_text(query, prefix?)` | no | Case-insensitive plain text, max 100 matches |
+| `search_symbols(query, kind?, limit?)` | no | Classes, functions and methods from the repository index (P2, see `docs/REPO_INDEX.md`) |
+| `list_related(path)` | no | Imported files, importers and matching tests |
 | `propose_write(path, newContent, reason)` | **yes** | Never writes by itself. See below |
 | `run_tests()` | **yes** | Runs `codecraft.testCommand` (default `npm test`) in the workspace after a modal confirmation; reports the real exit code |
 

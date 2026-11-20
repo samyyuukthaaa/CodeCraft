@@ -15,4 +15,4 @@ out/
 trueforge-data/
 *.log
 logs/
-fixtures/flask/.venv/
+fixtures/flask/

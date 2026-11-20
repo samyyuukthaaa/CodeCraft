@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { redact } from '../util/redact';
 import { ReadFs, WriteGate } from './gate';
 import { isDenied, normalizeRelPath } from './paths';
+import { listRelated, searchSymbols } from '../index/query';
+import type { RepoIndex } from '../index/types';
 
 export interface TestResult {
   ran: boolean;
@@ -22,6 +24,10 @@ export interface ToolDeps {
   gate: WriteGate;
   tests: TestRunner;
   onActivity?: (line: string) => void;
+  /** Repository index (incrementally rebuilt on each call). Optional so the editor tools work without it. */
+  index?: { get(): Promise<RepoIndex> };
+  /** Called with every path the agent actually reads via read_file. */
+  onRead?: (path: string) => void;
 }
 
 export const MAX_READ_CHARS = 200_000;
@@ -49,6 +55,12 @@ export const schemas = {
     reason: z.string().min(1).max(500).describe('Why this change is needed'),
   },
   run_tests: {},
+  search_symbols: {
+    query: z.string().min(1).max(200).describe("Symbol name or prefix; Class.method narrows to methods of a class"),
+    kind: z.enum(["class", "function", "method"]).optional(),
+    limit: z.number().int().min(1).max(100).optional(),
+  },
+  list_related: { path: z.string().min(1).max(400).describe("Workspace-relative file path") },
 } as const;
 
 export function createHandlers(deps: ToolDeps) {
@@ -66,6 +78,7 @@ export function createHandlers(deps: ToolDeps) {
       if (content === undefined) return err('file not found');
       if (content.length > MAX_READ_CHARS) return err('file is too large to read (limit 200000 characters)');
       deps.gate.recordRead(p, content);
+      deps.onRead?.(p);
       note(`read_file ${p}`);
       return ok({ path: p, content });
     },
@@ -108,6 +121,27 @@ export function createHandlers(deps: ToolDeps) {
       note(`propose_write ${a.path} -> ${r.status}`);
       // Honest wording: a proposal is not a write. Only "applied"/"partially_applied" mean the file changed.
       return r.status === 'refused' ? err(r.message) : ok(r);
+    },
+
+    async search_symbols(a: { query: string; kind?: 'class' | 'function' | 'method'; limit?: number }): Promise<ToolOutput> {
+      if (!deps.index) return err('the repository index is not available');
+      const hits = searchSymbols(await deps.index.get(), a.query, { kind: a.kind, limit: a.limit ?? 30 });
+      note(`search_symbols "${a.query}" (${hits.length})`);
+      return ok({ symbols: hits });
+    },
+
+    async list_related(a: { path: string }): Promise<ToolOutput> {
+      if (!deps.index) return err('the repository index is not available');
+      let p: string;
+      try {
+        p = normalizeRelPath(a.path);
+      } catch (e) {
+        return err(e instanceof Error ? e.message : 'invalid path');
+      }
+      const rel = listRelated(await deps.index.get(), p);
+      if (!rel) return err('file is not in the index');
+      note(`list_related ${p}`);
+      return ok(rel);
     },
 
     async run_tests(): Promise<ToolOutput> {
