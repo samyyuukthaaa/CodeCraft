@@ -1,0 +1,50 @@
+{
+  "name": "codecraft",
+  "displayName": "CodeCraft",
+  "description": "CodeCraft: a VS Code interface for TrueForge agents, with gated review and Code Town.",
+  "version": "0.0.1",
+  "publisher": "codecraft-dev",
+  "license": "UNLICENSED",
+  "private": true,
+  "engines": { "vscode": "^1.100.0" },
+  "categories": ["Other"],
+  "main": "./out/src/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      { "command": "codecraft.helloForge", "title": "CodeCraft: Hello TrueForge" }
+    ],
+    "configuration": {
+      "title": "CodeCraft",
+      "properties": {
+        "forge.baseUrl": {
+          "type": "string",
+          "default": "http://localhost:8790",
+          "description": "TrueForge base URL. Must be a loopback address (localhost, 127.0.0.1 or ::1)."
+        },
+        "forge.primaryModel": {
+          "type": "string",
+          "default": "google-gemini/gemini-3-1-flash-lite",
+          "description": "Primary agent model name as registered in TrueForge. No keys are ever configured here."
+        },
+        "forge.fallbackModel": {
+          "type": "string",
+          "default": "groq/gpt-oss-120b",
+          "description": "Fallback agent model name as registered in TrueForge."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -p . --watch",
+    "test": "npm run build && node --test \"out/test/*.test.js\"",
+    "secret-scan": "node scripts/secret-scan.mjs",
+    "smoke": "node out/scripts/smoke.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "1.100.0",
+    "typescript": "^5.6.0"
+  }
+}
