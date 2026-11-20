@@ -119,6 +119,56 @@ test('set: duplicate paths, empty sets and unauthorised sets are refused; decisi
   }
 });
 
+test('stop: Stop Run during a review closes it (reviewer.cancel) and nothing is written, even if hunks were accepted', async () => {
+  let gate!: WriteGate;
+  let cancelled = 0;
+  const ws = await tempWorkspace(FILES);
+  try {
+    const applier = new DiskApplier(ws.root);
+    const reviewer = {
+      async review(req: Parameters<typeof acceptAll>[0]) {
+        gate.stop(); // the user presses Stop while the review is open
+        return acceptAll(req); // ...and a late "accept" still arrives
+      },
+      cancel() {
+        cancelled++;
+      },
+    };
+    gate = new WriteGate(ws.fs, applier, reviewer);
+    for (const [p, c] of Object.entries(FILES)) gate.recordRead(p, c);
+    const r = await gate.proposeSet('plan', SET);
+    assert.equal(r.status, 'refused');
+    assert.match(r.message, /stopped by the user/);
+    assert.equal(cancelled, 1);
+    assert.equal(applier.calls.length, 0);
+    for (const [p, c] of Object.entries(FILES)) assert.equal(await readDisk(ws.root, p), c);
+  } finally {
+    await ws.cleanup();
+  }
+});
+
+test('stop: queued proposals are refused before review; earlier applied changes stay; new proposals work after', async () => {
+  const { ws, applier, reviewer, gate } = await setup(acceptAll);
+  try {
+    assert.equal((await gate.proposeSet('first', [SET[0]!])).status, 'applied');
+    const queued = gate.proposeSet('second', [SET[1]!]); // queued, not yet reviewed
+    gate.stop();
+    const r = await queued;
+    assert.equal(r.status, 'refused');
+    assert.equal(reviewer.requests.length, 1, 'the queued proposal never reached the reviewer');
+    assert.match(await readDisk(ws.root, 'lib.py'), /new_name/, 'the change applied before Stop stays applied');
+    assert.equal(await readDisk(ws.root, 'app.py'), FILES['app.py']);
+    // after Stop, the next run proposes normally
+    assert.equal((await gate.proposeSet('third', [SET[1]!])).status, 'applied');
+    assert.equal(applier.calls.length, 2);
+    // and one undo reverts the last applied set as one step
+    assert.equal((await gate.undoLast()).status, 'applied');
+    assert.equal(await readDisk(ws.root, 'app.py'), FILES['app.py']);
+  } finally {
+    await ws.cleanup();
+  }
+});
+
 test('set: undo reverts every file of the last set in one call (removing created files), or nothing if any file changed', async () => {
   const { ws, applier, gate } = await setup(acceptAll);
   try {

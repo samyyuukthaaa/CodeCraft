@@ -118,7 +118,7 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
             CodeTownPanel.currentPanel()?.dispatchEvent({ type: 'file_read', path: p });
           },
         });
-        return { fs, gate, index, handlers };
+        return { fs, gate, index, handlers, tests };
       })()
     : undefined;
 
@@ -299,6 +299,10 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
     }),
     vscode.commands.registerCommand('codecraft.stopRun', async () => {
       if (!abort) return void vscode.window.showInformationMessage('CodeCraft: no run is in progress.');
+      // Immediate and consistent: no further writes (open review closed, queued proposals refused), the
+      // stream is aborted, the test command is killed, and the TrueForge session is cancelled.
+      host?.gate.stop();
+      host?.tests.cancel();
       abort.abort();
       if (activeClient && activeSessionId) {
         try {
@@ -307,7 +311,8 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
           out.appendLine(`Stop: cancel request failed: ${redact(describeError(e))}`);
         }
       }
-      out.appendLine('Stop requested');
+      out.appendLine('Stop requested: no further changes will be written; changes you already accepted stay applied.');
+      void vscode.window.showInformationMessage('CodeCraft: run stopped. Nothing more will be written; changes you already accepted stay applied (use Undo Last Change to revert).');
     }),
     { dispose: () => void server?.close() },
   );

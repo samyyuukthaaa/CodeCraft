@@ -25,8 +25,9 @@ export const PROPOSED_SCHEME = SCHEME;
 
 type Choice<T> = vscode.QuickPickItem & { value: T };
 
-async function pick<T>(items: Array<Choice<T>>, title: string, placeHolder: string): Promise<T | undefined> {
-  const r = await vscode.window.showQuickPick(items, { title, placeHolder, ignoreFocusOut: true });
+async function pick<T>(token: vscode.CancellationToken, items: Array<Choice<T>>, title: string, placeHolder: string): Promise<T | undefined> {
+  if (token?.isCancellationRequested) return undefined;
+  const r = await vscode.window.showQuickPick(items, { title, placeHolder, ignoreFocusOut: true }, token);
   return r?.value;
 }
 
@@ -35,6 +36,15 @@ async function pick<T>(items: Array<Choice<T>>, title: string, placeHolder: stri
  * hunk by hunk). Esc at any point rejects everything not yet decided. Nothing is written by this class.
  */
 export class VsCodeReviewer implements Reviewer {
+  private cts = new vscode.CancellationTokenSource();
+
+  /** Stop Run: closes the open review quick pick; it then counts as reject. */
+  cancel(): void {
+    this.cts.cancel();
+    this.cts.dispose();
+    this.cts = new vscode.CancellationTokenSource();
+  }
+
   constructor(
     private readonly root: vscode.Uri,
     private readonly provider: ProposedContentProvider,
@@ -47,6 +57,7 @@ export class VsCodeReviewer implements Reviewer {
   }
 
   async review(req: ReviewRequest): Promise<Record<string, Decision>> {
+    const token = this.cts.token;
     const out: Record<string, Decision> = {};
     const setFile = (f: FileProposal, d: Decision): void => {
       for (const h of f.hunks) out[hunkKey(f.path, h.id)] = d;
@@ -60,6 +71,7 @@ export class VsCodeReviewer implements Reviewer {
     if (first) await this.showDiff(first, req.groups[0]!.intent);
 
     const top = await pick(
+      token,
       [
         { label: '$(check-all) Accept all', detail: `${req.groups.length} group(s), ${fileCount} file(s), ${hunkCount} hunk(s)`, value: 'all' as const },
         { label: '$(close-all) Reject all', detail: 'Nothing is written', value: 'none' as const },
@@ -82,6 +94,7 @@ export class VsCodeReviewer implements Reviewer {
       for (const f of g.files) await this.showDiff(f, g.intent);
       const hunks = g.files.reduce((n, f) => n + f.hunks.length, 0);
       const choice = await pick(
+      token,
         [
           { label: '$(check) Accept this group', value: 'accept' as const },
           { label: '$(close) Reject this group', value: 'reject' as const },
@@ -114,6 +127,7 @@ export class VsCodeReviewer implements Reviewer {
           }
           const preview = [...h.oldLines.slice(0, 4).map((l) => `- ${l.trimEnd()}`), ...h.newLines.slice(0, 4).map((l) => `+ ${l.trimEnd()}`)].join('   ');
           const c = await pick(
+      token,
             [
               { label: '$(check) Accept this hunk', value: 'accept' as const },
               { label: '$(close) Reject this hunk', value: 'reject' as const },
@@ -182,6 +196,13 @@ const OUTPUT_TAIL = 8000;
 
 /** Runs the configured test command in the workspace, only after an explicit modal confirmation. */
 export class VsCodeTestRunner implements TestRunner {
+  private child: cp.ChildProcess | undefined;
+
+  /** Stop Run: kills a running test command. */
+  cancel(): void {
+    this.child?.kill();
+  }
+
   constructor(
     private readonly cwd: string,
     private readonly command: () => string,
@@ -197,6 +218,7 @@ export class VsCodeTestRunner implements TestRunner {
     if (choice !== 'Run tests') return { ran: false, output: '', message: 'the user declined to run the tests' };
     return new Promise<TestResult>((resolve) => {
       const child = cp.spawn(cmd, { cwd: this.cwd, shell: true, windowsHide: true });
+      this.child = child;
       let out = '';
       const add = (b: Buffer): void => {
         out = (out + b.toString('utf8')).slice(-OUTPUT_TAIL);

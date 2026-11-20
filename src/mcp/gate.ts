@@ -47,6 +47,8 @@ export const hunkKey = (path: string, id: number): string => `${path}#${id}`;
 /** Shows the change set to the user and returns a decision per hunk key. Missing keys count as reject. */
 export interface Reviewer {
   review(req: ReviewRequest): Promise<Record<string, Decision>>;
+  /** Closes any open review (Stop Run); the open review then counts as reject. */
+  cancel?(): void;
 }
 
 export type ProposeStatus = 'applied' | 'partially_applied' | 'rejected' | 'refused' | 'no_change';
@@ -97,6 +99,8 @@ export class WriteGate {
   private readonly decisions = new Map<string, StoredDecision>();
   private readonly undoStack: UndoEntry[] = [];
   private queue: Promise<unknown> = Promise.resolve();
+  /** Incremented by stop(); a proposal that started in an earlier generation never writes. */
+  private generation = 0;
 
   constructor(
     private readonly fs: ReadFs,
@@ -114,14 +118,24 @@ export class WriteGate {
     return this.proposeSet(reason, [{ intent: 'edit', files: [{ path: rawPath, newContent }] }]);
   }
 
+  /**
+   * Stop Run: closes any open review and refuses every proposal that is open or queued, so nothing is
+   * written after the user pressed Stop. Writes already applied stay applied (one atomic step each).
+   */
+  stop(): void {
+    this.generation++;
+    this.reviewer.cancel?.();
+  }
+
   /** Proposals are serialized: the user reviews one change set at a time. */
   proposeSet(plan: string, groups: ChangeInput[]): Promise<ProposeResult> {
-    const run = this.queue.then(() => this.proposeInner(plan, groups));
+    const gen = this.generation;
+    const run = this.queue.then(() => (gen === this.generation ? this.proposeInner(plan, groups, gen) : STOPPED));
     this.queue = run.catch(() => undefined);
     return run;
   }
 
-  private async proposeInner(plan: string, groups: ChangeInput[]): Promise<ProposeResult> {
+  private async proposeInner(plan: string, groups: ChangeInput[], gen: number): Promise<ProposeResult> {
     const seen = new Set<string>();
     const normalized: ChangeInput[] = [];
     let count = 0;
@@ -168,6 +182,7 @@ export class WriteGate {
     if (stored.length === 0) return { status: 'no_change', message: 'every proposed file is identical to the current file' };
 
     const chosen = await this.reviewer.review({ plan, groups: review });
+    if (gen !== this.generation) return STOPPED; // Stop Run during the review: nothing is written
     const decisions: Record<string, Decision> = {};
     for (const f of stored) for (const h of f.hunks) decisions[hunkKey(f.path, h.id)] = chosen[hunkKey(f.path, h.id)] === 'accept' ? 'accept' : 'reject';
     this.decisions.set(setKey(normalized), { files: stored, decisions });
@@ -258,6 +273,8 @@ function setKey(groups: ChangeInput[]): string {
   const parts = groups.flatMap((g) => g.files.map((f) => `${f.path}\0${hash(f.newContent)}`)).sort();
   return hash(parts.join('\n'));
 }
+
+const STOPPED: ProposeResult = { status: 'refused', message: 'stopped by the user (Stop Run); nothing was written' };
 
 function refuse(message: string): ProposeResult {
   return { status: 'refused', message };

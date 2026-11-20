@@ -28,6 +28,12 @@ The spec said "propose_write and run_command"; there is no `run_command` tool (a
 ## Change sets (P3)
 `propose_changes` carries a short plan and up to 10 groups (intent such as "implement", "update callers", "add test", "docs"), at most 20 files, each file in exactly one group. The gate refuses the WHOLE set before review if any existing file was not read or changed since it was read. Review: Accept all, Reject all, or Review by group, where each group can be accepted, rejected, or reviewed hunk by hunk (accept or reject the rest of a group at any point). Esc rejects everything not yet decided and keeps decisions already made. All accepted hunks across all files are applied in one `WorkspaceEdit` (one undo step); `Undo Last Change` reverts the whole set only if every file is still exactly what CodeCraft wrote. The result lists, per file, its group and how many hunks were accepted and rejected.
 
+## Plan before proposing
+`submit_plan(summary, files[{path, action: edit|create|context, why}])` is required before any `propose_write` / `propose_changes`; only files listed as edit or create may be proposed (the agent can resubmit). The plan is shown in the panel's **Plan** section before any change is reviewed.
+
+## Stop Run
+`CodeCraft: Stop Run` is immediate and leaves the workspace consistent: the open review quick pick is closed through its cancellation token (counts as reject), any proposal that is open or queued is refused before it writes, a running test command is killed, the stream is aborted and the TrueForge session is cancelled. Change sets are applied atomically (one `WorkspaceEdit`), so a stop never leaves a half-applied set; changes accepted before Stop stay applied and `Undo Last Change` reverts the last one in one step.
+
 ## Approval flow (verified live with the primary agent)
 The model reaches these tools through TrueForge's `call_tool` system tool. When it calls `propose_write` or `run_tests`, TrueForge pauses the turn (`tool.approval_required` + `turn.update paused`). CodeCraft asks you, posts `user.tool_approval` to the paused turn with `createTurnEvents`, and resumes the same turn with `subscribeToTurn`. Approving only lets the call proceed: `propose_write` still needs your per-hunk review before anything is written.
 

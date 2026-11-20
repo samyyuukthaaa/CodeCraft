@@ -85,6 +85,38 @@ it('per-hunk review in VS Code: accept hunk 1, reject hunk 2; diff opened; only 
   }
 });
 
+it('Stop Run while the review quick pick is open closes it via its cancellation token; nothing is written', async () => {
+  const file = path.join(root().fsPath, 'stop.txt');
+  fs.writeFileSync(file, ORIGINAL);
+  const provider = new ProposedContentProvider();
+  const reg = vscode.workspace.registerTextDocumentContentProvider(`${PROPOSED_SCHEME}-stop`, provider);
+  const original = vscode.window.showQuickPick;
+  let sawCancel = false;
+  // A quick pick that stays open until its cancellation token fires, like a real user who has not chosen yet.
+  (vscode.window as { showQuickPick: unknown }).showQuickPick = (_items: unknown, _opts: unknown, token?: vscode.CancellationToken) =>
+    new Promise((resolve) => {
+      token?.onCancellationRequested(() => {
+        sawCancel = true;
+        resolve(undefined);
+      });
+    });
+  try {
+    const gate = new WriteGate(new NodeReadFs(root().fsPath), new VsCodeApplier(root()), new VsCodeReviewer(root(), provider));
+    gate.recordRead('stop.txt', ORIGINAL);
+    const pending = gate.propose('stop.txt', PROPOSED, 'r');
+    await new Promise((r) => setTimeout(r, 300));
+    gate.stop();
+    const r = await pending;
+    assert.equal(sawCancel, true, 'the quick pick received the cancellation');
+    assert.equal(r.status, 'refused');
+    assert.match(r.message, /stopped by the user/);
+    assert.equal(fs.readFileSync(file, 'utf8'), ORIGINAL);
+  } finally {
+    (vscode.window as { showQuickPick: unknown }).showQuickPick = original;
+    reg.dispose();
+  }
+});
+
 it('Esc in the review rejects everything; nothing is written', async () => {
   const file = path.join(root().fsPath, 'esc.txt');
   fs.writeFileSync(file, ORIGINAL);
