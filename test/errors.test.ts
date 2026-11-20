@@ -23,6 +23,9 @@ test('classifyError: observed texts map to the right class and status', () => {
   // A bare 400 is NOT claimed to be a key problem: it cannot be told apart from other bad requests.
   assert.deepEqual(classifyError(OBSERVED.bare400), { cls: 'bad_request', status: 400 });
   assert.equal(classifyError('something new').cls, 'unknown');
+  // observed on this machine during a network problem
+  assert.deepEqual(classifyError('[Model Error] Cannot connect to API: certificate has expired'), { cls: 'tls_error', status: undefined });
+  assert.match(failureMessage('m', '[Model Error] Cannot connect to API: certificate has expired'), /\(TLS\) connection failed\. Check this machine's clock, proxy or network; retrying will not help\./);
 });
 
 test('failoverBanner: plain words, names both models, says the key was rejected, never a key value', () => {

@@ -10,7 +10,7 @@
 // and a new per-hunk decision for every write, so accepted changes stay applied and are re-proposed only if
 // the agent reads the current file and proposes something different.
 import { redact } from '../util/redact';
-import { retryDelayMs } from './errors';
+import { classifyError, retryDelayMs } from './errors';
 import { RunOptions, RunOutcome, TurnDriver, runWithApprovals } from './run';
 
 export interface AgentAttempt {
@@ -111,6 +111,8 @@ export async function runWithFailover(
     }
     last = { outcome, agent: a.agent, switches, retries };
     if (outcome.status !== 'error') return last;
+    // A TLS failure is a local network problem: another model behind the same network would fail the same way.
+    if (classifyError(outcome.message).cls === 'tls_error') return last;
     const next = attempts[i + 1];
     if (!next) return last;
     const s: SwitchInfo = { from: a.agent, to: next.agent, fromModel: a.model, toModel: next.model, reason: outcome.message };

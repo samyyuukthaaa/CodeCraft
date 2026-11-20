@@ -126,20 +126,20 @@ test('retry: a rate limit waits for the server hint and CONTINUES in the same se
   assert.equal(r.switches.length, 0);
 });
 
-test('retry: unavailable is retried twice with backoff, then fails over', async () => {
+test('retry: unavailable (503) is retried 3 times with backoff, then fails over', async () => {
   const prompts: string[] = [];
   const waits: number[] = [];
-  const r = await runWithFailover('x', [seqAttempt('primary', [errorTurn(DEMAND), errorTurn(DEMAND), errorTurn(DEMAND)], prompts, []), seqAttempt('fallback', [okTurn('ok')], prompts, [])], {
+  const r = await runWithFailover('x', [seqAttempt('primary', [errorTurn(DEMAND), errorTurn(DEMAND), errorTurn(DEMAND), errorTurn(DEMAND)], prompts, []), seqAttempt('fallback', [okTurn('ok')], prompts, [])], {
     approver,
     delay: async (ms) => {
       waits.push(ms);
     },
     rand: () => 0,
   });
-  assert.deepEqual(waits, [5000, 15000]);
+  assert.deepEqual(waits, [5000, 15000, 30000]);
   assert.equal(r.agent, 'fallback');
   assert.equal(r.switches.length, 1);
-  assert.equal(prompts.filter((p) => p.startsWith('primary:')).length, 3);
+  assert.equal(prompts.filter((p) => p.startsWith('primary:')).length, 4);
 });
 
 test('retry: an invalid key is never retried; it fails over at once', async () => {
@@ -162,6 +162,22 @@ test('retryDelayMs: caps the hint, jitters, stops after MAX_RETRIES, ignores non
   assert.equal(retryDelayMs(KEY, 0), undefined);
   assert.equal(retryDelayMs('[Model Error] Request failed (400): Bad Request', 0), undefined);
   assert.equal(retryDelayMs('[Model Error] Cannot connect to API: Headers Timeout Error', 1, () => 0), 15000);
+});
+
+test('TLS: "certificate has expired" is never retried and never fails over (it is a local network problem)', async () => {
+  const TLS = '[Model Error] Cannot connect to API: certificate has expired';
+  const waits: number[] = [];
+  const created: string[] = [];
+  const r = await runWithFailover('x', [seqAttempt('primary', [errorTurn(TLS)], [], created), seqAttempt('fallback', [okTurn('unused')], [], created)], {
+    approver,
+    delay: async (ms) => {
+      waits.push(ms);
+    },
+  });
+  assert.deepEqual(waits, []);
+  assert.equal(r.switches.length, 0);
+  assert.deepEqual(created, ['primary']);
+  assert.equal(r.outcome.status, 'error');
 });
 
 test('failover: cancelled (Stop Run) does not fail over', async () => {

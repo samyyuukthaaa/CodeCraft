@@ -3,7 +3,7 @@
 // else is "unknown" and is shown as-is (redacted) rather than guessed at. Key values are never shown.
 import { redact } from '../util/redact';
 
-export type ErrorClass = 'invalid_or_revoked_key' | 'rate_limit' | 'unavailable_or_timeout' | 'bad_output' | 'context_too_large' | 'bad_request' | 'unknown';
+export type ErrorClass = 'tls_error' | 'invalid_or_revoked_key' | 'rate_limit' | 'unavailable_or_timeout' | 'bad_output' | 'context_too_large' | 'bad_request' | 'unknown';
 
 export interface Classified {
   cls: ErrorClass;
@@ -15,6 +15,8 @@ export function classifyError(message: string): Classified {
   const m = /Request failed \((\d{3})\)/.exec(message);
   const status = m ? Number(m[1]) : undefined;
   const t = message.toLowerCase();
+  // observed: "Cannot connect to API: certificate has expired" (a machine network/TLS problem, not the provider)
+  if (/certificate has expired|cert_has_expired|self[- ]signed certificate|unable to verify the first certificate|unable to get local issuer certificate/.test(t)) return { cls: 'tls_error', status };
   // observed: "(401): Invalid API Key"
   if (status === 401 || status === 403 || /invalid api key|api key not valid|api_key_invalid|unauthori[sz]ed|permission denied/.test(t)) return { cls: 'invalid_or_revoked_key', status };
   // observed: "(429): You exceeded your current quota ..."
@@ -27,7 +29,7 @@ export function classifyError(message: string): Classified {
   return { cls: 'unknown', status };
 }
 
-export const MAX_RETRIES = 2;
+export const MAX_RETRIES = 3;
 const MAX_HINT_MS = 65_000;
 
 /**
@@ -43,11 +45,12 @@ export function retryDelayMs(message: string, retryIndex: number, rand: () => nu
     const ms = hint ? Math.ceil(Number(hint[1]) * 1000) : 10_000 * (retryIndex + 1);
     return Math.min(ms, MAX_HINT_MS) + jitter;
   }
-  if (c.cls === 'unavailable_or_timeout') return [5_000, 15_000][retryIndex]! + jitter;
-  return undefined; // invalid key, bad request, context too large, unknown: no blind retries
+  if (c.cls === 'unavailable_or_timeout') return [5_000, 15_000, 30_000][retryIndex]! + jitter;
+  return undefined; // TLS, invalid key, bad request, context too large, unknown: no blind retries
 }
 
 const WHAT: Record<ErrorClass, string> = {
+  tls_error: 'the secure connection to the provider failed (TLS certificate error on this machine or network)',
   invalid_or_revoked_key: 'its API key was rejected',
   rate_limit: 'it hit a rate limit or used up its quota',
   unavailable_or_timeout: 'the provider was unavailable or timed out',
@@ -70,6 +73,8 @@ export function failureMessage(model: string, reason: string, appliedFiles: stri
   const filesNote = appliedFiles.length ? ` Changes you accepted earlier in this run stay applied: ${appliedFiles.join(', ')}.` : ' Nothing was changed in your files.';
   const code = c.status ? ` (HTTP ${c.status})` : '';
   switch (c.cls) {
+    case 'tls_error':
+      return `Cannot reach ${model}: the secure (TLS) connection failed${code}. Check this machine's clock, proxy or network; retrying will not help.${filesNote}`;
     case 'invalid_or_revoked_key':
       return `Provider key rejected${code} for ${model}: update it in TrueForge Settings.${filesNote}`;
     case 'rate_limit':

@@ -24,7 +24,8 @@ async function main(): Promise<void> {
     return;
   }
   const all: RunRecord[] = [];
-  for (const id of ids) {
+  let tlsStop = false;
+  outer: for (const id of ids) {
     const s = SCENARIOS[id] as Scenario;
     for (let n = 1; n <= runs; n++) {
       console.log(`\n=== ${s.id} run ${n}/${runs}: ${s.title}`);
@@ -33,6 +34,17 @@ async function main(): Promise<void> {
       for (const c of r.checks) console.log(`  [${c.pass ? 'PASS' : 'FAIL'}] ${c.name}: ${c.detail}`);
       console.log(`  outcome=${r.outcome.status} agent=${r.finalAgent} changed=${r.changed.join(',') || '-'} read=${r.filesRead.length}/${r.totalFiles} tokens=${r.tokens} lag=${r.maxEventLoopLagMs}ms ${Math.round(r.durationMs / 1000)}s`);
       console.log(`  RUN ${r.pass ? 'PASS' : 'FAIL'}`);
+      // Project rule: on a TLS certificate error, stop everything and report instead of retrying.
+      if (/certificate has expired|tls_error|self[- ]signed certificate|unable to verify the first certificate/i.test(JSON.stringify(r))) {
+        console.log('  STOPPED: a TLS certificate error occurred (machine network/TLS problem). Not retrying; fix the network and run again.');
+        tlsStop = true;
+        break outer;
+      }
+      // "3 in a row" is already lost after a failure: stop this scenario so the root cause is fixed first.
+      if (!r.pass && !process.argv.includes('--keep-going')) {
+        console.log(`  ${s.id}: stopping after the first failed run (use --keep-going to continue)`);
+        break;
+      }
     }
   }
   console.log('\n| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |');
@@ -46,6 +58,6 @@ async function main(): Promise<void> {
     fs.appendFileSync(path.resolve('docs/RESULTS.md'), `\n### ${ids.join(', ')}: ${runs} run(s), ${new Date().toISOString()}\n\n| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |\n|---|---|---|---|---|---|---|---|---|---|---|\n${all.map(summaryRow).join('\n')}\n`);
     console.log(`recorded to docs/RESULTS.md and docs/results/`);
   }
-  process.exitCode = all.every((r) => r.pass) ? 0 : 1;
+  process.exitCode = tlsStop ? 3 : all.length > 0 && all.every((r) => r.pass) ? 0 : 1;
 }
 void main();

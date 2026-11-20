@@ -77,7 +77,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p .",
     "build": "node esbuild.mjs",
-    "test": "node esbuild.mjs --tests && node --test \"out/test/*.test.js\"",
+    "test": "node esbuild.mjs --tests && node --test --test-timeout=60000 \"out/test/*.test.js\"",
     "smoke": "node esbuild.mjs --tests && node out/test/smoke.js",
     "secret-scan": "node scripts/secret-scan.mjs",
     "live-mcp": "node esbuild.mjs --tests && node out/test/live-mcp.js",
