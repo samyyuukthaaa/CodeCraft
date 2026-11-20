@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { WriteGate } from '../src/mcp/gate';
-import { startMcpServer } from '../src/mcp/server';
+import { startMcpServer, unwrapCallArgs } from '../src/mcp/server';
 import { TestRunner, createHandlers } from '../src/mcp/tools';
 import { DiskApplier, ScriptedReviewer, acceptAll, readDisk, rejectAll, tempWorkspace } from './helpers';
 
@@ -50,7 +50,11 @@ test('mcp: lists the eight editor tools', async () => {
 test('mcp: read_file, list_files, search_text work and hide protected files', async () => {
   const t = await boot();
   try {
-    assert.equal((await t.call('read_file', { path: 'README.md' })).body.content, 'hello world\n');
+    const page = (await t.call('read_file', { path: 'README.md' })).body;
+    assert.deepEqual(
+      { content: page.content, startLine: page.startLine, endLine: page.endLine, totalLines: page.totalLines, lineEndings: page.lineEndings },
+      { content: 'hello world', startLine: 1, endLine: 1, totalLines: 1, lineEndings: 'lf' },
+    );
     assert.deepEqual((await t.call('list_files')).body.files, ['README.md', 'src/app.py']);
     const s = await t.call('search_text', { query: 'PRINT("B")' });
     assert.deepEqual(s.body.matches.map((m: any) => `${m.path}:${m.line}`), ['src/app.py:2']);
@@ -119,6 +123,27 @@ test('mcp: run_tests reports the runner result', async () => {
   try {
     const r = await t.call('run_tests');
     assert.deepEqual({ exit: r.body.exitCode, passed: r.body.passed, runs: t.testRuns() }, { exit: 0, passed: true, runs: 1 });
+  } finally {
+    await t.close();
+  }
+});
+
+test('mcp: a call envelope nested inside input (observed from gemini-3-5-flash-lite) is unwrapped; other shapes are not', async () => {
+  const nested = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'search_symbols', arguments: { tool_name: 'search_symbols', mcp_server: 'codecraft-editor', input: { query: 'cli' } } } };
+  assert.deepEqual((unwrapCallArgs(nested) as typeof nested).params.arguments, { query: 'cli' });
+  const twice = { method: 'tools/call', params: { arguments: { input: { mcp_server: 'x', input: { path: 'a.py' } }, tool_name: 'read_file' } } };
+  assert.deepEqual((unwrapCallArgs(twice) as typeof twice).params.arguments, { path: 'a.py' });
+  const normal = { method: 'tools/call', params: { arguments: { path: 'a.py', input: { x: 1 } } } };
+  assert.deepEqual((unwrapCallArgs(normal) as typeof normal).params.arguments, { path: 'a.py', input: { x: 1 } }, 'extra keys: left alone');
+  const t = await boot();
+  try {
+    // end to end over HTTP: the nested form reaches read_file with a valid path
+    const c = new Client({ name: 'x', version: '0' });
+    await c.connect(new StreamableHTTPClientTransport(new URL(t.server.url), { requestInit: { headers: { Authorization: `Bearer ${TOKEN}` } } }));
+    const r = (await c.callTool({ name: 'read_file', arguments: { tool_name: 'read_file', mcp_server: 'codecraft-editor', input: { path: 'README.md' } } })) as { isError?: boolean; content: Array<{ text: string }> };
+    assert.equal(r.isError ?? false, false);
+    assert.equal(JSON.parse(r.content[0]!.text).content, 'hello world');
+    await c.close();
   } finally {
     await t.close();
   }

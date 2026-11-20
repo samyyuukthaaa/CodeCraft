@@ -29,10 +29,23 @@ export function manifestFor(model: string): TrueForgeApi.AgentSpec {
   return {
     model: { name: model },
     instructions: AGENT_INSTRUCTIONS,
-    // propose_write and run_tests make TrueForge pause the turn for approval before they run.
+    // propose_write, propose_changes and run_tests make TrueForge pause the turn for approval before they run.
     mcpServers: [{ name: EDITOR_SERVER_NAME, requireApprovalForTools: [...APPROVAL_TOOLS] }],
+    config: AGENT_RUNTIME_CONFIG,
   };
 }
+
+/**
+ * Runtime limits CodeCraft sets on both agents. Observed live (P3): with TrueForge's defaults
+ * (dynamic sub-agents on, 512 iterations) one single-function task ran 34 tool calls plus a sub-agent,
+ * ~299k input tokens, and hit the provider quota (HTTP 429). These bound the cost of a runaway turn.
+ */
+export const AGENT_RUNTIME_CONFIG: TrueForgeApi.RuntimeConfig = {
+  dynamicSubAgents: { enabled: false },
+  iterationLimit: 60,
+  // CodeCraft has no UI for TrueForge's ask_user_question tool; a run that used it ended as "unsupported".
+  askUserQuestions: { enabled: false },
+};
 
 /** Registers (or updates) the local editor MCP server in TrueForge. The bearer token is never logged. */
 export async function registerEditorServer(client: TrueForge, url: string, token: string): Promise<void> {
@@ -56,6 +69,9 @@ export type EnsureOutcome = 'created' | 'updated' | 'unchanged';
  */
 export function manifestMatches(stored: TrueForgeApi.AgentSpec, wanted: TrueForgeApi.AgentSpec): boolean {
   if (stored.model.name !== wanted.model.name || stored.instructions !== wanted.instructions) return false;
+  if ((stored.config?.dynamicSubAgents?.enabled ?? true) !== (wanted.config?.dynamicSubAgents?.enabled ?? true)) return false;
+  if ((stored.config?.iterationLimit ?? 512) !== (wanted.config?.iterationLimit ?? 512)) return false;
+  if ((stored.config?.askUserQuestions?.enabled ?? true) !== (wanted.config?.askUserQuestions?.enabled ?? true)) return false;
   const pick = (s: TrueForgeApi.AgentSpec) =>
     (s.mcpServers ?? []).map((x) => ({ name: x.name, approvals: [...(x.requireApprovalForTools ?? [])].sort() })).sort((a, b) => a.name.localeCompare(b.name));
   return JSON.stringify(pick(stored)) === JSON.stringify(pick(wanted));

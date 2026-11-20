@@ -4,7 +4,7 @@
   "description": "CodeCraft: a VS Code interface for TrueForge agents, with gated review and Code Town.",
   "version": "0.0.1",
   "publisher": "codecraft-dev",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "private": true,
   "engines": {
     "vscode": "^1.90.0",
@@ -59,6 +59,13 @@
           "minimum": 0,
           "maximum": 200000,
           "description": "Token budget (estimated as characters / 4) for repository context CodeCraft adds in front of a request. 0 disables automatic context."
+        },
+        "codecraft.mcpPort": {
+          "type": "number",
+          "default": 8791,
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "Loopback port for the CodeCraft editor-tools MCP server that TrueForge calls. If it is in use, a random free port is used."
         }
       }
     }
@@ -70,7 +77,9 @@
     "smoke": "node esbuild.mjs --tests && node out/test/smoke.js",
     "secret-scan": "node scripts/secret-scan.mjs",
     "live-mcp": "node esbuild.mjs --tests && node out/test/live-mcp.js",
-    "perf-index": "node esbuild.mjs --tests && node out/test/perf-index.js"
+    "perf-index": "node esbuild.mjs --tests && node out/test/perf-index.js",
+    "scenario": "node esbuild.mjs --scenarios && node out/scenarios/run.js",
+    "test:vscode": "node esbuild.mjs && node esbuild.mjs --vscode && node out/vscode/run.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
@@ -80,6 +89,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/vscode": "^1.90.0",
+    "@vscode/test-electron": "3.1.0",
     "esbuild": "^0.25.0",
     "typescript": "^5.6.0"
   }

@@ -51,6 +51,8 @@ interface Candidate {
   reason: string;
   /** 1-based inclusive line range to use as an excerpt when the whole file does not fit. */
   excerpt?: { start: number; end: number };
+  /** Use only the excerpt, even if the whole file would fit (editor selections). */
+  excerptOnly?: boolean;
 }
 
 const MAX_EXCERPT_LINES = 200;
@@ -63,11 +65,19 @@ function symbolRange(index: RepoIndex, path: string, line: number, parent: strin
   return { start: line, end: Math.max(line, end) };
 }
 
+/** The user's editor selection (1-based inclusive lines), included first as an excerpt. */
+export interface EditorSelection {
+  path: string;
+  startLine: number;
+  endLine: number;
+}
+
 export interface SelectOptions {
   index: RepoIndex;
   text: string;
   budgetTokens: number;
   read: (path: string) => Promise<string | undefined>;
+  selection?: EditorSelection;
 }
 
 export async function selectContext(opts: SelectOptions): Promise<{ report: ContextReport; contextText: string }> {
@@ -81,8 +91,18 @@ export async function selectContext(opts: SelectOptions): Promise<{ report: Cont
   };
   const unresolved: string[] = [];
 
-  // 1-2: explicit references
+  // 0: the editor selection (always an excerpt of exactly the selected lines)
   const anchors: string[] = [];
+  const sel = opts.selection && index.files[opts.selection.path] ? opts.selection : undefined;
+  if (sel) {
+    const start = Math.max(1, Math.min(sel.startLine, sel.endLine));
+    const end = Math.max(sel.startLine, sel.endLine);
+    const label = `selected in the editor (lines ${start}-${end})`;
+    cands.set(sel.path, { path: sel.path, priority: -1, reason: label, excerpt: { start, end }, excerptOnly: true });
+    anchors.push(sel.path);
+  }
+
+  // 1-2: explicit references
   for (const ref of parseRefs(text)) {
     if (ref.kind === 'file') {
       if (index.files[ref.value]) {
@@ -140,7 +160,7 @@ export async function selectContext(opts: SelectOptions): Promise<{ report: Cont
     const safe = redact(content);
     const block = `### ${c.path} (${c.reason})\n\`\`\`\n${safe}\n\`\`\`\n`;
     const tokens = estimateTokens(block);
-    if (used + tokens <= opts.budgetTokens) {
+    if (!c.excerptOnly && used + tokens <= opts.budgetTokens) {
       used += tokens;
       items.push({ path: c.path, reason: c.reason, tokens, included: true });
       parts.push(block);
@@ -149,7 +169,7 @@ export async function selectContext(opts: SelectOptions): Promise<{ report: Cont
     if (c.excerpt) {
       const { start, end } = c.excerpt;
       const lines = safe.split('\n').slice(start - 1, end).join('\n');
-      const reason = `${c.reason}; excerpt lines ${start}-${end} (whole file ~${tokens} tokens is over budget)`;
+      const reason = c.excerptOnly ? c.reason : `${c.reason}; excerpt lines ${start}-${end} (whole file ~${tokens} tokens is over budget)`;
       const ex = `### ${c.path} lines ${start}-${end} (${reason})\n\`\`\`\n${lines}\n\`\`\`\n`;
       const exTokens = estimateTokens(ex);
       if (used + exTokens <= opts.budgetTokens) {

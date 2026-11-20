@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { TurnEvent } from '../src/trueforge/client';
-import { AgentAttempt, FAILOVER_NOTE, SwitchInfo, runWithFailover } from '../src/trueforge/failover';
+import { AgentAttempt, CONTINUE_PROMPT, FAILOVER_NOTE, SwitchInfo, runWithFailover } from '../src/trueforge/failover';
+import { MAX_RETRIES, retryDelayMs } from '../src/trueforge/errors';
 import type { TurnDriver } from '../src/trueforge/run';
 
 const ev = (e: unknown): TurnEvent => e as TurnEvent;
@@ -60,7 +61,7 @@ test('failover: the fallback session is created only when needed', async () => {
 });
 
 test('failover: if every agent fails, the last error is reported (never success)', async () => {
-  const r = await runWithFailover('x', [attempt('primary', errorTurn('[Model Error] Request failed (503)'), [], []), attempt('fallback', errorTurn('[Model Error] Request failed (500)'), [], [])], { approver });
+  const r = await runWithFailover('x', [attempt('primary', errorTurn('[Model Error] Request failed (503)'), [], []), attempt('fallback', errorTurn('[Model Error] Request failed (500)'), [], [])], { approver, delay: async () => undefined });
   assert.equal(r.outcome.status, 'error');
   assert.equal(r.agent, 'fallback');
   assert.match((r.outcome as { message: string }).message, /500/);
@@ -74,9 +75,93 @@ test('failover: a thrown session/network error also fails over', async () => {
       throw new Error('TrueForge HTTP 503: unavailable');
     },
   };
-  const r = await runWithFailover('x', [boom, attempt('fallback', okTurn('ok'), [], [])], { approver });
+  const r = await runWithFailover('x', [boom, attempt('fallback', okTurn('ok'), [], [])], { approver, delay: async () => undefined });
   assert.equal(r.agent, 'fallback');
   assert.equal(r.outcome.status, 'done');
+});
+
+// ---------- retries (texts observed live) ----------
+const RATE = '[Model Error] Request failed (429): You exceeded your current quota ... Please retry in 59.382723513s.';
+const DEMAND = '[Model Error] Request failed (503): This model is currently experiencing high demand.';
+const KEY = '[Model Error] Request failed (401): Invalid API Key';
+
+/** A driver that plays one scripted turn per start() call, recording prompts, on ONE session. */
+function seqAttempt(agent: string, turns: TurnEvent[][], prompts: string[], created: string[]): AgentAttempt {
+  let n = 0;
+  const driver: TurnDriver = {
+    start(text) {
+      prompts.push(`${agent}:${text}`);
+      return gen(turns[n++] ?? []);
+    },
+    resumePaused: () => gen([]),
+    newTurnWithApprovals: () => gen([]),
+  };
+  return {
+    agent,
+    model: `${agent}-model`,
+    driver: async () => {
+      created.push(agent);
+      return driver;
+    },
+  };
+}
+
+test('retry: a rate limit waits for the server hint and CONTINUES in the same session, no failover', async () => {
+  const prompts: string[] = [];
+  const created: string[] = [];
+  const waits: number[] = [];
+  const r = await runWithFailover('do it', [seqAttempt('primary', [errorTurn(RATE), okTurn('done after retry')], prompts, created), seqAttempt('fallback', [okTurn('unused')], prompts, created)], {
+    approver,
+    delay: async (ms) => {
+      waits.push(ms);
+    },
+    rand: () => 0,
+  });
+  assert.equal(r.agent, 'primary');
+  assert.equal(r.outcome.status, 'done');
+  assert.deepEqual(waits, [59383]);
+  assert.equal(r.retries.length, 1);
+  assert.deepEqual(created, ['primary'], 'the session is reused, not recreated');
+  assert.deepEqual(prompts, ['primary:do it', `primary:${CONTINUE_PROMPT}`]);
+  assert.equal(r.switches.length, 0);
+});
+
+test('retry: unavailable is retried twice with backoff, then fails over', async () => {
+  const prompts: string[] = [];
+  const waits: number[] = [];
+  const r = await runWithFailover('x', [seqAttempt('primary', [errorTurn(DEMAND), errorTurn(DEMAND), errorTurn(DEMAND)], prompts, []), seqAttempt('fallback', [okTurn('ok')], prompts, [])], {
+    approver,
+    delay: async (ms) => {
+      waits.push(ms);
+    },
+    rand: () => 0,
+  });
+  assert.deepEqual(waits, [5000, 15000]);
+  assert.equal(r.agent, 'fallback');
+  assert.equal(r.switches.length, 1);
+  assert.equal(prompts.filter((p) => p.startsWith('primary:')).length, 3);
+});
+
+test('retry: an invalid key is never retried; it fails over at once', async () => {
+  const waits: number[] = [];
+  const r = await runWithFailover('x', [seqAttempt('primary', [errorTurn(KEY)], [], []), seqAttempt('fallback', [okTurn('ok')], [], [])], {
+    approver,
+    delay: async (ms) => {
+      waits.push(ms);
+    },
+  });
+  assert.deepEqual(waits, []);
+  assert.equal(r.retries.length, 0);
+  assert.equal(r.agent, 'fallback');
+});
+
+test('retryDelayMs: caps the hint, jitters, stops after MAX_RETRIES, ignores non-transient errors', () => {
+  assert.equal(retryDelayMs('(429): quota. Please retry in 300s.', 0, () => 0), 65000);
+  assert.equal(retryDelayMs(RATE, 0, () => 0.5), 59383 + 500);
+  assert.equal(retryDelayMs(RATE, MAX_RETRIES), undefined);
+  assert.equal(retryDelayMs(KEY, 0), undefined);
+  assert.equal(retryDelayMs('[Model Error] Request failed (400): Bad Request', 0), undefined);
+  assert.equal(retryDelayMs('[Model Error] Cannot connect to API: Headers Timeout Error', 1, () => 0), 15000);
 });
 
 test('failover: cancelled (Stop Run) does not fail over', async () => {

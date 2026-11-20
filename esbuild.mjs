@@ -5,8 +5,15 @@ import { readdirSync } from 'node:fs';
 
 const common = { bundle: true, sourcemap: true, logLevel: 'info' };
 const tests = process.argv.includes('--tests');
+const scenarios = process.argv.includes('--scenarios');
+const vscodeTests = process.argv.includes('--vscode');
 
-if (tests) {
+if (vscodeTests) {
+  await build({ ...common, entryPoints: ['test/vscode/suite.ts'], outfile: 'out/vscode/suite.js', platform: 'node', format: 'cjs', external: ['vscode'] });
+  await build({ ...common, entryPoints: ['test/vscode/run.ts'], outfile: 'out/vscode/run.js', platform: 'node', format: 'cjs', external: ['vscode', '@vscode/test-electron'] });
+} else if (scenarios) {
+  await build({ ...common, entryPoints: ['test/scenarios/run.ts'], outfile: 'out/scenarios/run.js', platform: 'node', format: 'cjs', external: ['vscode'] });
+} else if (tests) {
   const entries = readdirSync('test')
     .filter((f) => f.endsWith('.ts'))
     .map((f) => `test/${f}`);

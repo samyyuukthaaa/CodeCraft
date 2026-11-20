@@ -1,0 +1,173 @@
+[
+  {
+    "scenario": "task3-fallback",
+    "run": 1,
+    "startedAt": "2026-11-20T16:39:57.468Z",
+    "durationMs": 174048,
+    "outcome": {
+      "status": "error",
+      "message": "[Model Error] Cannot connect to API: read ECONNRESET",
+      "rounds": 1
+    },
+    "finalAgent": "codecraft-fallback",
+    "switches": [
+      {
+        "from": "codecraft-test-primary-badkey",
+        "to": "codecraft-fallback",
+        "fromModel": "codecraft-test-badkey/gpt-oss-120b",
+        "toModel": "google-gemini/gemini-3-5-flash-lite",
+        "reason": "[Model Error] Request failed (401): Invalid API Key"
+      }
+    ],
+    "sessions": [
+      {
+        "agent": "codecraft-test-primary-badkey",
+        "id": "01m7wx8eksjvkard69hze102hs"
+      },
+      {
+        "agent": "codecraft-fallback",
+        "id": "01m7wx8eskkwdejyssap1gz6tf"
+      }
+    ],
+    "tokens": 141309,
+    "approvals": [
+      "codecraft-editor/run_tests: run the project test command"
+    ],
+    "review": [],
+    "activity": [
+      "read_file src/flask/helpers.py lines 1-400 of 641",
+      "read_file tests/test_helpers.py lines 383-383 of 383",
+      "read_file tests/test_helpers.py lines 320-383 of 383",
+      "run_tests requested",
+      "run_tests: 490 passed in 1.16s",
+      "read_file src/flask/helpers.py lines 25-424 of 641",
+      "list_files . (2585)",
+      "search_text \"get_load_dotenv\" (0 match(es))",
+      "list_files . (2585)",
+      "search_text \"get_load_dotenv\" (0 match(es))",
+      "list_files . (2585)",
+      "search_text \"FLASK_DEBUG\" (0 match(es))",
+      "list_files . (2585)",
+      "search_text \"get_debug_flag\" (0 match(es))"
+    ],
+    "filesRead": [
+      "src/flask/helpers.py",
+      "tests/test_helpers.py"
+    ],
+    "totalFiles": 234,
+    "context": {
+      "budgetTokens": 6000,
+      "usedTokens": 3987,
+      "totalFiles": 234,
+      "items": [
+        {
+          "path": "src/flask/helpers.py",
+          "reason": "selected in the editor (lines 28-35)",
+          "tokens": 98,
+          "included": true
+        },
+        {
+          "path": "tests/test_converters.py",
+          "reason": "test for src/flask/helpers.py",
+          "tokens": 302,
+          "included": true
+        },
+        {
+          "path": "tests/test_helpers.py",
+          "reason": "test for src/flask/helpers.py",
+          "tokens": 2919,
+          "included": true
+        },
+        {
+          "path": "src/flask/globals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 459,
+          "included": true
+        },
+        {
+          "path": "src/flask/signals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 209,
+          "included": true
+        },
+        {
+          "path": "src/flask/wrappers.py",
+          "reason": "imported by src/flask/helpers.py; left out: over budget",
+          "tokens": 2434,
+          "included": false
+        }
+      ],
+      "unresolved": []
+    },
+    "changed": [],
+    "maxEventLoopLagMs": 15,
+    "banners": [
+      "The primary model codecraft-test-badkey/gpt-oss-120b stopped because its API key was rejected (HTTP 401). CodeCraft switched to the fallback model google-gemini/gemini-3-5-flash-lite automatically and is continuing your request."
+    ],
+    "retries": [
+      "codecraft-fallback retry 1 after 6 s: [Model Error] This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again",
+      "codecraft-fallback retry 2 after 16 s: [Model Error] This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again"
+    ],
+    "atSwitch": [
+      {
+        "changed": [],
+        "approvalsBefore": 0,
+        "reviewsBefore": 0
+      }
+    ],
+    "failureMessage": "google-gemini/gemini-3-5-flash-lite is unavailable or timed out. Try again, or configure a fallback model. Nothing was changed in your files.",
+    "checks": [
+      {
+        "name": "exactly one automatic switch, from the invalid-key agent to codecraft-fallback",
+        "pass": true,
+        "detail": "codecraft-test-primary-badkey -> codecraft-fallback"
+      },
+      {
+        "name": "the switch was caused by the rejected key (HTTP 401)",
+        "pass": true,
+        "detail": "[Model Error] Request failed (401): Invalid API Key"
+      },
+      {
+        "name": "no user action before the takeover (0 approvals, 0 reviews) and nothing written at that moment",
+        "pass": true,
+        "detail": "approvals 0, reviews 0, changed none"
+      },
+      {
+        "name": "banner says in plain words that the primary key was rejected and the fallback took over",
+        "pass": true,
+        "detail": "The primary model codecraft-test-badkey/gpt-oss-120b stopped because its API key was rejected (HTTP 401). CodeCraft switched to the fallback model google-gemini/gemini-3-5-flash-lite automatically and is continuing your request."
+      },
+      {
+        "name": "TASKS.md: the second configured model took over (run finished on codecraft-fallback)",
+        "pass": false,
+        "detail": "error on codecraft-fallback"
+      },
+      {
+        "name": "the fallback did the work: it proposed a change to src/flask/helpers.py (rejected by the scripted user)",
+        "pass": false,
+        "detail": "no proposal"
+      },
+      {
+        "name": "TASKS.md: git status shows no files changed",
+        "pass": true,
+        "detail": "clean"
+      },
+      {
+        "name": "TASKS.md: editor stays responsive (max event-loop lag < 250 ms)",
+        "pass": true,
+        "detail": "15 ms"
+      },
+      {
+        "name": "the dummy key never appears in any message, banner, log or result",
+        "pass": true,
+        "detail": "not present"
+      },
+      {
+        "name": "fixture reset to clean after the run",
+        "pass": true,
+        "detail": "clean"
+      }
+    ],
+    "pass": false
+  }
+]

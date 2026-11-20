@@ -9,6 +9,28 @@ import { EDITOR_SERVER_NAME } from './constants';
 import { Handlers, ToolOutput, schemas } from './tools';
 
 
+const WRAPPER_KEYS = new Set(['tool_name', 'mcp_server', 'input']);
+
+/**
+ * Observed live (gemini-3-5-flash-lite through TrueForge's call_tool): the model sometimes nests the call
+ * envelope inside `input`, so a tool receives {tool_name, mcp_server, input: {query: ...}} instead of
+ * {query: ...}. Unwrap ONLY that exact shape (no other keys), then normal strict validation applies.
+ */
+export function unwrapCallArgs(body: unknown): unknown {
+  const fix = (msg: unknown): void => {
+    const m = msg as { method?: unknown; params?: { arguments?: unknown } };
+    if (m?.method !== 'tools/call' || !m.params) return;
+    let a = m.params.arguments as Record<string, unknown> | undefined;
+    for (let depth = 0; depth < 3 && a && typeof a === 'object' && typeof a.input === 'object' && a.input !== null && Object.keys(a).every((k) => WRAPPER_KEYS.has(k)); depth++) {
+      a = a.input as Record<string, unknown>;
+    }
+    m.params.arguments = a;
+  };
+  if (Array.isArray(body)) body.forEach(fix);
+  else fix(body);
+  return body;
+}
+
 export interface RunningServer {
   url: string;
   port: number;
@@ -119,7 +141,7 @@ export async function startMcpServer(handlers: Handlers, token: string, port = 0
       if (!tokenOk(req.headers.authorization, token)) return send(401, 'unauthorized');
       if (req.url !== '/mcp') return send(404, 'not found');
       if (req.method !== 'POST') return send(405, 'method not allowed');
-      const body = await readBody(req);
+      const body = unwrapCallArgs(await readBody(req));
       const server = buildServer(handlers);
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
       res.on('close', () => {
@@ -132,10 +154,22 @@ export async function startMcpServer(handlers: Handlers, token: string, port = 0
       if (!res.headersSent) send(400, e instanceof Error ? e.message : 'bad request');
     }
   });
-  await new Promise<void>((resolve, reject) => {
-    httpServer.once('error', reject);
-    httpServer.listen(port, '127.0.0.1', () => resolve());
-  });
+  // A fixed port keeps the URL registered in TrueForge valid across restarts (a stale random port was
+  // observed to be dialled: ECONNREFUSED). If the port is taken, fall back to a random free port.
+  const listen = (p: number) =>
+    new Promise<void>((resolve, reject) => {
+      httpServer.once('error', reject);
+      httpServer.listen(p, '127.0.0.1', () => {
+        httpServer.removeListener('error', reject);
+        resolve();
+      });
+    });
+  try {
+    await listen(port);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'EADDRINUSE' || port === 0) throw e;
+    await listen(0);
+  }
   boundPort = (httpServer.address() as AddressInfo).port;
   return {
     url: `http://127.0.0.1:${boundPort}/mcp`,

@@ -309,6 +309,30 @@ test('budget: zero budget includes nothing; secrets in included files are redact
   }
 });
 
+test('budget: the editor selection comes first, as an excerpt of exactly the selected lines', async () => {
+  const ws = await tempWorkspace(REPO);
+  try {
+    const { index } = await buildIndex(ws.root);
+    const { report, contextText } = await selectContext({
+      index,
+      text: 'make it faster',
+      budgetTokens: 2000,
+      read: (p) => ws.fs.read(p),
+      selection: { path: 'src/shop/cart.py', startLine: 3, endLine: 5 },
+    });
+    assert.equal(report.items[0]?.path, 'src/shop/cart.py');
+    assert.equal(report.items[0]?.reason, 'selected in the editor (lines 3-5)');
+    assert.ok(contextText.includes('### src/shop/cart.py lines 3-5'));
+    assert.ok(contextText.includes('class Cart:'));
+    assert.ok(!contextText.includes('from .pricing import price\n\nclass'), 'only the selected lines, not the whole file');
+    assert.ok(report.items.some((i) => i.path === 'tests/test_cart.py' && /test for src\/shop\/cart\.py/.test(i.reason)));
+    const outside = await selectContext({ index, text: 'x', budgetTokens: 2000, read: (p) => ws.fs.read(p), selection: { path: 'not/indexed.py', startLine: 1, endLine: 2 } });
+    assert.equal(outside.report.items.length, 0);
+  } finally {
+    await ws.cleanup();
+  }
+});
+
 // ---------- MCP tools ----------
 test('mcp tools: search_symbols and list_related answer from the index; read_file reports reads', async () => {
   const ws = await tempWorkspace(REPO);

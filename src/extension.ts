@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
-import { composePrompt, selectContext } from './index/context';
+import * as path from 'node:path';
+import { EditorSelection, composePrompt, selectContext } from './index/context';
 import { IndexService } from './index/service';
 import { WriteGate } from './mcp/gate';
 import { NodeReadFs } from './mcp/nodeFs';
@@ -21,6 +22,7 @@ import {
 } from './trueforge/client';
 import { CodeCraftConfig, FALLBACK_AGENT_NAME, PRIMARY_AGENT_NAME, validateConfig } from './trueforge/config';
 import { toDisplay } from './trueforge/events';
+import { classifyError, failoverBanner, failureMessage } from './trueforge/errors';
 import { AgentAttempt, runWithFailover } from './trueforge/failover';
 import { redact } from './util/redact';
 
@@ -37,13 +39,32 @@ const SSRF_HINT =
   'TrueForge blocked the local editor-tools URL (its outbound-URL guard rejects loopback addresses). ' +
   'Restart TrueForge with the environment variable OUTBOUND_URL_ALLOWED_HOSTS=["127.0.0.1"] and try again.';
 
-export function activate(context: vscode.ExtensionContext): void {
+export function activate(context: vscode.ExtensionContext): { gate: WriteGate | undefined; fs: NodeReadFs | undefined } {
   const out = vscode.window.createOutputChannel('CodeCraft');
   context.subscriptions.push(out);
 
   const folder = vscode.workspace.workspaceFolders?.[0];
   const provider = new ProposedContentProvider();
   context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider(PROPOSED_SCHEME, provider));
+
+  // The last non-empty selection in a workspace file. Tracked by events because activeTextEditor is
+  // undefined while the agent panel (a webview) has focus.
+  let lastSelection: EditorSelection | undefined;
+  context.subscriptions.push(
+    vscode.window.onDidChangeTextEditorSelection((e) => {
+      if (!folder || e.textEditor.document.uri.scheme !== 'file') return;
+      const rel = path.relative(folder.uri.fsPath, e.textEditor.document.uri.fsPath).replace(/\\/g, '/');
+      if (rel.startsWith('..') || path.isAbsolute(rel)) return;
+      const s = e.selections[0];
+      if (!s || s.isEmpty) {
+        if (lastSelection?.path === rel) lastSelection = undefined;
+        return;
+      }
+      // a selection ending at column 0 does not include that last line
+      const endLine = s.end.character === 0 && s.end.line > s.start.line ? s.end.line : s.end.line + 1;
+      lastSelection = { path: rel, startLine: s.start.line + 1, endLine };
+    }),
+  );
 
   // Paths the agent read with read_file during the current run ("files read versus total").
   const readThisRun = new Set<string>();
@@ -74,7 +95,17 @@ export function activate(context: vscode.ExtensionContext): void {
     : undefined;
 
   let server: RunningServer | undefined;
-  const token = randomBytes(24).toString('hex'); // ephemeral, in memory only, never logged
+  // Local loopback credential for the editor MCP server, kept in VS Code SecretStorage so the URL and
+  // token registered in TrueForge stay valid across restarts. Never logged or shown.
+  let token: string | undefined;
+  const getToken = async (): Promise<string> => {
+    token ??= await context.secrets.get('codecraft.mcpToken');
+    if (!token) {
+      token = randomBytes(24).toString('hex');
+      await context.secrets.store('codecraft.mcpToken', token);
+    }
+    return token;
+  };
   // One TrueForge session per agent, created lazily; reset when settings change.
   const sessions = new Map<string, string>();
   let sessionKey = '';
@@ -89,8 +120,9 @@ export function activate(context: vscode.ExtensionContext): void {
     const key = `${cfg.baseUrl}|${cfg.primaryModel}|${cfg.fallbackModel}`;
     if (setupDone && key === sessionKey) return client;
     if (!host) throw new Error('Open a folder first: CodeCraft works on the open workspace.');
-    server ??= await startMcpServer(host.handlers, token);
-    await registerEditorServer(client, server.url, token);
+    const tok = await getToken();
+    server ??= await startMcpServer(host.handlers, tok, vscode.workspace.getConfiguration('codecraft').get<number>('mcpPort', 8791));
+    await registerEditorServer(client, server.url, tok);
     out.appendLine(`Editor MCP server registered with TrueForge at ${server.url}`);
     out.appendLine(`Agents: ${JSON.stringify(await ensureAgents(agentsApi(client), cfg))}`);
     sessions.clear();
@@ -128,7 +160,7 @@ export function activate(context: vscode.ExtensionContext): void {
         const index = await host.index.get();
         out.appendLine(`[index] ${index.stats.totalFiles} files, ${index.stats.symbolCount} symbols, ${index.stats.edgeCount} edges, ${index.stats.buildMs} ms (${index.stats.reusedFiles} reused)`);
         const budget = Math.max(0, Math.min(200_000, vscode.workspace.getConfiguration('codecraft').get<number>('contextBudget', 6000)));
-        const { report, contextText } = await selectContext({ index, text, budgetTokens: budget, read: (p) => host.fs.read(p) });
+        const { report, contextText } = await selectContext({ index, text, budgetTokens: budget, read: (p) => host.fs.read(p), selection: lastSelection });
         post({ type: 'context', report });
         out.appendLine(`[context] ${report.items.filter((i) => i.included).length} file(s), ~${report.usedTokens}/${budget} tokens${report.unresolved.length ? `; not found: ${report.unresolved.join(', ')}` : ''}`);
         prompt = composePrompt(contextText, text);
@@ -137,12 +169,21 @@ export function activate(context: vscode.ExtensionContext): void {
         postReads();
       }
 
+      const depthAtStart = host ? host.gate.undoDepth : 0;
       const attempts = [attemptFor(client, PRIMARY_AGENT_NAME, cfg.primaryModel), attemptFor(client, FALLBACK_AGENT_NAME, cfg.fallbackModel)];
       const result = await runWithFailover(prompt, attempts, {
         signal: abort.signal,
         onSwitch: (s) => {
-          out.appendLine(`[failover] ${s.from} failed (${redact(s.reason)}); switching to ${s.to}`);
-          post({ type: 'event', event: { type: 'model.switched', summary: `${s.from} failed; now using ${s.to}`, failed: false } });
+          const banner = failoverBanner(s.fromModel, s.toModel, s.reason);
+          out.appendLine(`[failover] ${banner} (detail: ${redact(s.reason).slice(0, 300)})`);
+          post({ type: 'event', event: { type: 'model.switched', summary: banner, failed: false } });
+          void vscode.window.showInformationMessage(`CodeCraft: ${banner}`);
+        },
+        onRetry: (r) => {
+          const c = classifyError(r.reason);
+          const msg = `${r.model}: temporary provider problem (${c.cls.replace(/_/g, ' ')}${c.status ? `, HTTP ${c.status}` : ''}); retrying in ${Math.round(r.delayMs / 1000)} s (retry ${r.retry}).`;
+          out.appendLine(`[retry] ${msg}`);
+          post({ type: 'event', event: { type: 'model.retry', summary: msg } });
         },
         onEvent: (ev) => {
           const d = toDisplay(ev);
@@ -164,7 +205,12 @@ export function activate(context: vscode.ExtensionContext): void {
       });
       const outcome = result.outcome;
       out.appendLine(`Run ${outcome.status} on ${result.agent} after ${outcome.rounds} round(s)`);
-      if (outcome.status === 'error' || outcome.status === 'unsupported') {
+      if (outcome.status === 'error') {
+        const model = result.agent === FALLBACK_AGENT_NAME ? cfg.fallbackModel : cfg.primaryModel;
+        const msg = failureMessage(model, outcome.message, host ? host.gate.filesAppliedSince(depthAtStart) : []);
+        post({ type: 'event', event: { type: 'run.failed', summary: msg, failed: true } });
+        void vscode.window.showErrorMessage(`CodeCraft: ${msg}`);
+      } else if (outcome.status === 'unsupported') {
         post({ type: 'event', event: { type: 'run.failed', summary: outcome.message, failed: true } });
       } else if (outcome.status === 'cancelled') {
         post({ type: 'event', event: { type: 'run.cancelled', summary: 'stopped' } });
@@ -204,6 +250,8 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     { dispose: () => void server?.close() },
   );
+  // Handle for the VS Code integration test (test/vscode). Not a public API.
+  return { gate: host?.gate, fs: host?.fs };
 }
 
 export function deactivate(): void {}

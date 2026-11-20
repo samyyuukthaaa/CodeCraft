@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { redact } from '../util/redact';
 import { ReadFs, WriteGate } from './gate';
 import { isDenied, normalizeRelPath } from './paths';
+import { Edit, applyEdits, matchEol, pageOf } from './text';
 import { listRelated, searchSymbols } from '../index/query';
 import type { RepoIndex } from '../index/types';
 
@@ -43,7 +44,11 @@ const ok = (value: unknown): ToolOutput => ({ text: JSON.stringify(value), isErr
 const err = (message: string): ToolOutput => ({ text: JSON.stringify({ error: message }), isError: true });
 
 export const schemas = {
-  read_file: { path: z.string().min(1).max(400).describe('Workspace-relative file path') },
+  read_file: {
+    path: z.string().min(1).max(400).describe('Workspace-relative file path'),
+    startLine: z.number().int().min(1).optional().describe('First line to return (1-based). Large files are returned in pages; use nextStartLine from the previous page.'),
+    endLine: z.number().int().min(1).optional().describe('Last line to return (inclusive)'),
+  },
   list_files: { prefix: z.string().max(400).optional().describe('Optional directory prefix filter') },
   search_text: {
     query: z.string().min(1).max(200).describe('Plain text to search for (case-insensitive)'),
@@ -51,7 +56,7 @@ export const schemas = {
   },
   propose_write: {
     path: z.string().min(1).max(400).describe('Workspace-relative file path'),
-    newContent: z.string().describe('The complete new file content'),
+    newContent: z.string().describe('The complete new file content (line endings are matched to the existing file)'),
     reason: z.string().min(1).max(500).describe('Why this change is needed'),
   },
   propose_changes: {
@@ -64,7 +69,17 @@ export const schemas = {
             .array(
               z.object({
                 path: z.string().min(1).max(400).describe('Workspace-relative file path'),
-                newContent: z.string().describe('The complete new file content'),
+                newContent: z.string().optional().describe('The complete new file content. Use for new files or full rewrites.'),
+                edits: z
+                  .array(
+                    z.object({
+                      find: z.string().min(1).describe('Exact existing text to replace (must occur exactly once; include enough lines to be unique)'),
+                      replace: z.string().describe('Replacement text'),
+                    }),
+                  )
+                  .max(50)
+                  .optional()
+                  .describe('Targeted edits to an existing file, applied in order. Prefer this for large files. Give either edits or newContent.'),
               }),
             )
             .min(1)
@@ -87,7 +102,7 @@ export function createHandlers(deps: ToolDeps) {
   const note = (s: string): void => deps.onActivity?.(redact(s));
 
   return {
-    async read_file(a: { path: string }): Promise<ToolOutput> {
+    async read_file(a: { path: string; startLine?: number; endLine?: number }): Promise<ToolOutput> {
       let p: string;
       try {
         p = normalizeRelPath(a.path);
@@ -99,8 +114,9 @@ export function createHandlers(deps: ToolDeps) {
       if (content.length > MAX_READ_CHARS) return err('file is too large to read (limit 200000 characters)');
       deps.gate.recordRead(p, content);
       deps.onRead?.(p);
-      note(`read_file ${p}`);
-      return ok({ path: p, content });
+      const page = pageOf(content, a.startLine ?? 1, a.endLine);
+      note(`read_file ${p} lines ${page.startLine}-${page.endLine} of ${page.totalLines}`);
+      return ok({ path: p, ...page });
     },
 
     async list_files(a: { prefix?: string }): Promise<ToolOutput> {
@@ -137,7 +153,13 @@ export function createHandlers(deps: ToolDeps) {
 
     async propose_write(a: { path: string; newContent: string; reason: string }): Promise<ToolOutput> {
       note(`propose_write ${a.path}`);
-      const r = await deps.gate.propose(a.path, a.newContent, a.reason);
+      let current: string | undefined;
+      try {
+        current = await deps.fs.read(normalizeRelPath(a.path));
+      } catch {
+        current = undefined; // the gate reports the path error
+      }
+      const r = await deps.gate.propose(a.path, matchEol(current, a.newContent), a.reason);
       note(`propose_write ${a.path} -> ${r.status}`);
       // Honest wording: a proposal is not a write. Only "applied"/"partially_applied" mean the file changed.
       return r.status === 'refused' ? err(r.message) : ok(r);
@@ -164,10 +186,33 @@ export function createHandlers(deps: ToolDeps) {
       return ok(rel);
     },
 
-    async propose_changes(a: { plan: string; groups: Array<{ intent: string; files: Array<{ path: string; newContent: string }> }> }): Promise<ToolOutput> {
+    async propose_changes(a: { plan: string; groups: Array<{ intent: string; files: Array<{ path: string; newContent?: string; edits?: Edit[] }> }> }): Promise<ToolOutput> {
       const summary = a.groups.map((g) => `${g.intent} (${g.files.map((f) => f.path).join(', ')})`).join('; ');
       note(`propose_changes ${summary}`);
-      const r = await deps.gate.proposeSet(a.plan, a.groups);
+      // Resolve edits / line endings into full new contents; the gate still decides everything.
+      const groups: Array<{ intent: string; files: Array<{ path: string; newContent: string }> }> = [];
+      for (const g of a.groups) {
+        const files: Array<{ path: string; newContent: string }> = [];
+        for (const f of g.files) {
+          if ((f.newContent === undefined) === (f.edits === undefined)) return err(`${f.path}: give either newContent or edits`);
+          let current: string | undefined;
+          try {
+            current = await deps.fs.read(normalizeRelPath(f.path));
+          } catch (e) {
+            return err(`${f.path}: ${e instanceof Error ? e.message : 'invalid path'}`);
+          }
+          if (f.edits) {
+            if (current === undefined) return err(`${f.path}: file does not exist; use newContent to create it`);
+            const r = applyEdits(current, f.edits);
+            if (!r.ok) return err(`${f.path}: ${r.error}`);
+            files.push({ path: f.path, newContent: r.text });
+          } else {
+            files.push({ path: f.path, newContent: matchEol(current, f.newContent as string) });
+          }
+        }
+        groups.push({ intent: g.intent, files });
+      }
+      const r = await deps.gate.proposeSet(a.plan, groups);
       note(`propose_changes -> ${r.status}: ${r.message}`);
       // Honest wording: a proposal is not a write. Only "applied"/"partially_applied" mean files changed.
       return r.status === 'refused' ? err(r.message) : ok(r);

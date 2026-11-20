@@ -1,0 +1,195 @@
+[
+  {
+    "scenario": "task2",
+    "run": 1,
+    "startedAt": "2026-11-20T16:42:52.559Z",
+    "durationMs": 85077,
+    "outcome": {
+      "status": "cancelled",
+      "rounds": 1
+    },
+    "finalAgent": "codecraft-fallback",
+    "switches": [
+      {
+        "from": "codecraft-primary",
+        "to": "codecraft-fallback",
+        "fromModel": "google-gemini/gemini-3-1-flash-lite",
+        "toModel": "google-gemini/gemini-3-5-flash-lite",
+        "reason": "[Model Error] Cannot connect to API: certificate has expired"
+      }
+    ],
+    "sessions": [
+      {
+        "agent": "codecraft-primary",
+        "id": "01m7wxdsgtw508xecb10mf00gt"
+      },
+      {
+        "agent": "codecraft-fallback",
+        "id": "01m7wxees2tnqqsvhvxvnh44g5"
+      }
+    ],
+    "tokens": 42631,
+    "approvals": [],
+    "review": [],
+    "activity": [],
+    "filesRead": [],
+    "totalFiles": 234,
+    "context": {
+      "budgetTokens": 6000,
+      "usedTokens": 5801,
+      "totalFiles": 234,
+      "items": [
+        {
+          "path": ".github/ISSUE_TEMPLATE/config.yml",
+          "reason": "file name matches \"config\"",
+          "tokens": 150,
+          "included": true
+        },
+        {
+          "path": "docs/config.rst",
+          "reason": "file name matches \"config\"; left out: over budget",
+          "tokens": 7474,
+          "included": false
+        },
+        {
+          "path": "src/flask/app.py",
+          "reason": "defines \"Flask\" mentioned in the request; excerpt lines 81-280 (whole file ~15832 tokens is over budget)",
+          "tokens": 2353,
+          "included": true
+        },
+        {
+          "path": "src/flask/cli.py",
+          "reason": "defines \"command\" mentioned in the request; excerpt lines 413-421 (whole file ~9599 tokens is over budget)",
+          "tokens": 151,
+          "included": true
+        },
+        {
+          "path": "src/flask/config.py",
+          "reason": "defines \"Config\" mentioned in the request; excerpt lines 50-249 (whole file ~3416 tokens is over budget)",
+          "tokens": 2081,
+          "included": true
+        },
+        {
+          "path": "tests/static/config.json",
+          "reason": "file name matches \"config\"",
+          "tokens": 32,
+          "included": true
+        },
+        {
+          "path": "tests/static/config.toml",
+          "reason": "file name matches \"config\"",
+          "tokens": 26,
+          "included": true
+        },
+        {
+          "path": "tests/test_apps/cliapp/inner1/inner2/flask.py",
+          "reason": "file name matches \"flask\"",
+          "tokens": 35,
+          "included": true
+        },
+        {
+          "path": "tests/test_config.py",
+          "reason": "defines \"Flask\" mentioned in the request; excerpt lines 202-251 (whole file ~2018 tokens is over budget)",
+          "tokens": 515,
+          "included": true
+        },
+        {
+          "path": "tests/test_cli.py",
+          "reason": "test for src/flask/cli.py; left out: over budget",
+          "tokens": 5281,
+          "included": false
+        },
+        {
+          "path": "tests/test_testing.py",
+          "reason": "test for src/flask/cli.py; left out: over budget",
+          "tokens": 2679,
+          "included": false
+        },
+        {
+          "path": "src/flask/__init__.py",
+          "reason": "imported by src/flask/cli.py; left out: over budget",
+          "tokens": 707,
+          "included": false
+        },
+        {
+          "path": "src/flask/globals.py",
+          "reason": "imported by src/flask/cli.py",
+          "tokens": 458,
+          "included": true
+        }
+      ],
+      "unresolved": []
+    },
+    "changed": [],
+    "maxEventLoopLagMs": 16,
+    "banners": [
+      "The primary model google-gemini/gemini-3-1-flash-lite stopped because the provider was unavailable or timed out. CodeCraft switched to the fallback model google-gemini/gemini-3-5-flash-lite automatically and is continuing your request."
+    ],
+    "retries": [
+      "codecraft-primary retry 1 after 6 s: [Model Error] Cannot connect to API: certificate has expired",
+      "codecraft-primary retry 2 after 16 s: [Model Error] Cannot connect to API: certificate has expired",
+      "codecraft-fallback retry 1 after 5 s: [Model Error] Cannot connect to API: certificate has expired",
+      "codecraft-fallback retry 2 after 16 s: [Model Error] Cannot connect to API: certificate has expired"
+    ],
+    "atSwitch": [
+      {
+        "changed": [],
+        "approvalsBefore": 0,
+        "reviewsBefore": 0
+      }
+    ],
+    "checks": [
+      {
+        "name": "agent run finished",
+        "pass": false,
+        "detail": "{\"status\":\"cancelled\",\"rounds\":1}"
+      },
+      {
+        "name": "TASKS.md: the diff touches at least three files",
+        "pass": false,
+        "detail": "(nothing changed)"
+      },
+      {
+        "name": "TASKS.md: pytest tests/test_cli.py -q passes",
+        "pass": true,
+        "detail": "58 passed in 0.15s"
+      },
+      {
+        "name": "TASKS.md: `flask config` prints JSON",
+        "pass": false,
+        "detail": "exit 2: Usage: python -m flask [OPTIONS] COMMAND [ARGS]...\r\nTry 'python -m flask --help' for help.\r\n\r\nError: No such command 'config'."
+      },
+      {
+        "name": "TASKS.md: `config` appears in flask --help",
+        "pass": false,
+        "detail": "A, An, environment, precedence, Variables, the, or, routes, run, shell"
+      },
+      {
+        "name": "covered by a test (added test code invokes \"config\")",
+        "pass": false,
+        "detail": "no test file changed"
+      },
+      {
+        "name": "documented in docs/cli.rst with the other built-in commands",
+        "pass": false,
+        "detail": "no docs changed"
+      },
+      {
+        "name": "full Flask test suite passes (0 failed)",
+        "pass": true,
+        "detail": "490 passed in 1.14s"
+      },
+      {
+        "name": "TrueForge session recorded",
+        "pass": true,
+        "detail": "codecraft-primary: 01m7wxdsgtw508xecb10mf00gt, codecraft-fallback: 01m7wxees2tnqqsvhvxvnh44g5"
+      },
+      {
+        "name": "fixture reset to clean after the run",
+        "pass": true,
+        "detail": "clean"
+      }
+    ],
+    "pass": false
+  }
+]

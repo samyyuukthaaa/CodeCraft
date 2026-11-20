@@ -247,6 +247,11 @@ export class WriteGate {
   get undoDepth(): number {
     return this.undoStack.length;
   }
+
+  /** Files written by change sets applied since the undo stack had `depth` entries (for honest failure messages). */
+  filesAppliedSince(depth: number): string[] {
+    return [...new Set(this.undoStack.slice(depth).flatMap((e) => e.files.map((f) => f.path)))].sort();
+  }
 }
 
 function setKey(groups: ChangeInput[]): string {

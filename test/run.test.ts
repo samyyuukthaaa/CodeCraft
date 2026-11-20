@@ -182,9 +182,12 @@ test('manifestMatches: a stored manifest with server-filled defaults (observed l
   const stored = {
     ...wanted,
     mcpServers: [{ name: EDITOR_SERVER_NAME, enableTools: ['@all'], disableTools: [], preloadTools: [], requireApprovalForTools: ['propose_write', 'propose_changes', 'run_tests'], preload: false }],
-    config: { iterationLimit: 512, sandbox: { enabled: false, fileDownloads: true } },
+    config: { iterationLimit: 60, dynamicSubAgents: { enabled: false }, askUserQuestions: { enabled: false }, sandbox: { enabled: false, fileDownloads: true }, memory: { enabled: false } },
   };
   assert.equal(manifestMatches(stored as typeof wanted, wanted), true);
+  // the server's own defaults (512 iterations, sub-agents on) are NOT what CodeCraft wants
+  assert.equal(manifestMatches({ ...stored, config: { iterationLimit: 512, dynamicSubAgents: { enabled: true } } } as typeof wanted, wanted), false);
+  assert.equal(manifestMatches({ ...stored, config: undefined } as typeof wanted, wanted), false);
   assert.equal(manifestMatches({ ...stored, mcpServers: [{ name: EDITOR_SERVER_NAME, requireApprovalForTools: ['propose_write'] }] } as typeof wanted, wanted), false);
   assert.equal(manifestMatches({ ...stored, model: { name: 'other/model' } } as typeof wanted, wanted), false);
   assert.equal(manifestMatches({ ...stored, instructions: 'old' } as typeof wanted, wanted), false);
