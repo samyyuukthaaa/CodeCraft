@@ -79,7 +79,8 @@
     "live-mcp": "node esbuild.mjs --tests && node out/test/live-mcp.js",
     "perf-index": "node esbuild.mjs --tests && node out/test/perf-index.js",
     "scenario": "node esbuild.mjs --scenarios && node out/scenarios/run.js",
-    "test:vscode": "node esbuild.mjs && node esbuild.mjs --vscode && node out/vscode/run.js"
+    "test:vscode": "node esbuild.mjs && node esbuild.mjs --vscode && node out/vscode/run.js",
+    "writeup": "node scripts/writeup-pdf.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
