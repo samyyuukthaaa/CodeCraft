@@ -84,6 +84,18 @@ function buildServer(h: Handlers): McpServer {
     async (a) => wrap(await h.propose_write(a)),
   );
   server.registerTool(
+    'submit_plan',
+    {
+      description:
+        'Required before proposing changes. Submit a short plan: a summary and the files you chose, each with an action ' +
+        '(edit = existing file you will change, create = new file, context = read only) and why. The user sees it. ' +
+        'Only files listed as edit or create may then be proposed; call it again to change the plan.',
+      inputSchema: schemas.submit_plan,
+      annotations: { readOnlyHint: true },
+    },
+    async (a) => wrap(await h.submit_plan(a)),
+  );
+  server.registerTool(
     'propose_changes',
     {
       description:
@@ -174,6 +186,6 @@ export async function startMcpServer(handlers: Handlers, token: string, port = 0
   return {
     url: `http://127.0.0.1:${boundPort}/mcp`,
     port: boundPort,
-    close: () => new Promise<void>((r) => httpServer.close(() => r())),
+    close: () => new Promise<void>((r) => { httpServer.closeAllConnections(); httpServer.close(() => r()); }),
   };
 }

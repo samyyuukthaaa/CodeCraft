@@ -38,12 +38,47 @@ export function parseRefs(text: string): ContextRef[] {
   return out;
 }
 
-const STOP = new Set(['this', 'that', 'with', 'from', 'into', 'file', 'files', 'make', 'have', 'should', 'when', 'what', 'where', 'which', 'there', 'their', 'then', 'than', 'them', 'they', 'will', 'would', 'could', 'please', 'change', 'update', 'test', 'tests', 'code', 'function', 'class', 'method', 'return', 'returns', 'value', 'add', 'fix', 'the', 'and', 'for', 'use', 'using']);
+const STOP = new Set(['this', 'that', 'with', 'from', 'into', 'file', 'files', 'make', 'have', 'should', 'when', 'what', 'where', 'which', 'there', 'their', 'then', 'than', 'them', 'they', 'will', 'would', 'could', 'please', 'change', 'update', 'test', 'tests', 'code', 'function', 'class', 'method', 'return', 'returns', 'value', 'add', 'fix', 'the', 'and', 'for', 'use', 'using', 'other', 'others', 'must', 'appear', 'appears', 'covered', 'documented', 'alongside', 'loaded', 'containing', 'prints', 'values', 'built', 'treat', 'treated', 'well', 'every', 'list', 'instruct', 'select', 'open', 'values', 'also', 'each', 'like', 'some', 'only', 'such']);
+
+// Three-letter words are kept (e.g. "CLI"), minus common ones.
+const STOP3 = new Set(['all', 'any', 'are', 'can', 'its', 'new', 'not', 'one', 'out', 'own', 'set', 'two', 'was', 'way', 'who', 'why', 'yes', 'key', 'get', 'per', 'via', 'see']);
 
 function keywords(text: string): string[] {
-  const words = text.replace(REF, ' ').match(/[A-Za-z_][A-Za-z0-9_]{3,}/g) ?? [];
-  return [...new Set(words.map((w) => w.toLowerCase()).filter((w) => !STOP.has(w)))].slice(0, 20);
+  const words = text.replace(REF, ' ').match(/[A-Za-z_][A-Za-z0-9_]{2,}/g) ?? [];
+  return [...new Set(words.map((w) => w.toLowerCase()).filter((w) => !STOP.has(w) && !(w.length === 3 && STOP3.has(w))))].slice(0, 24);
 }
+
+const MAX_OUTLINE_ENTRIES = 80;
+/** Largest share of the budget one non-explicit file may take whole. */
+const PER_FILE_SHARE = 0.35;
+const MAX_KEYWORD_EXCERPT_LINES = 80;
+
+/** Section headings of a reStructuredText or Markdown document with line numbers, or undefined. */
+function docOutline(text: string): string | undefined {
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  const heads: string[] = [];
+  for (let i = 0; i < lines.length && heads.length < MAX_OUTLINE_ENTRIES; i++) {
+    const l = lines[i] ?? '';
+    const next = lines[i + 1] ?? '';
+    if (/^#{1,4}\s+\S/.test(l)) heads.push(`L${i + 1} ${l.trim()}`);
+    else if (l.trim() && /^([=\-~^"'`#*+])\1{2,}\s*$/.test(next) && next.trim().length >= l.trim().length) heads.push(`L${i + 1} ${l.trim()}`);
+  }
+  return heads.length ? `${lines.length} lines; sections (read with read_file(path, startLine, endLine)):\n${heads.join('\n')}` : undefined;
+}
+
+/** "L531 class FlaskGroup" lines for a file's symbols (methods indented), or undefined if it has none. */
+function outlineOf(index: RepoIndex, path: string): string | undefined {
+  const f = index.files[path];
+  if (!f || f.symbols.length === 0) return undefined;
+  const lines = f.symbols
+    .slice(0, MAX_OUTLINE_ENTRIES)
+    .map((s) => `${s.parent ? '    ' : ''}L${s.line} ${s.kind} ${s.parent ? `${s.parent}.` : ''}${s.name}`);
+  const more = f.symbols.length > MAX_OUTLINE_ENTRIES ? `\n... ${f.symbols.length - MAX_OUTLINE_ENTRIES} more` : '';
+  return `${f.lines} lines; read sections with read_file(path, startLine, endLine)\n${lines.join('\n')}${more}`;
+}
+
+const isDoc = (p: string): boolean => /\.(rst|md)$/i.test(p);
+const stemOf = (p: string): string => (p.split('/').pop() ?? p).replace(/\.[^.]+$/, '').toLowerCase();
 
 interface Candidate {
   path: string;
@@ -126,26 +161,33 @@ export async function selectContext(opts: SelectOptions): Promise<{ report: Cont
   let kwAdded = 0;
   for (const kw of keywords(text)) {
     if (kwAdded >= 8) break;
-    const exact = searchSymbols(index, kw, { limit: 10 }).filter((h) => h.name.toLowerCase() === kw);
+    // Symbols defined in tests (e.g. a local `class Flask` inside a test) are not anchors; tests arrive as "test for X".
+    const exact = searchSymbols(index, kw, { limit: 20 }).filter((h) => h.name.toLowerCase() === kw && !index.files[h.path]?.isTest);
     for (const h of exact.slice(0, 2)) {
       if (!cands.has(h.path)) kwAdded++;
       add(h.path, 2, `defines "${h.name}" mentioned in the request`, symbolRange(index, h.path, h.line, h.parent));
     }
+    // File names count only for source code and documentation, not data/config files
+    // (e.g. .github/ISSUE_TEMPLATE/config.yml or tests/static/config.json for the word "config").
     for (const f of Object.values(index.files)) {
-      const stem = (f.path.split('/').pop() ?? '').replace(/\.[^.]+$/, '').toLowerCase();
-      if (stem === kw && !cands.has(f.path)) {
-        add(f.path, 2, `file name matches "${kw}"`);
+      if (f.isTest || !(f.language !== 'other' || isDoc(f.path))) continue;
+      if (stemOf(f.path) === kw && !cands.has(f.path)) {
+        add(f.path, isDoc(f.path) ? 3 : 2, isDoc(f.path) ? `documentation page named "${kw}"` : `file name matches "${kw}"`);
         kwAdded++;
       }
     }
-    if (!anchors.length) for (const c of cands.values()) if (c.priority === 2) anchors.push(c.path);
   }
+  // Without explicit references, the code files found by keywords become the anchors.
+  if (!anchors.length) for (const c of [...cands.values()].sort((x, y) => x.priority - y.priority)) if (c.priority === 2 && !isDoc(c.path)) anchors.push(c.path);
 
-  // 4: neighbours of the anchors
+  // 4: neighbours of the anchors: their tests, their documentation page, and the files they import
+  const docsByStem = new Map<string, string[]>();
+  for (const f of Object.values(index.files)) if (isDoc(f.path)) docsByStem.set(stemOf(f.path), [...(docsByStem.get(stemOf(f.path)) ?? []), f.path]);
   for (const a of [...new Set(anchors)].slice(0, 4)) {
     const rel = listRelated(index, a);
     if (!rel) continue;
     for (const t of rel.tests.slice(0, 2)) add(t, 3, `test for ${a}`);
+    for (const d of (docsByStem.get(stemOf(a)) ?? []).slice(0, 1)) add(d, 3, `documentation for ${a}`);
     for (const i of rel.imports.slice(0, 3)) add(i, 4, `imported by ${a}`);
   }
 
@@ -154,28 +196,47 @@ export async function selectContext(opts: SelectOptions): Promise<{ report: Cont
   const items: ContextItem[] = [];
   const parts: string[] = [];
   let used = 0;
+  // Explicit choices (selection, @file, @symbol: priority <= 1) may use the whole remaining budget; any
+  // other single file is capped so one big file cannot crowd out the others (it gets an excerpt or outline).
+  const perFileCap = Math.max(200, Math.floor(opts.budgetTokens * PER_FILE_SHARE));
   for (const c of ordered) {
     const content = await opts.read(c.path);
     if (content === undefined) continue;
     const safe = redact(content);
     const block = `### ${c.path} (${c.reason})\n\`\`\`\n${safe}\n\`\`\`\n`;
     const tokens = estimateTokens(block);
-    if (!c.excerptOnly && used + tokens <= opts.budgetTokens) {
+    const cap = c.priority <= 1 ? Infinity : perFileCap;
+    if (!c.excerptOnly && tokens <= cap && used + tokens <= opts.budgetTokens) {
       used += tokens;
       items.push({ path: c.path, reason: c.reason, tokens, included: true });
       parts.push(block);
       continue;
     }
     if (c.excerpt) {
-      const { start, end } = c.excerpt;
+      const start = c.excerpt.start;
+      const end = c.priority <= 1 ? c.excerpt.end : Math.min(c.excerpt.end, start + MAX_KEYWORD_EXCERPT_LINES - 1);
       const lines = safe.split('\n').slice(start - 1, end).join('\n');
       const reason = c.excerptOnly ? c.reason : `${c.reason}; excerpt lines ${start}-${end} (whole file ~${tokens} tokens is over budget)`;
       const ex = `### ${c.path} lines ${start}-${end} (${reason})\n\`\`\`\n${lines}\n\`\`\`\n`;
       const exTokens = estimateTokens(ex);
-      if (used + exTokens <= opts.budgetTokens) {
+      if (exTokens <= cap && used + exTokens <= opts.budgetTokens) {
         used += exTokens;
         items.push({ path: c.path, reason, tokens: exTokens, included: true });
         parts.push(ex);
+        continue;
+      }
+    }
+    // Last resort within the budget: an outline (classes and functions with line numbers), so the agent
+    // knows where to page with read_file(startLine) instead of not knowing the file at all.
+    const outline = outlineOf(index, c.path) ?? docOutline(safe);
+    if (outline) {
+      const reason = `${c.reason}; outline only (whole file ~${tokens} tokens is over budget)`;
+      const ob = `### ${c.path} outline (${reason})\n${outline}\n`;
+      const obTokens = estimateTokens(ob);
+      if (used + obTokens <= opts.budgetTokens) {
+        used += obTokens;
+        items.push({ path: c.path, reason, tokens: obTokens, included: true });
+        parts.push(ob);
         continue;
       }
     }

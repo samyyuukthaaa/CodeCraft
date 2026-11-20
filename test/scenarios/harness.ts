@@ -12,7 +12,7 @@ import type { RepoIndex } from '../../src/index/types';
 import { Decision, ReviewRequest, WriteGate } from '../../src/mcp/gate';
 import { NodeReadFs } from '../../src/mcp/nodeFs';
 import { startMcpServer } from '../../src/mcp/server';
-import { TestResult, createHandlers } from '../../src/mcp/tools';
+import { Plan, PlanStore, TestResult, createHandlers } from '../../src/mcp/tools';
 import { agentsApi, cancelSession, createClient, createSession, describeError, ensureAgents, registerEditorServer, sessionDriver } from '../../src/trueforge/client';
 import type { TrueForge } from '@truefoundry/trueforge-sdk';
 import { CodeCraftConfig, FALLBACK_AGENT_NAME, PRIMARY_AGENT_NAME, validateConfig } from '../../src/trueforge/config';
@@ -101,6 +101,8 @@ export interface RunRecord {
   context: ContextReport;
   changed: string[];
   maxEventLoopLagMs: number;
+  /** Every plan the agent submitted, with how many reviews had happened before it. */
+  plans: Array<{ plan: Plan; reviewsBefore: number }>;
   /** Same-agent retries after transient provider errors. */
   retries: string[];
   /** What the user sees on an automatic switch (plain words). */
@@ -182,7 +184,21 @@ export async function runScenario(s: Scenario, runNo: number, log: (l: string) =
       return { ran: true, exitCode: r.proc.code, output: (r.proc.stdout + r.proc.stderr).slice(-8000) };
     },
   };
-  const handlers = createHandlers({ fs: fsRead, gate, tests, index, onActivity: (l) => activity.push(l), onRead: (p) => filesRead.add(p) });
+  const planStore = new PlanStore();
+  const plans: Array<{ plan: Plan; reviewsBefore: number }> = [];
+  const handlers = createHandlers({
+    fs: fsRead,
+    gate,
+    tests,
+    index,
+    plan: planStore,
+    onPlan: (p) => {
+      plans.push({ plan: p, reviewsBefore: review.length });
+      log(`PLAN: ${p.summary} | ${p.files.map((f) => `${f.action} ${f.path} (${f.why})`).join(' | ')}`);
+    },
+    onActivity: (l) => activity.push(l),
+    onRead: (p) => filesRead.add(p),
+  });
   const server = await startMcpServer(handlers, scenarioToken(), SCENARIO_MCP_PORT);
 
   const sessions: RunRecord['sessions'] = [];
@@ -289,6 +305,7 @@ export async function runScenario(s: Scenario, runNo: number, log: (l: string) =
     changed,
     maxEventLoopLagMs: Math.round(maxLag),
     banners,
+    plans,
     retries,
     atSwitch: await Promise.all(atSwitch),
     ...(failMsg ? { failureMessage: failMsg } : {}),

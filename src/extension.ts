@@ -6,7 +6,7 @@ import { IndexService } from './index/service';
 import { WriteGate } from './mcp/gate';
 import { NodeReadFs } from './mcp/nodeFs';
 import { RunningServer, startMcpServer } from './mcp/server';
-import { createHandlers } from './mcp/tools';
+import { Plan, PlanStore, createHandlers } from './mcp/tools';
 import { PROPOSED_SCHEME, ProposedContentProvider, VsCodeApplier, VsCodeReviewer, VsCodeTestRunner } from './mcp/vscodeHost';
 import { AgentPanel } from './panel/AgentPanel';
 import { CodeTownPanel } from './town/CodeTownPanel';
@@ -70,6 +70,8 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
   // Paths the agent read with read_file during the current run ("files read versus total").
   const readThisRun = new Set<string>();
   let postReads: (() => void) | undefined;
+  let postPlan: ((p: Plan) => void) | undefined;
+  const planStore = new PlanStore();
 
   // Editor-tool host (created only when a folder is open). The index is persisted in VS Code's
   // workspace storage, never inside the repository.
@@ -104,6 +106,11 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
               const file = l.slice('read_file '.length).split(' ')[0];
               if (file) p.dispatchEvent({ type: 'file_read', path: file });
             }
+          },
+          plan: planStore,
+          onPlan: (pl) => {
+            out.appendLine(`[plan] ${pl.summary} | ${pl.files.map((f) => `${f.action} ${f.path}: ${f.why}`).join(' | ')}`);
+            postPlan?.(pl);
           },
           onRead: (p) => {
             readThisRun.add(p);
@@ -186,6 +193,8 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
         out.appendLine(`[context] ${report.items.filter((i) => i.included).length} file(s), ~${report.usedTokens}/${budget} tokens${report.unresolved.length ? `; not found: ${report.unresolved.join(', ')}` : ''}`);
         prompt = composePrompt(contextText, text);
         readThisRun.clear();
+        planStore.reset();
+        postPlan = (pl) => post({ type: 'plan', plan: pl });
         postReads = () => post({ type: 'reads', read: readThisRun.size, total: index.stats.totalFiles, paths: [...readThisRun] });
         postReads();
         CodeTownPanel.currentPanel()?.dispatchEvent({ type: 'run_started' });
@@ -249,6 +258,8 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
       post({ type: 'event', event: { type: 'error', summary: msg, failed: true } });
     } finally {
       abort = undefined;
+      postReads = undefined;
+      postPlan = undefined;
     }
   }
 

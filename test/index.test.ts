@@ -259,8 +259,11 @@ test('budget: explicit refs first, reasons recorded, never over budget, over-bud
     assert.equal(byPath['src/shop/cart.py']?.included, true);
     assert.equal(byPath['src/shop/cart.py']?.reason, 'referenced with @file');
     assert.match(byPath['src/shop/pricing.py']?.reason ?? '', /defines @symbol:price \(function, line 3\)/);
-    assert.equal(byPath['src/shop/big.py']?.included, false);
-    assert.match(byPath['src/shop/big.py']?.reason ?? '', /over budget/);
+    // too big to include whole: an outline (its symbols with line numbers) is included instead
+    assert.equal(byPath['src/shop/big.py']?.included, true);
+    assert.match(byPath['src/shop/big.py']?.reason ?? '', /outline only \(whole file ~\d+ tokens is over budget\)/);
+    assert.match(contextText, /### src\/shop\/big\.py outline[^\n]*\n\d+ lines; read sections[^\n]*\nL1 function huge/);
+    assert.ok(!contextText.includes('x = 1\nx = 1'), 'the big file body itself is not included');
     assert.ok(byPath['tests/test_cart.py'], 'related test is a candidate');
     // priority order: the two @file references come before the @symbol hit and related files
     assert.deepEqual(report.items.slice(0, 2).map((i) => i.path).sort(), ['src/shop/big.py', 'src/shop/cart.py']);
@@ -328,6 +331,25 @@ test('budget: the editor selection comes first, as an excerpt of exactly the sel
     assert.ok(report.items.some((i) => i.path === 'tests/test_cart.py' && /test for src\/shop\/cart\.py/.test(i.reason)));
     const outside = await selectContext({ index, text: 'x', budgetTokens: 2000, read: (p) => ws.fs.read(p), selection: { path: 'not/indexed.py', startLine: 1, endLine: 2 } });
     assert.equal(outside.report.items.length, 0);
+  } finally {
+    await ws.cleanup();
+  }
+});
+
+test('budget: per-file cap spreads the budget; big docs get a heading outline; "CLI" (3 letters) is a keyword', async () => {
+  const bigCli = 'import click\n\n' + Array.from({ length: 300 }, (_, i) => `def command_${i}():\n    return ${i}\n`).join('\n');
+  const doc = 'CLI\n===\n\n' + 'text '.repeat(3000) + '\n\nBuilt-in commands\n-----------------\n\nmore text\n';
+  const ws = await tempWorkspace({ 'src/app/cli.py': bigCli, 'docs/cli.rst': doc, 'tests/test_cli.py': 'from app.cli import command_1\n\ndef test_it():\n    assert command_1() == 1\n', 'src/app/__init__.py': '' });
+  try {
+    const { index } = await buildIndex(ws.root);
+    const { report, contextText } = await selectContext({ index, text: 'Add a new CLI command', budgetTokens: 3000, read: (p) => ws.fs.read(p) });
+    const byPath = Object.fromEntries(report.items.map((i) => [i.path, i]));
+    assert.match(byPath['src/app/cli.py']?.reason ?? '', /file name matches "cli"; outline only/);
+    assert.match(byPath['docs/cli.rst']?.reason ?? '', /documentation (page named "cli"|for src\/app\/cli\.py); outline only/);
+    assert.match(contextText, /L1 CLI\nL\d+ Built-in commands/);
+    assert.equal(byPath['tests/test_cli.py']?.included, true);
+    assert.ok(report.usedTokens <= 3000);
+    for (const i of report.items) if (i.included) assert.ok(i.tokens <= Math.floor(3000 * 0.35) || i.reason.includes('outline'), `${i.path} took ${i.tokens}`);
   } finally {
     await ws.cleanup();
   }

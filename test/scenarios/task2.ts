@@ -84,6 +84,17 @@ export const task2: Scenario = {
     const suite = await pytest();
     checks.push({ name: 'full Flask test suite passes (0 failed)', pass: suite.proc.code === 0 && suite.failed === 0 && suite.errors === 0 && suite.passed >= 490, detail: suite.summary });
 
+    // Agent quality (P3 step 1): with no files named, it found the CLI module, a test and the docs itself and
+    // showed a plan listing them BEFORE the first proposal was reviewed.
+    const first = run.plans[0];
+    const planned = new Set((first?.plan.files ?? []).filter((f) => f.action !== 'context').map((f) => f.path));
+    const proposedBeforePlan = !first || first.reviewsBefore > 0;
+    checks.push({
+      name: 'plan shown before proposing, listing src/flask/cli.py, a tests/ file and docs/cli.rst to change',
+      pass: !proposedBeforePlan && planned.has('src/flask/cli.py') && [...planned].some((p) => p.startsWith('tests/')) && planned.has('docs/cli.rst'),
+      detail: first ? `${first.plan.files.map((f) => `${f.action} ${f.path}`).join(', ')}${proposedBeforePlan ? ' (submitted after a review)' : ''}` : 'no plan submitted',
+    });
+
     // Evidence for "show the TrueForge session".
     checks.push({ name: 'TrueForge session recorded', pass: run.sessions.length > 0, detail: run.sessions.map((s) => `${s.agent}: ${s.id}`).join(', ') });
     return checks;

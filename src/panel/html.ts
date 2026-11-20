@@ -31,6 +31,8 @@ export function buildHtml(opts: { cspSource: string; nonce: string; scriptUri: s
   #context td, #context th { text-align: left; padding: 2px 6px; border-bottom: 1px solid var(--vscode-panel-border, transparent); }
   #context td.num, #context th.num { text-align: right; }
   #context tr.excluded { opacity: .6; }
+  #plan table { border-collapse: collapse; font-size: 12px; width: 100%; }
+  #plan td, #plan th { text-align: left; padding: 2px 6px; border-bottom: 1px solid var(--vscode-panel-border, transparent); }
   .muted { font-size: 12px; opacity: .8; }
 </style>
 </head>
@@ -40,6 +42,11 @@ export function buildHtml(opts: { cspSource: string; nonce: string; scriptUri: s
   <textarea id="prompt" maxlength="8000">Say hello.</textarea>
   <div><button id="send" type="button">Send</button> <span id="status" role="status" aria-live="polite">idle</span></div>
   <div id="answer" aria-live="polite"></div>
+  <section id="plan" aria-labelledby="plan-h">
+    <h4 id="plan-h">Plan</h4>
+    <p id="plan-summary" class="muted">The agent shows its plan here before proposing any change.</p>
+    <table><thead><tr><th>File</th><th>Action</th><th>Why</th></tr></thead><tbody id="plan-rows"></tbody></table>
+  </section>
   <section id="context" aria-labelledby="context-h">
     <h4 id="context-h">Context used</h4>
     <p id="context-summary" class="muted">No request yet.</p>

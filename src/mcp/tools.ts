@@ -20,10 +20,50 @@ export interface TestRunner {
   run(): Promise<TestResult>;
 }
 
+export type PlanAction = 'edit' | 'create' | 'context';
+
+export interface PlanFile {
+  path: string;
+  action: PlanAction;
+  why: string;
+}
+
+export interface Plan {
+  summary: string;
+  files: PlanFile[];
+}
+
+/**
+ * The agent's current plan for this run. When a PlanStore is supplied, proposals are refused until a plan
+ * exists, and only files the plan lists as "edit" or "create" may be proposed. Reset at the start of a run.
+ */
+export class PlanStore {
+  private plan: Plan | undefined;
+  reset(): void {
+    this.plan = undefined;
+  }
+  get(): Plan | undefined {
+    return this.plan;
+  }
+  set(p: Plan): void {
+    this.plan = p;
+  }
+  /** An error message when `paths` may not be proposed, or undefined when they may. */
+  check(paths: string[]): string | undefined {
+    if (!this.plan) return 'call submit_plan first: list the files you chose (edit, create or context) and why, before proposing changes';
+    const allowed = new Set(this.plan.files.filter((f) => f.action !== 'context').map((f) => f.path));
+    const missing = paths.filter((p) => !allowed.has(p));
+    return missing.length ? `not in your plan as edit/create: ${missing.join(', ')}; call submit_plan again including them` : undefined;
+  }
+}
+
 export interface ToolDeps {
   fs: ReadFs;
   gate: WriteGate;
   tests: TestRunner;
+  /** Plan-before-propose enforcement (extension and scenarios); omitted in low-level tests. */
+  plan?: PlanStore;
+  onPlan?: (plan: Plan) => void;
   onActivity?: (line: string) => void;
   /** Repository index (incrementally rebuilt on each call). Optional so the editor tools work without it. */
   index?: { get(): Promise<RepoIndex> };
@@ -89,6 +129,19 @@ export const schemas = {
       .min(1)
       .max(10),
   },
+  submit_plan: {
+    summary: z.string().min(1).max(1000).describe('One or two sentences: what you will change and how'),
+    files: z
+      .array(
+        z.object({
+          path: z.string().min(1).max(400).describe('Workspace-relative file path'),
+          action: z.enum(['edit', 'create', 'context']).describe('edit = existing file you will change, create = new file, context = read only'),
+          why: z.string().min(3).max(300).describe('Why this file is needed'),
+        }),
+      )
+      .min(1)
+      .max(20),
+  },
   run_tests: {},
   search_symbols: {
     query: z.string().min(1).max(200).describe("Symbol name or prefix; Class.method narrows to methods of a class"),
@@ -152,6 +205,16 @@ export function createHandlers(deps: ToolDeps) {
     },
 
     async propose_write(a: { path: string; newContent: string; reason: string }): Promise<ToolOutput> {
+      if (deps.plan) {
+        let p = a.path;
+        try {
+          p = normalizeRelPath(a.path);
+        } catch {
+          /* the gate reports path errors */
+        }
+        const planError = deps.plan.check([p]);
+        if (planError) return err(planError);
+      }
       note(`propose_write ${a.path}`);
       let current: string | undefined;
       try {
@@ -187,6 +250,20 @@ export function createHandlers(deps: ToolDeps) {
     },
 
     async propose_changes(a: { plan: string; groups: Array<{ intent: string; files: Array<{ path: string; newContent?: string; edits?: Edit[] }> }> }): Promise<ToolOutput> {
+      if (deps.plan) {
+        const paths: string[] = [];
+        for (const g of a.groups) {
+          for (const f of g.files) {
+            try {
+              paths.push(normalizeRelPath(f.path));
+            } catch {
+              paths.push(f.path); // reported below with the real path error
+            }
+          }
+        }
+        const planError = deps.plan.check(paths);
+        if (planError) return err(planError);
+      }
       const summary = a.groups.map((g) => `${g.intent} (${g.files.map((f) => f.path).join(', ')})`).join('; ');
       note(`propose_changes ${summary}`);
       // Resolve edits / line endings into full new contents; the gate still decides everything.
@@ -216,6 +293,27 @@ export function createHandlers(deps: ToolDeps) {
       note(`propose_changes -> ${r.status}: ${r.message}`);
       // Honest wording: a proposal is not a write. Only "applied"/"partially_applied" mean files changed.
       return r.status === 'refused' ? err(r.message) : ok(r);
+    },
+
+    async submit_plan(a: { summary: string; files: Array<{ path: string; action: PlanAction; why: string }> }): Promise<ToolOutput> {
+      const files: PlanFile[] = [];
+      for (const f of a.files) {
+        let p: string;
+        try {
+          p = normalizeRelPath(f.path);
+        } catch (e) {
+          return err(`${f.path}: ${e instanceof Error ? e.message : 'invalid path'}`);
+        }
+        const exists = (await deps.fs.read(p)) !== undefined;
+        if (f.action === 'create' && exists) return err(`${p} already exists; use action "edit"`);
+        if (f.action !== 'create' && !exists) return err(`${p} does not exist; use action "create" for new files`);
+        files.push({ path: p, action: f.action, why: redact(f.why) });
+      }
+      const plan: Plan = { summary: redact(a.summary), files };
+      deps.plan?.set(plan);
+      deps.onPlan?.(plan);
+      note(`submit_plan ${files.map((f) => `${f.action}:${f.path}`).join(', ')}`);
+      return ok({ accepted: true, files: files.map((f) => `${f.action} ${f.path}`) });
     },
 
     async run_tests(): Promise<ToolOutput> {

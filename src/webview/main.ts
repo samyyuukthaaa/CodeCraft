@@ -14,6 +14,8 @@ const MAX_ROWS = 500;
 const ctxSummary = document.getElementById('context-summary') as HTMLElement;
 const ctxRows = document.getElementById('context-rows') as HTMLElement;
 const reads = document.getElementById('reads') as HTMLElement;
+const planSummary = document.getElementById('plan-summary') as HTMLElement;
+const planRows = document.getElementById('plan-rows') as HTMLElement;
 
 function cell(row: HTMLElement, text: string, cls?: string): void {
   const td = document.createElement('td');
@@ -24,6 +26,8 @@ function cell(row: HTMLElement, text: string, cls?: string): void {
 
 send.addEventListener('click', () => {
   answer.textContent = '';
+  planSummary.textContent = 'Waiting for the agent to submit its plan...';
+  planRows.textContent = '';
   vscode.postMessage({ type: 'prompt', text: prompt.value });
 });
 
@@ -48,6 +52,18 @@ window.addEventListener('message', (e: MessageEvent<HostToWebview>) => {
       ctxRows.appendChild(tr);
     }
     reads.textContent = '';
+    return;
+  }
+  if (m.type === 'plan') {
+    planSummary.textContent = m.plan.summary;
+    planRows.textContent = '';
+    for (const f of m.plan.files) {
+      const tr = document.createElement('tr');
+      cell(tr, f.path);
+      cell(tr, f.action);
+      cell(tr, f.why);
+      planRows.appendChild(tr);
+    }
     return;
   }
   if (m.type === 'reads') {
