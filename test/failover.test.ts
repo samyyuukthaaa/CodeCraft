@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { TurnEvent } from '../src/trueforge/client';
 import { AgentAttempt, CONTINUE_PROMPT, FAILOVER_NOTE, SwitchInfo, runWithFailover } from '../src/trueforge/failover';
-import { MAX_RETRIES, retryDelayMs } from '../src/trueforge/errors';
+import { MAX_RATE_LIMIT_WAITS, MAX_RETRIES, retryDelayMs } from '../src/trueforge/errors';
 import type { TurnDriver } from '../src/trueforge/run';
 
 const ev = (e: unknown): TurnEvent => e as TurnEvent;
@@ -140,6 +140,69 @@ test('retry: unavailable (503) is retried 3 times with backoff, then fails over'
   assert.equal(r.agent, 'fallback');
   assert.equal(r.switches.length, 1);
   assert.equal(prompts.filter((p) => p.startsWith('primary:')).length, 4);
+});
+
+/** A turn that made progress (a tool ran) and then hit the per-minute quota, as observed live. */
+const progressThenRate = (): TurnEvent[] => [
+  ev({ type: 'turn.created', id: 'a', turnId: 'T' }),
+  ev({ type: 'tool.response', id: 'r', threadId: 'main', toolCallId: 'c', content: '{}' }),
+  ev({ type: 'turn.done', id: 'b', threadId: null, state: { status: 'error', message: RATE } }),
+];
+
+test('retry: per-minute 429s with progress in between keep going beyond 3 (a long task that advances is not dropped)', async () => {
+  const waits: number[] = [];
+  const turns = [...Array.from({ length: 5 }, progressThenRate), okTurn('finished')];
+  const r = await runWithFailover('x', [seqAttempt('primary', turns, [], []), seqAttempt('fallback', [okTurn('unused')], [], [])], {
+    approver,
+    delay: async (ms) => {
+      waits.push(ms);
+    },
+    rand: () => 0,
+  });
+  assert.equal(r.agent, 'primary');
+  assert.equal(r.outcome.status, 'done');
+  assert.equal(waits.length, 5);
+  assert.equal(r.switches.length, 0);
+});
+
+test('retry: consecutive 429s WITHOUT progress stop after 3, then fail over', async () => {
+  const waits: number[] = [];
+  const r = await runWithFailover('x', [seqAttempt('primary', Array.from({ length: 6 }, () => errorTurn(RATE)), [], []), seqAttempt('fallback', [okTurn('ok')], [], [])], {
+    approver,
+    delay: async (ms) => {
+      waits.push(ms);
+    },
+    rand: () => 0,
+  });
+  assert.equal(waits.length, 3);
+  assert.equal(r.agent, 'fallback');
+});
+
+test('retry: rate-limit waits are hard-capped at 10 per agent per run even with progress', async () => {
+  const waits: number[] = [];
+  const r = await runWithFailover('x', [seqAttempt('primary', Array.from({ length: 20 }, progressThenRate), [], []), seqAttempt('fallback', [okTurn('ok')], [], [])], {
+    approver,
+    delay: async (ms) => {
+      waits.push(ms);
+    },
+    rand: () => 0,
+  });
+  assert.equal(waits.length, MAX_RATE_LIMIT_WAITS);
+  assert.equal(r.agent, 'fallback');
+});
+
+test('retry: 503s stay limited to 3 per run even with progress in between', async () => {
+  const waits: number[] = [];
+  const progressThen503 = (): TurnEvent[] => [ev({ type: 'tool.response', id: 'r', threadId: 'main', toolCallId: 'c', content: '{}' }), ev({ type: 'turn.done', id: 'b', threadId: null, state: { status: 'error', message: DEMAND } })];
+  const r = await runWithFailover('x', [seqAttempt('primary', Array.from({ length: 6 }, progressThen503), [], []), seqAttempt('fallback', [okTurn('ok')], [], [])], {
+    approver,
+    delay: async (ms) => {
+      waits.push(ms);
+    },
+    rand: () => 0,
+  });
+  assert.deepEqual(waits, [5000, 15000, 30000]);
+  assert.equal(r.agent, 'fallback');
 });
 
 test('retry: an invalid key is never retried; it fails over at once', async () => {

@@ -10,7 +10,7 @@
 // and a new per-hunk decision for every write, so accepted changes stay applied and are re-proposed only if
 // the agent reads the current file and proposes something different.
 import { redact } from '../util/redact';
-import { classifyError, retryDelayMs } from './errors';
+import { MAX_RATE_LIMIT_WAITS, classifyError, retryDelayMs } from './errors';
 import { RunOptions, RunOutcome, TurnDriver, runWithApprovals } from './run';
 
 export interface AgentAttempt {
@@ -90,18 +90,42 @@ export async function runWithFailover(
     let outcome: RunOutcome;
     let prompt = i === 0 ? text : `${text}\n\n${FAILOVER_NOTE}`;
     let driver: TurnDriver | undefined;
-    for (let r = 0; ; r++) {
+    // Retry budgets (see errors.ts): unavailable/timeout at most MAX_RETRIES per run in total; rate limits
+    // count only CONSECUTIVE failures without progress (a long task that hits a per-minute quota several
+    // times while advancing keeps going), with a hard cap of MAX_RATE_LIMIT_WAITS per agent per run.
+    let transient = 0;
+    let rateStreak = 0;
+    let rateWaits = 0;
+    for (let n = 0; ; n++) {
+      let progress = 0;
       try {
         driver ??= await a.driver();
-        outcome = await runWithApprovals(prompt, { ...opts, driver });
+        outcome = await runWithApprovals(prompt, {
+          ...opts,
+          driver,
+          onEvent: (ev) => {
+            if (ev.type === 'tool.response') progress++;
+            opts.onEvent?.(ev);
+          },
+        });
       } catch (e) {
         if (opts.signal?.aborted) return { outcome: { status: 'cancelled', rounds: 0 }, agent: a.agent, switches, retries };
         outcome = { status: 'error', message: redact(e instanceof Error ? e.message : String(e)), rounds: 0 };
       }
       if (outcome.status !== 'error') break;
-      const delayMs = retryDelayMs(outcome.message, r, opts.rand);
+      const cls = classifyError(outcome.message).cls;
+      let delayMs: number | undefined;
+      if (cls === 'rate_limit') {
+        rateStreak = progress > 0 ? 0 : rateStreak;
+        delayMs = rateWaits < MAX_RATE_LIMIT_WAITS ? retryDelayMs(outcome.message, rateStreak, opts.rand) : undefined;
+        rateStreak++;
+        rateWaits++;
+      } else {
+        delayMs = retryDelayMs(outcome.message, transient, opts.rand);
+        transient++;
+      }
       if (delayMs === undefined || opts.signal?.aborted) break;
-      const info: RetryInfo = { agent: a.agent, model: a.model, retry: r + 1, delayMs, reason: outcome.message };
+      const info: RetryInfo = { agent: a.agent, model: a.model, retry: n + 1, delayMs, reason: outcome.message };
       retries.push(info);
       opts.onRetry?.(info);
       await wait(delayMs, opts.signal);

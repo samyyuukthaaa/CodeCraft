@@ -30,6 +30,8 @@ export function classifyError(message: string): Classified {
 }
 
 export const MAX_RETRIES = 3;
+/** Hard cap on rate-limit waits per agent per run, even while the agent keeps making progress. */
+export const MAX_RATE_LIMIT_WAITS = 10;
 const MAX_HINT_MS = 65_000;
 
 /**
