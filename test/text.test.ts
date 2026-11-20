@@ -49,6 +49,26 @@ test('applyEdits: exact-once matching, line endings preserved, clear errors', ()
   assert.deepEqual(seq, { ok: true, text: 'AB\n' });
 });
 
+test('applyEdits: over-escaped find/replace (observed live) is decoded once, only when the exact text is absent', () => {
+  const crlf = '    if add_default_commands:\r\n        self.add_command(run_command)\r\n        self.add_command(shell_command)\r\n';
+  // exactly what gemini-3-1-flash-lite sent: literal backslash-n instead of newlines, in find AND replace
+  const find = '    if add_default_commands:\\n        self.add_command(run_command)\\n';
+  const replace = '    if add_default_commands:\\n        self.add_command(run_command)\\n        self.add_command(config_command)\\n';
+  assert.deepEqual(applyEdits(crlf, [{ find, replace }]), {
+    ok: true,
+    text: '    if add_default_commands:\r\n        self.add_command(run_command)\r\n        self.add_command(config_command)\r\n        self.add_command(shell_command)\r\n',
+  });
+  // a replacement that already has real newlines is NOT decoded (keeps a deliberate "\n" inside a string)
+  const r2 = applyEdits('x = 1\ny = 2\n', [{ find: 'x = 1\\ny = 2', replace: 'x = 1\ny = "a\\nb"' }]);
+  assert.deepEqual(r2, { ok: true, text: 'x = 1\ny = "a\\nb"\n' });
+  // literal backslash-n text that really exists in the file is matched as written, not decoded
+  const code = 'print("a\\nb")\nprint("a")\n';
+  assert.deepEqual(applyEdits(code, [{ find: 'print("a\\nb")', replace: 'print("c\\nd")' }]), { ok: true, text: 'print("c\\nd")\nprint("a")\n' });
+  // decoded text must still match exactly once
+  const twice = 'a\nb\na\nb\n';
+  assert.match((applyEdits(twice, [{ find: 'a\\nb', replace: 'x' }]) as { error: string }).error, /not found/);
+});
+
 test('tools: read_file pages a large file; propose_changes with edits keeps CRLF and only changes the edited lines', async () => {
   const ws = await tempWorkspace({ 'big.py': BIG_CRLF, 'crlf.py': 'def f():\r\n    return 1\r\n' });
   try {

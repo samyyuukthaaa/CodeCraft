@@ -58,17 +58,44 @@ export interface Edit {
   replace: string;
 }
 
+/**
+ * Decodes one level of backslash escaping (\n, \t, \r, \\, \", \'). Used ONLY as a fallback for text that
+ * a model over-escaped: observed live, gemini-3-1-flash-lite sent find strings containing the two characters
+ * backslash and n instead of newlines in 30 consecutive proposals, so every edit was "not found".
+ */
+export function unescapeOnce(s: string): string {
+  return s.replace(/\\([ntr\\"'])/g, (_m, c: string) => ({ n: '\n', t: '\t', r: '\r', '\\': '\\', '"': '"', "'": "'" })[c] as string);
+}
+
+const count = (hay: string, needle: string): number => {
+  let n = 0;
+  for (let i = hay.indexOf(needle); i >= 0; i = hay.indexOf(needle, i + 1)) n++;
+  return n;
+};
+
 /** Applies find/replace edits; each `find` must occur exactly once (compared with \n line endings). */
 export function applyEdits(current: string, edits: Edit[]): { ok: true; text: string } | { ok: false; error: string } {
   const eol = eolOf(current);
   let work = toLf(current);
   for (const [i, e] of edits.entries()) {
-    const find = toLf(e.find);
+    let find = toLf(e.find);
+    let replace = toLf(e.replace);
     if (!find) return { ok: false, error: `edit ${i + 1}: "find" is empty` };
+    // Exact text first. Only if it is not found AND it has no real newline, try it as over-escaped text; the
+    // decoded form must then match exactly once. The replacement is decoded too only if it also has no real
+    // newline (so intentional escapes such as "a\nb" inside a code string stay as written).
+    if (count(work, find) === 0 && !find.includes('\n') && /\\[ntr\\"']/.test(find)) {
+      const decoded = unescapeOnce(find);
+      if (count(work, decoded) === 1) {
+        find = decoded;
+        if (!replace.includes('\n')) replace = unescapeOnce(replace);
+      }
+    }
+    const n = count(work, find);
+    if (n === 0) return { ok: false, error: `edit ${i + 1}: "find" text not found (it must match the current file exactly, including indentation, with real newlines): ${JSON.stringify(find.slice(0, 80))}` };
+    if (n > 1) return { ok: false, error: `edit ${i + 1}: "find" text occurs more than once; include more surrounding lines so it is unique` };
     const first = work.indexOf(find);
-    if (first < 0) return { ok: false, error: `edit ${i + 1}: "find" text not found (it must match the current file exactly, including indentation): ${JSON.stringify(find.slice(0, 80))}` };
-    if (work.indexOf(find, first + 1) >= 0) return { ok: false, error: `edit ${i + 1}: "find" text occurs more than once; include more surrounding lines so it is unique` };
-    work = work.slice(0, first) + toLf(e.replace) + work.slice(first + find.length);
+    work = work.slice(0, first) + replace + work.slice(first + find.length);
   }
   return { ok: true, text: toEol(work, eol) };
 }

@@ -87,3 +87,24 @@ A stopped 3-run batch of task1 kept running in the background (only its shell wr
 | task3-nofallback | 1 | PASS | codecraft-test-primary-badkey | (none) | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 0/234 | n/a | 1 s | 13 ms | - |
 | task3-nofallback | 2 | PASS | codecraft-test-primary-badkey | (none) | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 0/234 | n/a | 0 s | 11 ms | - |
 | task3-nofallback | 3 | PASS | codecraft-test-primary-badkey | (none) | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 0/234 | n/a | 1 s | 13 ms | - |
+
+### task2: 3 run(s), 2026-11-20T19:32:03.273Z
+
+| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| task2 | 1 | FAIL | codecraft-fallback (failover x1) | src/flask/cli.py<br>tests/test_config_cli.py | src/flask/app.py<br>src/flask/cli.py<br>src/flask/config.py<br>docs/cli.rst<br>docs/config.rst<br>tests/test_async.py<br>tests/test_cli.py<br>tests/test_config.py<br>tests/test_testing.py<br>src/flask/__init__.py | 2/234 | 3295484 | 902 s | 21 ms | agent run finished; TASKS.md: the diff touches at least three files; TASKS.md: pytest tests/test_cli.py -q passes; TASKS.md: `flask config` prints JSON; TASKS.md: `config` appears in flask --help; documented in docs/cli.rst with the other built-in commands; full Flask test suite passes (0 failed) |
+
+### task3-fallback, task3-nofallback: 3 run(s), 2026-11-20T19:32:05.392Z
+
+| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| task3-fallback | 1 | FAIL | - | (none) | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 0/234 | n/a | 1 s | 7 ms | exactly one automatic switch, from the invalid-key agent to codecraft-fallback; the switch was caused by the rejected key (HTTP 401); no user action before the takeover (0 approvals, 0 reviews) and nothing written at that moment; banner says in plain words that the primary key was rejected and the fallback took over; TASKS.md: the second configured model took over (run finished on codecraft-fallback); the fallback did the work: it proposed a change to src/flask/helpers.py (rejected by the scripted user) |
+| task3-nofallback | 1 | FAIL | - | (none) | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 0/234 | n/a | 0 s | 0 ms | TASKS.md: the user sees a clear message (key rejected, where to fix it, nothing changed) |
+
+### task1: 3 run(s), 2026-11-20T19:41:10.379Z
+
+| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| task1 | 1 | PASS | codecraft-fallback (failover x1) | src/flask/helpers.py<br>tests/test_helpers.py | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 2/234 | 208862 | 330 s | 16 ms | - |
+| task1 | 2 | PASS | codecraft-fallback (failover x1) | src/flask/helpers.py<br>tests/test_helpers.py | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 2/234 | 63692 | 107 s | 130 ms | - |
+| task1 | 3 | PASS | codecraft-fallback (failover x1) | src/flask/helpers.py<br>tests/test_helpers.py | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 2/234 | 64152 | 107 s | 136 ms | - |

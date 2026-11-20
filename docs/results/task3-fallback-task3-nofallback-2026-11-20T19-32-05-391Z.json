@@ -1,0 +1,230 @@
+[
+  {
+    "scenario": "task3-fallback",
+    "run": 1,
+    "startedAt": "2026-11-20T19:32:04.459Z",
+    "durationMs": 504,
+    "outcome": {
+      "status": "error",
+      "message": "TrueForge HTTP 400: BadRequestError\nStatus code: 400\nBody: {\n  \"error\": {\n    \"message\": \"Outbound URL blocked for host \\\"api.groq.com\\\"\"\n  }\n}",
+      "rounds": 0
+    },
+    "finalAgent": "",
+    "switches": [],
+    "sessions": [],
+    "tokens": 0,
+    "approvals": [],
+    "review": [],
+    "activity": [],
+    "filesRead": [],
+    "totalFiles": 234,
+    "context": {
+      "budgetTokens": 6000,
+      "usedTokens": 1980,
+      "totalFiles": 234,
+      "items": [
+        {
+          "path": "src/flask/helpers.py",
+          "reason": "selected in the editor (lines 28-35)",
+          "tokens": 98,
+          "included": true
+        },
+        {
+          "path": "tests/test_converters.py",
+          "reason": "test for src/flask/helpers.py",
+          "tokens": 302,
+          "included": true
+        },
+        {
+          "path": "tests/test_helpers.py",
+          "reason": "test for src/flask/helpers.py; outline only (whole file ~2919 tokens is over budget)",
+          "tokens": 734,
+          "included": true
+        },
+        {
+          "path": "src/flask/globals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 459,
+          "included": true
+        },
+        {
+          "path": "src/flask/signals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 209,
+          "included": true
+        },
+        {
+          "path": "src/flask/wrappers.py",
+          "reason": "imported by src/flask/helpers.py; outline only (whole file ~2434 tokens is over budget)",
+          "tokens": 178,
+          "included": true
+        }
+      ],
+      "unresolved": []
+    },
+    "changed": [],
+    "maxEventLoopLagMs": 7,
+    "banners": [],
+    "plans": [],
+    "retries": [],
+    "atSwitch": [],
+    "failureMessage": " failed: TrueForge HTTP 400: BadRequestError\nStatus code: 400\nBody: {\n  \"error\": {\n    \"message\": \"Outbound URL blocked for host \\\"api.groq.com\\\"\"\n  }\n} Nothing was changed in your files.",
+    "checks": [
+      {
+        "name": "exactly one automatic switch, from the invalid-key agent to codecraft-fallback",
+        "pass": false,
+        "detail": "no switch"
+      },
+      {
+        "name": "the switch was caused by the rejected key (HTTP 401)",
+        "pass": false,
+        "detail": "-"
+      },
+      {
+        "name": "no user action before the takeover (0 approvals, 0 reviews) and nothing written at that moment",
+        "pass": false,
+        "detail": "no snapshot"
+      },
+      {
+        "name": "banner says in plain words that the primary key was rejected and the fallback took over",
+        "pass": false,
+        "detail": "no banner"
+      },
+      {
+        "name": "TASKS.md: the second configured model took over (run finished on codecraft-fallback)",
+        "pass": false,
+        "detail": "error on "
+      },
+      {
+        "name": "the fallback did the work: it proposed a change to src/flask/helpers.py (rejected by the scripted user)",
+        "pass": false,
+        "detail": "no proposal"
+      },
+      {
+        "name": "TASKS.md: git status shows no files changed",
+        "pass": true,
+        "detail": "clean"
+      },
+      {
+        "name": "TASKS.md: editor stays responsive (max event-loop lag < 250 ms)",
+        "pass": true,
+        "detail": "7 ms"
+      },
+      {
+        "name": "the dummy key never appears in any message, banner, log or result",
+        "pass": true,
+        "detail": "not present"
+      },
+      {
+        "name": "fixture reset to clean after the run",
+        "pass": true,
+        "detail": "clean"
+      }
+    ],
+    "pass": false
+  },
+  {
+    "scenario": "task3-nofallback",
+    "run": 1,
+    "startedAt": "2026-11-20T19:32:04.964Z",
+    "durationMs": 427,
+    "outcome": {
+      "status": "error",
+      "message": "TrueForge HTTP 400: BadRequestError\nStatus code: 400\nBody: {\n  \"error\": {\n    \"message\": \"Outbound URL blocked for host \\\"api.groq.com\\\"\"\n  }\n}",
+      "rounds": 0
+    },
+    "finalAgent": "",
+    "switches": [],
+    "sessions": [],
+    "tokens": 0,
+    "approvals": [],
+    "review": [],
+    "activity": [],
+    "filesRead": [],
+    "totalFiles": 234,
+    "context": {
+      "budgetTokens": 6000,
+      "usedTokens": 1980,
+      "totalFiles": 234,
+      "items": [
+        {
+          "path": "src/flask/helpers.py",
+          "reason": "selected in the editor (lines 28-35)",
+          "tokens": 98,
+          "included": true
+        },
+        {
+          "path": "tests/test_converters.py",
+          "reason": "test for src/flask/helpers.py",
+          "tokens": 302,
+          "included": true
+        },
+        {
+          "path": "tests/test_helpers.py",
+          "reason": "test for src/flask/helpers.py; outline only (whole file ~2919 tokens is over budget)",
+          "tokens": 734,
+          "included": true
+        },
+        {
+          "path": "src/flask/globals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 459,
+          "included": true
+        },
+        {
+          "path": "src/flask/signals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 209,
+          "included": true
+        },
+        {
+          "path": "src/flask/wrappers.py",
+          "reason": "imported by src/flask/helpers.py; outline only (whole file ~2434 tokens is over budget)",
+          "tokens": 178,
+          "included": true
+        }
+      ],
+      "unresolved": []
+    },
+    "changed": [],
+    "maxEventLoopLagMs": 0,
+    "banners": [],
+    "plans": [],
+    "retries": [],
+    "atSwitch": [],
+    "failureMessage": " failed: TrueForge HTTP 400: BadRequestError\nStatus code: 400\nBody: {\n  \"error\": {\n    \"message\": \"Outbound URL blocked for host \\\"api.groq.com\\\"\"\n  }\n} Nothing was changed in your files.",
+    "checks": [
+      {
+        "name": "the run fails (no fallback configured) without asking the user anything",
+        "pass": true,
+        "detail": "error, switches 0, approvals 0, reviews 0"
+      },
+      {
+        "name": "TASKS.md: the user sees a clear message (key rejected, where to fix it, nothing changed)",
+        "pass": false,
+        "detail": " failed: TrueForge HTTP 400: BadRequestError\nStatus code: 400\nBody: {\n  \"error\": {\n    \"message\": \"Outbound URL blocked for host \\\"api.groq.com\\\"\"\n  }\n} Nothing was changed in your files."
+      },
+      {
+        "name": "TASKS.md: git status shows no files changed",
+        "pass": true,
+        "detail": "clean"
+      },
+      {
+        "name": "TASKS.md: editor stays responsive (max event-loop lag < 250 ms)",
+        "pass": true,
+        "detail": "0 ms"
+      },
+      {
+        "name": "the dummy key never appears in any message, banner, log or result",
+        "pass": true,
+        "detail": "not present"
+      },
+      {
+        "name": "fixture reset to clean after the run",
+        "pass": true,
+        "detail": "clean"
+      }
+    ],
+    "pass": false
+  }
+]
