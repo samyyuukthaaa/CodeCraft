@@ -1,6 +1,7 @@
 // Thin wrapper over @truefoundry/trueforge-sdk. TrueForge owns the agent loop and all model calls;
 // this module only registers agents, creates sessions and streams turn events.
 import { TrueForge, TrueForgeApi, TrueForgeError } from '@truefoundry/trueforge-sdk';
+import { APPROVAL_TOOLS, EDITOR_SERVER_NAME } from '../mcp/constants';
 import {
   AGENT_DESCRIPTION,
   AGENT_INSTRUCTIONS,
@@ -24,8 +25,26 @@ export function createClient(cfg: CodeCraftConfig): TrueForge {
   return new TrueForge({ baseUrl: v.baseUrl });
 }
 
-function manifestFor(model: string): TrueForgeApi.AgentSpec {
-  return { model: { name: model }, instructions: AGENT_INSTRUCTIONS };
+export function manifestFor(model: string): TrueForgeApi.AgentSpec {
+  return {
+    model: { name: model },
+    instructions: AGENT_INSTRUCTIONS,
+    // propose_write and run_tests make TrueForge pause the turn for approval before they run.
+    mcpServers: [{ name: EDITOR_SERVER_NAME, requireApprovalForTools: [...APPROVAL_TOOLS] }],
+  };
+}
+
+/** Registers (or updates) the local editor MCP server in TrueForge. The bearer token is never logged. */
+export async function registerEditorServer(client: TrueForge, url: string, token: string): Promise<void> {
+  await client.settings.mcpServers.createOrUpdate({
+    manifest: {
+      type: 'remote',
+      name: EDITOR_SERVER_NAME,
+      description: 'CodeCraft editor tools (read, search, gated write, tests). Managed by the CodeCraft extension.',
+      url,
+      auth: { type: 'header', headers: { Authorization: `Bearer ${token}` } },
+    },
+  });
 }
 
 export type EnsureOutcome = 'created' | 'updated' | 'unchanged';
@@ -45,7 +64,13 @@ export async function ensureAgent(api: AgentsApi, name: string, model: string): 
     return 'created';
   }
   const m = existing.manifest;
-  if (m.model.name === model && m.instructions === AGENT_INSTRUCTIONS) return 'unchanged';
+  if (
+    m.model.name === model &&
+    m.instructions === AGENT_INSTRUCTIONS &&
+    JSON.stringify(m.mcpServers ?? []) === JSON.stringify(manifest.mcpServers)
+  ) {
+    return 'unchanged';
+  }
   await api.update(existing.id, { description: AGENT_DESCRIPTION, manifest });
   return 'updated';
 }
@@ -73,19 +98,31 @@ export async function createSession(client: TrueForge, agentName: string): Promi
   return res.data.id;
 }
 
+// The SDK types stream input as user messages only, but a resumed turn carries user.tool_approval items
+// (LegacyTurnInputItem). Verified against the live server in docs/TRUEFORGE_NOTES.md.
+export type TurnInput = TrueForgeApi.UserMessage | TrueForgeApi.UserToolApprovalInputEvent;
+
 /** Streams one turn's events. Provider failures arrive as a `turn.done` event with status "error". */
-export async function* streamTurn(
+export async function* streamTurnInput(
   client: TrueForge,
   sessionId: string,
-  text: string,
+  input: TurnInput[],
   signal?: AbortSignal,
 ): AsyncGenerator<TurnEvent> {
   const stream = await client.sessions.createTurnStream(
     sessionId,
-    { input: [{ type: 'user.message', content: text }] },
+    { input: input as unknown as TrueForgeApi.CreateTurnSessionsStreamRequestInputItem[] },
     { abortSignal: signal },
   );
   for await (const ev of stream) yield ev;
+}
+
+export function streamTurn(client: TrueForge, sessionId: string, text: string, signal?: AbortSignal): AsyncGenerator<TurnEvent> {
+  return streamTurnInput(client, sessionId, [{ type: 'user.message', content: text }], signal);
+}
+
+export async function cancelSession(client: TrueForge, sessionId: string): Promise<void> {
+  await client.sessions.cancel(sessionId, {});
 }
 
 /** Human-readable text for an SDK or network error. Never includes request headers. */

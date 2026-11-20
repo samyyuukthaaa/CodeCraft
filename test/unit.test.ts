@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { TrueForgeApi } from '@truefoundry/trueforge-sdk';
 import { DEFAULT_CONFIG, FALLBACK_AGENT_NAME, PRIMARY_AGENT_NAME, validateBaseUrl, validateConfig } from '../src/trueforge/config';
-import { AgentsApi, ensureAgents } from '../src/trueforge/client';
+import { AgentsApi, ensureAgents, manifestFor } from '../src/trueforge/client';
 import { toDisplay } from '../src/trueforge/events';
 import { parseWebviewMessage } from '../src/panel/protocol';
 import { buildHtml } from '../src/panel/html';
@@ -57,9 +57,8 @@ test('ensureAgents: registers two agents with identical instructions and differe
 test('ensureAgents: idempotent when unchanged, updates when the model changed', async () => {
   const first = fakeAgents([]);
   await ensureAgents(first.api, DEFAULT_CONFIG);
-  const instructions = first.calls[0]!.split(':').slice(3).join(':');
   const mk = (name: string, id: string, model: string) =>
-    ({ id, name, description: '', manifest: { model: { name: model }, instructions } }) as unknown as TrueForgeApi.Agent;
+    ({ id, name, description: '', manifest: manifestFor(model) }) as unknown as TrueForgeApi.Agent;
   const same = fakeAgents([
     mk(PRIMARY_AGENT_NAME, 'a1', DEFAULT_CONFIG.primaryModel),
     mk(FALLBACK_AGENT_NAME, 'a2', DEFAULT_CONFIG.fallbackModel),

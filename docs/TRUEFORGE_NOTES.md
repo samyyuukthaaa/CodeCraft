@@ -43,6 +43,14 @@ state.metrics  total_input_tokens = 0, total_output_tokens = 0
 
 Not yet observed (UNVERIFIED, needed before P4's classifier): invalid or revoked key, rate limit (and any retry hint), bad output, context too large. Only the 503 string and the `[Model Error] Request failed (<status>)` prefix are known.
 
+## MCP registration and approvals (P1)
+- `client.settings.mcpServers.createOrUpdate({ manifest: { type: 'remote', name, description, url, auth?: { type: 'header', headers } } })` is the registration call (VERIFIED-DOCS types). Agents then mount it with `manifest.mcpServers: [{ name, requireApprovalForTools: [...] }]`; selectors are `@all`, `@write`, `@destructive` or tool names (VERIFIED-DOCS types).
+- VERIFIED-RUN: TrueForge REJECTS the registration of any loopback or private URL: HTTP 400 `Outbound URL blocked for host "127.0.0.1"`; the same for `localhost`, `[::1]`, `0.0.0.0`, `host.docker.internal` and `192.168.1.5`. This is TrueForge's SSRF guard (`trueforge-core/dist/core/util/ssrfGuard.js`).
+- The documented override found in the TrueForge package source (`dist/main.js`) is the environment variable `OUTBOUND_URL_ALLOWED_HOSTS`, a JSON string array (for example `["127.0.0.1"]`); `NETWORK_POLICY_ENABLED=false` disables the guard entirely. It is read at startup, so TrueForge must be restarted. UNVERIFIED: that this makes the registration succeed (not tested; it needs a TrueForge restart that has not been done).
+- Approval pause (VERIFIED-DOCS types, UNVERIFIED live): a turn that hits an approval-required tool emits `tool.approval_required {threadId, toolCalls:[{id, sourceEventId}]}` and ends with `turn.done` whose `state.requiredActions` lists it. To resume, CodeCraft starts a NEW turn whose input is `[{ type: 'user.tool_approval', threadId, toolCallId, approval: { status: 'allow' } | { status: 'deny', reason? } }]`. The SDK types `createTurnStream` input as user messages only (`CreateTurnSessionsStreamRequestInputItem extends UserMessage`), although `LegacyTurnInputItem` includes `UserToolApprovalInputEvent`, so the wrapper casts. Whether the server accepts this on the stream endpoint is UNVERIFIED. The alternative documented route is `sessions.createTurnEvents(sessionId, turnId, { events })` (only `user.mcp_auth_continue` is shown in the docs).
+- The tool name and arguments of a pending call are read from `model.message.toolCalls[].function.{name, arguments}` (matched by tool call id). The tool name the model sees may carry a server prefix; CodeCraft matches with `endsWith`. UNVERIFIED live.
+- `client.sessions.cancel(sessionId, {})` exists (VERIFIED-DOCS); it was not exercised live.
+
 ## Other assumptions
 - The webview and extension host were not run inside VS Code in this session (no GUI); see the P0 report.
 - A new session is created per extension-host session and per settings change; sessions are not deleted.

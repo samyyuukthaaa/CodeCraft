@@ -20,6 +20,14 @@
       {
         "command": "codecraft.openAgentPanel",
         "title": "CodeCraft: Open Agent Panel"
+      },
+      {
+        "command": "codecraft.undoLastChange",
+        "title": "CodeCraft: Undo Last Change"
+      },
+      {
+        "command": "codecraft.stopRun",
+        "title": "CodeCraft: Stop Run"
       }
     ],
     "configuration": {
@@ -39,6 +47,11 @@
           "type": "string",
           "default": "groq/gpt-oss-120b",
           "description": "Model name for the fallback agent, as registered in TrueForge."
+        },
+        "codecraft.testCommand": {
+          "type": "string",
+          "default": "npm test",
+          "description": "Command run by the run_tests tool in the workspace, after you confirm. TrueForge has no sandbox on Windows, so it runs on your machine."
         }
       }
     }
@@ -48,10 +61,13 @@
     "build": "node esbuild.mjs",
     "test": "node esbuild.mjs --tests && node --test \"out/test/*.test.js\"",
     "smoke": "node esbuild.mjs --tests && node out/test/smoke.js",
-    "secret-scan": "node scripts/secret-scan.mjs"
+    "secret-scan": "node scripts/secret-scan.mjs",
+    "live-mcp": "node esbuild.mjs --tests && node out/test/live-mcp.js"
   },
   "dependencies": {
-    "@truefoundry/trueforge-sdk": "0.185.0"
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@truefoundry/trueforge-sdk": "0.185.0",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

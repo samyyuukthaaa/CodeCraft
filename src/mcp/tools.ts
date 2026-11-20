@@ -1,0 +1,122 @@
+// Editor tool handlers. Pure with respect to VS Code. propose_write never writes by itself: it hands
+// the proposal to the WriteGate, which needs a stored per-hunk decision before anything changes.
+import { z } from 'zod';
+import { redact } from '../util/redact';
+import { ReadFs, WriteGate } from './gate';
+import { isDenied, normalizeRelPath } from './paths';
+
+export interface TestResult {
+  ran: boolean;
+  exitCode?: number;
+  output: string;
+  message?: string;
+}
+
+/** Runs the project's test command in the workspace after explicit user confirmation. */
+export interface TestRunner {
+  run(): Promise<TestResult>;
+}
+
+export interface ToolDeps {
+  fs: ReadFs;
+  gate: WriteGate;
+  tests: TestRunner;
+  onActivity?: (line: string) => void;
+}
+
+export const MAX_READ_CHARS = 200_000;
+const MAX_LIST = 500;
+const MAX_MATCHES = 100;
+
+export interface ToolOutput {
+  text: string;
+  isError: boolean;
+}
+
+const ok = (value: unknown): ToolOutput => ({ text: JSON.stringify(value), isError: false });
+const err = (message: string): ToolOutput => ({ text: JSON.stringify({ error: message }), isError: true });
+
+export const schemas = {
+  read_file: { path: z.string().min(1).max(400).describe('Workspace-relative file path') },
+  list_files: { prefix: z.string().max(400).optional().describe('Optional directory prefix filter') },
+  search_text: {
+    query: z.string().min(1).max(200).describe('Plain text to search for (case-insensitive)'),
+    prefix: z.string().max(400).optional(),
+  },
+  propose_write: {
+    path: z.string().min(1).max(400).describe('Workspace-relative file path'),
+    newContent: z.string().describe('The complete new file content'),
+    reason: z.string().min(1).max(500).describe('Why this change is needed'),
+  },
+  run_tests: {},
+} as const;
+
+export function createHandlers(deps: ToolDeps) {
+  const note = (s: string): void => deps.onActivity?.(redact(s));
+
+  return {
+    async read_file(a: { path: string }): Promise<ToolOutput> {
+      let p: string;
+      try {
+        p = normalizeRelPath(a.path);
+      } catch (e) {
+        return err(e instanceof Error ? e.message : 'invalid path');
+      }
+      const content = await deps.fs.read(p);
+      if (content === undefined) return err('file not found');
+      if (content.length > MAX_READ_CHARS) return err('file is too large to read (limit 200000 characters)');
+      deps.gate.recordRead(p, content);
+      note(`read_file ${p}`);
+      return ok({ path: p, content });
+    },
+
+    async list_files(a: { prefix?: string }): Promise<ToolOutput> {
+      let prefix = '';
+      if (a.prefix) {
+        try {
+          prefix = normalizeRelPath(a.prefix);
+        } catch (e) {
+          return err(e instanceof Error ? e.message : 'invalid prefix');
+        }
+      }
+      const all = (await deps.fs.list()).filter((f) => !isDenied(f) && (!prefix || f === prefix || f.startsWith(`${prefix}/`)));
+      note(`list_files ${prefix || '.'} (${all.length})`);
+      return ok({ files: all.slice(0, MAX_LIST), truncated: all.length > MAX_LIST });
+    },
+
+    async search_text(a: { query: string; prefix?: string }): Promise<ToolOutput> {
+      const files = JSON.parse((await this.list_files({ prefix: a.prefix })).text) as { files?: string[] };
+      const needle = a.query.toLowerCase();
+      const matches: Array<{ path: string; line: number; text: string }> = [];
+      for (const f of files.files ?? []) {
+        if (matches.length >= MAX_MATCHES) break;
+        const content = await deps.fs.read(f);
+        if (content === undefined || content.length > MAX_READ_CHARS || content.includes('\0')) continue;
+        const lines = content.split('\n');
+        for (let i = 0; i < lines.length && matches.length < MAX_MATCHES; i++) {
+          const line = lines[i] as string;
+          if (line.toLowerCase().includes(needle)) matches.push({ path: f, line: i + 1, text: redact(line.slice(0, 200)) });
+        }
+      }
+      note(`search_text "${a.query}" (${matches.length} match(es))`);
+      return ok({ matches, truncated: matches.length >= MAX_MATCHES });
+    },
+
+    async propose_write(a: { path: string; newContent: string; reason: string }): Promise<ToolOutput> {
+      note(`propose_write ${a.path}`);
+      const r = await deps.gate.propose(a.path, a.newContent, a.reason);
+      note(`propose_write ${a.path} -> ${r.status}`);
+      // Honest wording: a proposal is not a write. Only "applied"/"partially_applied" mean the file changed.
+      return r.status === 'refused' ? err(r.message) : ok(r);
+    },
+
+    async run_tests(): Promise<ToolOutput> {
+      note('run_tests requested');
+      const r = await deps.tests.run();
+      if (!r.ran) return err(r.message ?? 'tests were not run');
+      return ok({ exitCode: r.exitCode, passed: r.exitCode === 0, output: redact(r.output) });
+    },
+  };
+}
+
+export type Handlers = ReturnType<typeof createHandlers>;
