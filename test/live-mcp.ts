@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { WriteGate } from '../src/mcp/gate';
 import { startMcpServer } from '../src/mcp/server';
 import { createHandlers } from '../src/mcp/tools';
-import { agentsApi, createClient, createSession, ensureAgents, registerEditorServer, streamTurnInput, describeError } from '../src/trueforge/client';
+import { agentsApi, createClient, createSession, ensureAgents, manifestFor, registerEditorServer, sessionDriver, describeError } from '../src/trueforge/client';
 import { FALLBACK_AGENT_NAME, PRIMARY_AGENT_NAME, validateConfig } from '../src/trueforge/config';
 import { runWithApprovals } from '../src/trueforge/run';
 import { DiskApplier, ScriptedReviewer, acceptAll, readDisk, rejectAll, tempWorkspace } from './helpers';
@@ -32,20 +32,32 @@ async function main(): Promise<void> {
     await registerEditorServer(client, server.url, token);
     console.log('registered MCP server at', server.url);
     console.log('ensureAgents:', JSON.stringify(await ensureAgents(agentsApi(client), cfg)));
-    const sid = await createSession(client, which);
+    // LIVE_PARAMS='{"k":v}' runs an inline copy of the agent manifest with extra model params (experiments only).
+    const extra = process.env.LIVE_PARAMS ? (JSON.parse(process.env.LIVE_PARAMS) as Record<string, unknown>) : undefined;
+    const sid = extra
+      ? (await client.sessions.create({ agent: { spec: { ...manifestFor(which === FALLBACK_AGENT_NAME ? cfg.fallbackModel : cfg.primaryModel), model: { name: which === FALLBACK_AGENT_NAME ? cfg.fallbackModel : cfg.primaryModel, params: extra } } } })).data.id
+      : await createSession(client, which);
+    if (extra) console.log('inline agent with params', JSON.stringify(extra));
     const seen: string[] = [];
     const out = await runWithApprovals(
       'Read hello.txt with read_file, then use propose_write to change the word world to CodeCraft (keep the trailing newline). Then tell me exactly what the propose_write result said.',
       {
-        stream: (input, signal) => streamTurnInput(client, sid, input, signal),
+        driver: sessionDriver(client, sid),
         approver: {
           async approve(call) {
-            console.log(`APPROVAL REQUESTED: ${call.name} ${call.summary}`);
-            return { allow: true };
+            const allow = !process.argv.includes('deny');
+            console.log(`APPROVAL REQUESTED: ${call.name} ${call.summary} -> ${allow ? 'allow' : 'deny'}`);
+            return allow ? { allow: true } : { allow: false, reason: 'denied in live test' };
           },
         },
         onEvent: (ev) => {
           if (ev.type !== 'model.message.delta') seen.push(ev.type);
+          if (process.env.LIVE_DEBUG) {
+            const e = ev as unknown as Record<string, unknown>;
+            if (ev.type === 'model.message.delta' && !e.toolCalls) return;
+            const shown = JSON.stringify(e, (k, v) => (k === 'newContent' || k === 'content' ? (typeof v === 'string' ? `<${v.length} chars>` : v) : v));
+            console.log(`[${new Date().toISOString().slice(11, 19)}] ${shown.slice(0, 700)}`);
+          }
         },
       },
     );

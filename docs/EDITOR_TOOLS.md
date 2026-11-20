@@ -22,5 +22,8 @@ The spec said "propose_write and run_command"; there is no `run_command` tool (a
 
 `CodeCraft: Undo Last Change` reverts the last applied change only if the file is still exactly what CodeCraft wrote. `CodeCraft: Stop Run` aborts the stream and cancels the session.
 
+## Approval flow (verified live with the primary agent)
+The model reaches these tools through TrueForge's `call_tool` system tool. When it calls `propose_write` or `run_tests`, TrueForge pauses the turn (`tool.approval_required` + `turn.update paused`). CodeCraft asks you, posts `user.tool_approval` to the paused turn with `createTurnEvents`, and resumes the same turn with `subscribeToTurn`. Approving only lets the call proceed: `propose_write` still needs your per-hunk review before anything is written.
+
 ## Known constraint: TrueForge must allow the local URL
 TrueForge's SSRF guard rejects loopback MCP URLs. Start TrueForge with `OUTBOUND_URL_ALLOWED_HOSTS='["127.0.0.1"]'`. See `docs/TRUEFORGE_NOTES.md`.

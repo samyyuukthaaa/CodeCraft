@@ -49,6 +49,18 @@ export async function registerEditorServer(client: TrueForge, url: string, token
 
 export type EnsureOutcome = 'created' | 'updated' | 'unchanged';
 
+/**
+ * Compares only the fields CodeCraft sets. The server fills defaults into stored manifests
+ * (observed: enableTools ["@all"], disableTools [], preloadTools [], preload false, a full config block),
+ * so a whole-object comparison would report a change on every run.
+ */
+export function manifestMatches(stored: TrueForgeApi.AgentSpec, wanted: TrueForgeApi.AgentSpec): boolean {
+  if (stored.model.name !== wanted.model.name || stored.instructions !== wanted.instructions) return false;
+  const pick = (s: TrueForgeApi.AgentSpec) =>
+    (s.mcpServers ?? []).map((x) => ({ name: x.name, approvals: [...(x.requireApprovalForTools ?? [])].sort() })).sort((a, b) => a.name.localeCompare(b.name));
+  return JSON.stringify(pick(stored)) === JSON.stringify(pick(wanted));
+}
+
 /** Registers (or reconciles) one agent by name. Idempotent. */
 export async function ensureAgent(api: AgentsApi, name: string, model: string): Promise<EnsureOutcome> {
   const manifest = manifestFor(model);
@@ -63,14 +75,7 @@ export async function ensureAgent(api: AgentsApi, name: string, model: string): 
     await api.create({ name, description: AGENT_DESCRIPTION, manifest });
     return 'created';
   }
-  const m = existing.manifest;
-  if (
-    m.model.name === model &&
-    m.instructions === AGENT_INSTRUCTIONS &&
-    JSON.stringify(m.mcpServers ?? []) === JSON.stringify(manifest.mcpServers)
-  ) {
-    return 'unchanged';
-  }
+  if (manifestMatches(existing.manifest, manifest)) return 'unchanged';
   await api.update(existing.id, { description: AGENT_DESCRIPTION, manifest });
   return 'updated';
 }
@@ -98,9 +103,10 @@ export async function createSession(client: TrueForge, agentName: string): Promi
   return res.data.id;
 }
 
-// The SDK types stream input as user messages only, but a resumed turn carries user.tool_approval items
-// (LegacyTurnInputItem). Verified against the live server in docs/TRUEFORGE_NOTES.md.
-export type TurnInput = TrueForgeApi.UserMessage | TrueForgeApi.UserToolApprovalInputEvent;
+export type ApprovalInput = TrueForgeApi.UserToolApprovalInputEvent;
+// The SDK types stream input as user messages only; approval items on a NEW turn are used only for a turn
+// that ended (turn.done) with required actions. A PAUSED turn is resumed with createTurnEvents instead.
+export type TurnInput = TrueForgeApi.UserMessage | ApprovalInput;
 
 /** Streams one turn's events. Provider failures arrive as a `turn.done` event with status "error". */
 export async function* streamTurnInput(
@@ -119,6 +125,30 @@ export async function* streamTurnInput(
 
 export function streamTurn(client: TrueForge, sessionId: string, text: string, signal?: AbortSignal): AsyncGenerator<TurnEvent> {
   return streamTurnInput(client, sessionId, [{ type: 'user.message', content: text }], signal);
+}
+
+/** Submits approvals to a paused turn, then streams the rest of that turn (after the last seen event). */
+export async function* resumePausedTurn(
+  client: TrueForge,
+  sessionId: string,
+  turnId: string,
+  approvals: ApprovalInput[],
+  afterEventId: string | undefined,
+  signal?: AbortSignal,
+): AsyncGenerator<TurnEvent> {
+  await client.sessions.createTurnEvents(sessionId, turnId, { events: approvals }, { abortSignal: signal });
+  const stream = await client.sessions.subscribeToTurn(sessionId, turnId, afterEventId ? { afterEventId } : {}, { abortSignal: signal });
+  for await (const ev of stream) yield ev;
+}
+
+/** The TurnDriver used by runWithApprovals, bound to one session. */
+export function sessionDriver(client: TrueForge, sessionId: string) {
+  return {
+    start: (text: string, signal: AbortSignal) => streamTurn(client, sessionId, text, signal),
+    resumePaused: (turnId: string, approvals: ApprovalInput[], afterEventId: string | undefined, signal: AbortSignal) =>
+      resumePausedTurn(client, sessionId, turnId, approvals, afterEventId, signal),
+    newTurnWithApprovals: (approvals: ApprovalInput[], signal: AbortSignal) => streamTurnInput(client, sessionId, approvals, signal),
+  };
 }
 
 export async function cancelSession(client: TrueForge, sessionId: string): Promise<void> {

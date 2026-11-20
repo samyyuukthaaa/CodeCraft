@@ -16,5 +16,6 @@ Settings: `codecraft.baseUrl`, `codecraft.primaryModel`, `codecraft.fallbackMode
 - Both models appear in `GET /api/v1/models` (14 models registered).
 - `npm run smoke` registered both agents and got `CODECRAFT HELLO` from each through the SDK (VERIFIED-RUN). A second run reported both agents `unchanged`.
 - Earlier the same day `google-gemini/gemini-3-1-flash-lite` returned `[Model Error] Request failed (503)` to two consecutive turns (a real provider outage), then recovered.
+- P1 live runs (2026-11-20): the primary agent completed tool-using turns with approval pause and resume (approve, hunk reject, deny). The fallback `groq/gpt-oss-120b` FAILS every tool-using turn with HTTP 400 `property 'reasoning_content' is unsupported` (TrueForge echoes reasoning back to Groq). Details and the params tried are in `docs/TRUEFORGE_NOTES.md`. Until this is resolved the fallback is usable only for turns without tools, which makes it unfit as a coding-agent fallback.
 - Automatic failover between the two is NOT implemented or verified yet (planned for P4).
 - TrueForge has no local sandbox on Windows; tests run through the extension in the workspace with user confirmation.

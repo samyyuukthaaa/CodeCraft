@@ -15,7 +15,7 @@ import {
   describeError,
   ensureAgents,
   registerEditorServer,
-  streamTurnInput,
+  sessionDriver,
 } from './trueforge/client';
 import { CodeCraftConfig, PRIMARY_AGENT_NAME, validateConfig } from './trueforge/config';
 import { toDisplay } from './trueforge/events';
@@ -83,7 +83,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const sid = await ensureSession(cfg);
       const client = activeClient as ReturnType<typeof createClient>;
       const outcome = await runWithApprovals(text, {
-        stream: (input, signal) => streamTurnInput(client, sid, input, signal),
+        driver: sessionDriver(client, sid),
         signal: abort.signal,
         onEvent: (ev) => {
           const d = toDisplay(ev);
