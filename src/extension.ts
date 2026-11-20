@@ -9,6 +9,7 @@ import { RunningServer, startMcpServer } from './mcp/server';
 import { createHandlers } from './mcp/tools';
 import { PROPOSED_SCHEME, ProposedContentProvider, VsCodeApplier, VsCodeReviewer, VsCodeTestRunner } from './mcp/vscodeHost';
 import { AgentPanel } from './panel/AgentPanel';
+import { CodeTownPanel } from './town/CodeTownPanel';
 import type { HostToWebview } from './panel/protocol';
 import {
   agentsApi,
@@ -84,10 +85,30 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
           gate,
           tests,
           index,
-          onActivity: (l) => out.appendLine(`[tool] ${l}`),
+          onActivity: (l) => {
+            out.appendLine(`[tool] ${l}`);
+            const p = CodeTownPanel.currentPanel();
+            if (!p) return;
+            if (l.startsWith('propose_write ')) {
+              const file = l.slice('propose_write '.length).split(' ')[0];
+              if (file) {
+                if (l.includes(' -> applied') || l.includes(' -> partially_applied')) {
+                  p.dispatchEvent({ type: 'file_written', path: file });
+                } else if (l.includes(' -> rejected')) {
+                  p.dispatchEvent({ type: 'hunk_decided', path: file, decision: 'rejected' });
+                } else if (!l.includes(' -> ')) {
+                  p.dispatchEvent({ type: 'hunk_proposed', path: file });
+                }
+              }
+            } else if (l.startsWith('read_file ')) {
+              const file = l.slice('read_file '.length).split(' ')[0];
+              if (file) p.dispatchEvent({ type: 'file_read', path: file });
+            }
+          },
           onRead: (p) => {
             readThisRun.add(p);
             postReads?.();
+            CodeTownPanel.currentPanel()?.dispatchEvent({ type: 'file_read', path: p });
           },
         });
         return { fs, gate, index, handlers };
@@ -167,6 +188,7 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
         readThisRun.clear();
         postReads = () => post({ type: 'reads', read: readThisRun.size, total: index.stats.totalFiles, paths: [...readThisRun] });
         postReads();
+        CodeTownPanel.currentPanel()?.dispatchEvent({ type: 'run_started' });
       }
 
       const depthAtStart = host ? host.gate.undoDepth : 0;
@@ -206,14 +228,19 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
       const outcome = result.outcome;
       out.appendLine(`Run ${outcome.status} on ${result.agent} after ${outcome.rounds} round(s)`);
       if (outcome.status === 'error') {
+        CodeTownPanel.currentPanel()?.dispatchEvent({ type: 'model_failed', error: outcome.message });
         const model = result.agent === FALLBACK_AGENT_NAME ? cfg.fallbackModel : cfg.primaryModel;
         const msg = failureMessage(model, outcome.message, host ? host.gate.filesAppliedSince(depthAtStart) : []);
         post({ type: 'event', event: { type: 'run.failed', summary: msg, failed: true } });
         void vscode.window.showErrorMessage(`CodeCraft: ${msg}`);
       } else if (outcome.status === 'unsupported') {
+        CodeTownPanel.currentPanel()?.dispatchEvent({ type: 'model_failed', error: outcome.message });
         post({ type: 'event', event: { type: 'run.failed', summary: outcome.message, failed: true } });
       } else if (outcome.status === 'cancelled') {
+        CodeTownPanel.currentPanel()?.dispatchEvent({ type: 'run_finished' });
         post({ type: 'event', event: { type: 'run.cancelled', summary: 'stopped' } });
+      } else {
+        CodeTownPanel.currentPanel()?.dispatchEvent({ type: 'run_finished' });
       }
     } catch (e) {
       const raw = describeError(e);
@@ -229,6 +256,29 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
     vscode.commands.registerCommand('codecraft.openAgentPanel', () => {
       out.show(true);
       AgentPanel.show(context, runPrompt);
+    }),
+    vscode.commands.registerCommand('codecraft.openCodeTown', () => {
+      out.show(true);
+      CodeTownPanel.show(
+        context,
+        async () => {
+          if (!host) return [];
+          const idx = await host.index.get();
+          return Object.values(idx.files).map((f) => ({
+            path: f.path,
+            lines: f.lines,
+            size: f.size,
+            language: f.language,
+            isTest: f.isTest,
+          }));
+        },
+        async (relPath) => {
+          if (!folder) return;
+          const uri = vscode.Uri.joinPath(folder.uri, relPath);
+          const doc = await vscode.workspace.openTextDocument(uri);
+          await vscode.window.showTextDocument(doc, { preview: true, viewColumn: vscode.ViewColumn.One });
+        },
+      );
     }),
     vscode.commands.registerCommand('codecraft.undoLastChange', async () => {
       if (!host) return void vscode.window.showWarningMessage('CodeCraft: open a folder first.');

@@ -22,6 +22,10 @@
         "title": "CodeCraft: Open Agent Panel"
       },
       {
+        "command": "codecraft.openCodeTown",
+        "title": "CodeCraft: Open Code Town"
+      },
+      {
         "command": "codecraft.undoLastChange",
         "title": "CodeCraft: Undo Last Change"
       },
@@ -85,6 +89,8 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
     "@truefoundry/trueforge-sdk": "0.185.0",
+    "@types/three": "^0.187.0",
+    "three": "^0.187.0",
     "zod": "4.6.7"
   },
   "devDependencies": {
