@@ -1,16 +1,17 @@
 {
   "compilerOptions": {
-    "module": "commonjs",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "target": "ES2022",
     "lib": ["ES2022", "DOM"],
-    "outDir": "out",
-    "rootDir": ".",
+    "noEmit": true,
     "strict": true,
     "noUnusedLocals": true,
     "noImplicitReturns": true,
+    "noUncheckedIndexedAccess": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "sourceMap": true
+    "types": ["node"]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts"]
 }

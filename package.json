@@ -6,45 +6,57 @@
   "publisher": "codecraft-dev",
   "license": "UNLICENSED",
   "private": true,
-  "engines": { "vscode": "^1.100.0" },
-  "categories": ["Other"],
-  "main": "./out/src/extension.js",
+  "engines": {
+    "vscode": "^1.90.0",
+    "node": ">=22"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
   "activationEvents": [],
   "contributes": {
     "commands": [
-      { "command": "codecraft.helloForge", "title": "CodeCraft: Hello TrueForge" }
+      {
+        "command": "codecraft.openAgentPanel",
+        "title": "CodeCraft: Open Agent Panel"
+      }
     ],
     "configuration": {
       "title": "CodeCraft",
       "properties": {
-        "forge.baseUrl": {
+        "codecraft.baseUrl": {
           "type": "string",
           "default": "http://localhost:8790",
           "description": "TrueForge base URL. Must be a loopback address (localhost, 127.0.0.1 or ::1)."
         },
-        "forge.primaryModel": {
+        "codecraft.primaryModel": {
           "type": "string",
           "default": "google-gemini/gemini-3-1-flash-lite",
-          "description": "Primary agent model name as registered in TrueForge. No keys are ever configured here."
+          "description": "Model name for the primary agent, as registered in TrueForge. Keys are configured only in TrueForge."
         },
-        "forge.fallbackModel": {
+        "codecraft.fallbackModel": {
           "type": "string",
           "default": "groq/gpt-oss-120b",
-          "description": "Fallback agent model name as registered in TrueForge."
+          "description": "Model name for the fallback agent, as registered in TrueForge."
         }
       }
     }
   },
   "scripts": {
-    "build": "tsc -p .",
-    "watch": "tsc -p . --watch",
-    "test": "npm run build && node --test \"out/test/*.test.js\"",
-    "secret-scan": "node scripts/secret-scan.mjs",
-    "smoke": "node out/scripts/smoke.js"
+    "typecheck": "tsc --noEmit -p .",
+    "build": "node esbuild.mjs",
+    "test": "node esbuild.mjs --tests && node --test \"out/test/*.test.js\"",
+    "smoke": "node esbuild.mjs --tests && node out/test/smoke.js",
+    "secret-scan": "node scripts/secret-scan.mjs"
+  },
+  "dependencies": {
+    "@truefoundry/trueforge-sdk": "0.185.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "@types/vscode": "1.100.0",
+    "@types/vscode": "^1.90.0",
+    "esbuild": "^0.25.0",
     "typescript": "^5.6.0"
   }
 }

@@ -1,0 +1,43 @@
+// Pure HTML builder for the agent panel. Strict CSP: no inline script, nonce-gated script and style,
+// no remote resources.
+export function buildHtml(opts: { cspSource: string; nonce: string; scriptUri: string }): string {
+  const { cspSource, nonce, scriptUri } = opts;
+  const csp = [
+    "default-src 'none'",
+    `style-src 'nonce-${nonce}'`,
+    `script-src 'nonce-${nonce}' ${cspSource}`,
+    `img-src ${cspSource} data:`,
+    `font-src ${cspSource}`,
+  ].join('; ');
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="${csp}">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CodeCraft Agent</title>
+<style nonce="${nonce}">
+  body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); padding: 8px; }
+  #prompt { width: 100%; box-sizing: border-box; min-height: 64px; color: var(--vscode-input-foreground);
+    background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); }
+  button { margin: 6px 0; padding: 4px 12px; color: var(--vscode-button-foreground);
+    background: var(--vscode-button-background); border: 0; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  #answer { white-space: pre-wrap; padding: 6px; margin: 6px 0; border-left: 3px solid var(--vscode-focusBorder); }
+  #events { font-family: var(--vscode-editor-font-family); font-size: 12px; list-style: none; padding: 0; }
+  #events li.failed { color: var(--vscode-errorForeground); }
+  #status { font-size: 12px; opacity: .8; }
+</style>
+</head>
+<body>
+  <h3>CodeCraft Agent</h3>
+  <label for="prompt">Prompt</label>
+  <textarea id="prompt" maxlength="8000">Say hello.</textarea>
+  <div><button id="send" type="button">Send</button> <span id="status" role="status" aria-live="polite">idle</span></div>
+  <div id="answer" aria-live="polite"></div>
+  <h4>Event stream</h4>
+  <ul id="events" aria-label="Live event stream"></ul>
+  <script nonce="${nonce}" src="${scriptUri}"></script>
+</body>
+</html>`;
+}

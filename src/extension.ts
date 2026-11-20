@@ -1,32 +1,61 @@
 import * as vscode from 'vscode';
-import { createSession, runTurn } from './forge/client';
+import {
+  agentsApi,
+  createClient,
+  createSession,
+  describeError,
+  ensureAgents,
+  streamTurn,
+} from './trueforge/client';
+import { CodeCraftConfig, PRIMARY_AGENT_NAME, validateConfig } from './trueforge/config';
+import { toDisplay } from './trueforge/events';
+import { AgentPanel } from './panel/AgentPanel';
+import type { HostToWebview } from './panel/protocol';
 import { redact } from './util/redact';
+
+function readConfig(): CodeCraftConfig {
+  const c = vscode.workspace.getConfiguration('codecraft');
+  return validateConfig({
+    baseUrl: c.get<string>('baseUrl'),
+    primaryModel: c.get<string>('primaryModel'),
+    fallbackModel: c.get<string>('fallbackModel'),
+  } as Partial<CodeCraftConfig>);
+}
 
 export function activate(context: vscode.ExtensionContext): void {
   const out = vscode.window.createOutputChannel('CodeCraft');
   context.subscriptions.push(out);
+  let sessionId: string | undefined;
+  let sessionKey = '';
+
+  async function runPrompt(text: string, post: (m: HostToWebview) => void): Promise<void> {
+    try {
+      const cfg = readConfig();
+      const client = createClient(cfg);
+      const key = `${cfg.baseUrl}|${cfg.primaryModel}|${cfg.fallbackModel}`;
+      if (!sessionId || key !== sessionKey) {
+        const outcome = await ensureAgents(agentsApi(client), cfg);
+        out.appendLine(`Agents: ${JSON.stringify(outcome)}`);
+        sessionId = await createSession(client, PRIMARY_AGENT_NAME);
+        sessionKey = key;
+        out.appendLine(`Session ${sessionId} (agent ${PRIMARY_AGENT_NAME}, model ${cfg.primaryModel})`);
+      }
+      for await (const ev of streamTurn(client, sessionId, text)) {
+        const d = toDisplay(ev);
+        if (d.summary || !d.delta) out.appendLine(`${d.type} ${d.summary}`.trimEnd());
+        post({ type: 'event', event: d });
+      }
+    } catch (e) {
+      const msg = redact(describeError(e));
+      out.appendLine(`Error: ${msg}`);
+      post({ type: 'event', event: { type: 'error', summary: msg, failed: true } });
+    }
+  }
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('codecraft.helloForge', async () => {
-      const cfg = vscode.workspace.getConfiguration('forge');
-      const baseUrl = cfg.get<string>('baseUrl', 'http://localhost:8790');
-      const model = cfg.get<string>('primaryModel', 'google-gemini/gemini-3-1-flash-lite');
+    vscode.commands.registerCommand('codecraft.openAgentPanel', () => {
       out.show(true);
-      try {
-        out.appendLine(`Creating TrueForge session (model ${model}) at ${baseUrl}`);
-        const sid = await createSession(baseUrl, model);
-        const r = await runTurn(baseUrl, sid, 'Reply with exactly: CODECRAFT HELLO');
-        if (r.status === 'done') {
-          out.appendLine(`TrueForge replied via ${r.model}: ${redact(r.content ?? '')}`);
-          void vscode.window.showInformationMessage(`TrueForge replied: ${r.content ?? ''}`);
-        } else {
-          out.appendLine(`Turn ended with status ${r.status}: ${redact(r.errorMessage ?? 'no message')}`);
-          void vscode.window.showWarningMessage('TrueForge turn failed; see the CodeCraft output channel.');
-        }
-      } catch (e) {
-        out.appendLine(`Error: ${redact(e instanceof Error ? e.message : String(e))}`);
-        void vscode.window.showErrorMessage('Could not reach TrueForge; see the CodeCraft output channel.');
-      }
+      AgentPanel.show(context, runPrompt);
     }),
   );
 }
