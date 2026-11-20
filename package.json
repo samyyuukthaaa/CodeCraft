@@ -45,8 +45,8 @@
         },
         "codecraft.fallbackModel": {
           "type": "string",
-          "default": "groq/gpt-oss-120b",
-          "description": "Model name for the fallback agent, as registered in TrueForge."
+          "default": "google-gemini/gemini-3-5-flash-lite",
+          "description": "Model name for the fallback agent, as registered in TrueForge (any provider). Used when a run on the primary agent fails. Change it here to swap providers; no code change needed."
         },
         "codecraft.testCommand": {
           "type": "string",

@@ -8,7 +8,7 @@ export interface CodeCraftConfig {
 export const DEFAULT_CONFIG: CodeCraftConfig = {
   baseUrl: 'http://localhost:8790',
   primaryModel: 'google-gemini/gemini-3-1-flash-lite',
-  fallbackModel: 'groq/gpt-oss-120b',
+  fallbackModel: 'google-gemini/gemini-3-5-flash-lite',
 };
 
 export const PRIMARY_AGENT_NAME = 'codecraft-primary';

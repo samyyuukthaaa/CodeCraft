@@ -17,9 +17,9 @@ import {
   registerEditorServer,
   sessionDriver,
 } from './trueforge/client';
-import { CodeCraftConfig, PRIMARY_AGENT_NAME, validateConfig } from './trueforge/config';
+import { CodeCraftConfig, FALLBACK_AGENT_NAME, PRIMARY_AGENT_NAME, validateConfig } from './trueforge/config';
 import { toDisplay } from './trueforge/events';
-import { runWithApprovals } from './trueforge/run';
+import { AgentAttempt, runWithFailover } from './trueforge/failover';
 import { redact } from './util/redact';
 
 function readConfig(): CodeCraftConfig {
@@ -55,36 +55,59 @@ export function activate(context: vscode.ExtensionContext): void {
 
   let server: RunningServer | undefined;
   const token = randomBytes(24).toString('hex'); // ephemeral, in memory only, never logged
-  let sessionId: string | undefined;
+  // One TrueForge session per agent, created lazily; reset when settings change.
+  const sessions = new Map<string, string>();
   let sessionKey = '';
+  let setupDone = false;
   let abort: AbortController | undefined;
   let activeClient: ReturnType<typeof createClient> | undefined;
+  let activeSessionId: string | undefined;
 
-  async function ensureSession(cfg: CodeCraftConfig): Promise<string> {
+  async function ensureSetup(cfg: CodeCraftConfig): Promise<ReturnType<typeof createClient>> {
     const client = createClient(cfg);
     activeClient = client;
     const key = `${cfg.baseUrl}|${cfg.primaryModel}|${cfg.fallbackModel}`;
-    if (sessionId && key === sessionKey) return sessionId;
+    if (setupDone && key === sessionKey) return client;
     if (!host) throw new Error('Open a folder first: CodeCraft works on the open workspace.');
     server ??= await startMcpServer(host.handlers, token);
     await registerEditorServer(client, server.url, token);
     out.appendLine(`Editor MCP server registered with TrueForge at ${server.url}`);
     out.appendLine(`Agents: ${JSON.stringify(await ensureAgents(agentsApi(client), cfg))}`);
-    sessionId = await createSession(client, PRIMARY_AGENT_NAME);
+    sessions.clear();
     sessionKey = key;
-    out.appendLine(`Session ${sessionId} (agent ${PRIMARY_AGENT_NAME}, model ${cfg.primaryModel})`);
-    return sessionId;
+    setupDone = true;
+    return client;
+  }
+
+  function attemptFor(client: ReturnType<typeof createClient>, agent: string, model: string): AgentAttempt {
+    return {
+      agent,
+      model,
+      driver: async () => {
+        let sid = sessions.get(agent);
+        if (!sid) {
+          sid = await createSession(client, agent);
+          sessions.set(agent, sid);
+          out.appendLine(`Session ${sid} (agent ${agent}, model ${model})`);
+        }
+        activeSessionId = sid;
+        return sessionDriver(client, sid);
+      },
+    };
   }
 
   async function runPrompt(text: string, post: (m: HostToWebview) => void): Promise<void> {
     abort = new AbortController();
     try {
       const cfg = readConfig();
-      const sid = await ensureSession(cfg);
-      const client = activeClient as ReturnType<typeof createClient>;
-      const outcome = await runWithApprovals(text, {
-        driver: sessionDriver(client, sid),
+      const client = await ensureSetup(cfg);
+      const attempts = [attemptFor(client, PRIMARY_AGENT_NAME, cfg.primaryModel), attemptFor(client, FALLBACK_AGENT_NAME, cfg.fallbackModel)];
+      const result = await runWithFailover(text, attempts, {
         signal: abort.signal,
+        onSwitch: (s) => {
+          out.appendLine(`[failover] ${s.from} failed (${redact(s.reason)}); switching to ${s.to}`);
+          post({ type: 'event', event: { type: 'model.switched', summary: `${s.from} failed; now using ${s.to}`, failed: false } });
+        },
         onEvent: (ev) => {
           const d = toDisplay(ev);
           if (d.summary || !d.delta) out.appendLine(`${d.type} ${d.summary}`.trimEnd());
@@ -103,7 +126,8 @@ export function activate(context: vscode.ExtensionContext): void {
           },
         },
       });
-      out.appendLine(`Run ${outcome.status} after ${outcome.rounds} round(s)`);
+      const outcome = result.outcome;
+      out.appendLine(`Run ${outcome.status} on ${result.agent} after ${outcome.rounds} round(s)`);
       if (outcome.status === 'error' || outcome.status === 'unsupported') {
         post({ type: 'event', event: { type: 'run.failed', summary: outcome.message, failed: true } });
       } else if (outcome.status === 'cancelled') {
@@ -133,9 +157,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('codecraft.stopRun', async () => {
       if (!abort) return void vscode.window.showInformationMessage('CodeCraft: no run is in progress.');
       abort.abort();
-      if (activeClient && sessionId) {
+      if (activeClient && activeSessionId) {
         try {
-          await cancelSession(activeClient, sessionId);
+          await cancelSession(activeClient, activeSessionId);
         } catch (e) {
           out.appendLine(`Stop: cancel request failed: ${redact(describeError(e))}`);
         }

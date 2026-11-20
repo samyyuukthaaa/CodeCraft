@@ -41,7 +41,29 @@ state.message = "[Model Error] Request failed (503): This model is currently exp
 state.metrics  total_input_tokens = 0, total_output_tokens = 0
 ```
 
-Not yet observed (UNVERIFIED, needed before P4's classifier): invalid or revoked key, rate limit (and any retry hint), bad output, context too large. Only the 503 string and the `[Model Error] Request failed (<status>)` prefix are known.
+More real error texts observed on 2026-11-20 (all as `turn.done` with `state.status: "error"`, none thrown):
+
+| Text | Source | Likely class (P4) |
+|---|---|---|
+| `[Model Error] Request failed (503): This model is currently experiencing high demand. ...` | gemini-3-1-flash-lite, natural, several times | unavailable_or_timeout |
+| `[Model Error] Cannot connect to API: Headers Timeout Error` | gemini-3-1-flash-lite, natural | unavailable_or_timeout |
+| `[Model Error] Request failed (200): Failed to process successful response: ... terminated: read ECONNRESET` | groq/gpt-oss-120b, natural, once | unavailable_or_timeout |
+| `[Model Error] Request failed (400): * GenerateContentRequest.generation_config.temperature: temperature must be in the range [0.0, 2.0].` | forced in the live test (`temperature: 99`) | bad request (not one of the five classes) |
+| `[Model Error] Request failed (400): 'messages.2' : ... property 'reasoning_content' is unsupported` | groq/gpt-oss-120b on tool use | provider incompatibility |
+
+Thrown at session creation (HTTP 422 from TrueForge, before any turn): `Unknown model "<ref>" — not configured on provider`, and `Reasoning effort "<x>" is not supported by model "<ref>"`.
+
+Not yet observed (UNVERIFIED, needed before P4's classifier): invalid or revoked key, rate limit (and any retry hint), bad output, context too large.
+
+## Fallback model history (why candidates were dropped)
+| Candidate | Status | Evidence |
+|---|---|---|
+| `groq/gpt-oss-120b` | Dropped | VERIFIED-RUN by CodeCraft: answers single turns, but every tool-using turn fails on the second model call with HTTP 400 `property 'reasoning_content' is unsupported` (TrueForge echoes the reasoning back to Groq). The params `include_reasoning:false`, `reasoning_format:"hidden"` and `reasoningEffort:"low"` did not help; `reasoningEffort:"none"` is rejected by Groq. Details below. |
+| `groq` `llama-3.3-70b-versatile` | Dropped | Reported by the project owner: Groq retired this model on 16 Aug 2026. Not tested by CodeCraft. |
+| `groq` `qwen/qwen3.6-27b` | Dropped | Reported by the project owner: returns 404 on the project's Groq key. Not tested by CodeCraft. |
+| `google-gemini/gemini-3-5-flash-lite` | **Current fallback** | VERIFIED-RUN: tool use, approval pause/resume, approve and hunk reject, and failover from a failing primary (forced and natural) all pass. See `docs/MODELS.md`. |
+
+Consequence: primary and fallback now share the `google-gemini` provider, so failover covers per-model failures (overload, timeouts, bad requests) but not a Gemini-wide outage or a revoked Gemini key.
 
 ## MCP registration and approvals (P1)
 - `client.settings.mcpServers.createOrUpdate({ manifest: { type: 'remote', name, description, url, auth?: { type: 'header', headers } } })` is the registration call (VERIFIED-DOCS types). Agents then mount it with `manifest.mcpServers: [{ name, requireApprovalForTools: [...] }]`; selectors are `@all`, `@write`, `@destructive` or tool names (VERIFIED-DOCS types).
