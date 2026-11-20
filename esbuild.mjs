@@ -43,4 +43,12 @@ if (vscodeTests) {
     format: 'iife',
     target: 'es2022',
   });
+  await build({
+    ...common,
+    entryPoints: ['src/webview/codetown.ts'],
+    outfile: 'out/codetown.js',
+    platform: 'browser',
+    format: 'iife',
+    target: 'es2022',
+  });
 }

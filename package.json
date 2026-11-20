@@ -22,6 +22,10 @@
         "title": "CodeCraft: Open Agent Panel"
       },
       {
+        "command": "codecraft.openCodeTown",
+        "title": "CodeCraft: Open Code Town"
+      },
+      {
         "command": "codecraft.undoLastChange",
         "title": "CodeCraft: Undo Last Change"
       },
