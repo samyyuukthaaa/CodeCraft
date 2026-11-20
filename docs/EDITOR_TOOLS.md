@@ -10,6 +10,7 @@
 | `search_symbols(query, kind?, limit?)` | no | Classes, functions and methods from the repository index (P2, see `docs/REPO_INDEX.md`) |
 | `list_related(path)` | no | Imported files, importers and matching tests |
 | `propose_write(path, newContent, reason)` | **yes** | Never writes by itself. See below |
+| `propose_changes(plan, groups[{intent, files[{path, newContent}]}])` | **yes** | Multi-file change set grouped by intent. Never writes by itself; see "Change sets" below |
 | `run_tests()` | **yes** | Runs `codecraft.testCommand` (default `npm test`) in the workspace after a modal confirmation; reports the real exit code |
 
 The spec said "propose_write and run_command"; there is no `run_command` tool (an arbitrary-command tool was deliberately not added), so the approval list is `propose_write` and `run_tests`.
@@ -23,6 +24,9 @@ The spec said "propose_write and run_command"; there is no `run_command` tool (a
 6. The tool result states what was applied: `applied`, `partially_applied`, `rejected` or an error. A proposal is never reported as a write.
 
 `CodeCraft: Undo Last Change` reverts the last applied change only if the file is still exactly what CodeCraft wrote. `CodeCraft: Stop Run` aborts the stream and cancels the session.
+
+## Change sets (P3)
+`propose_changes` carries a short plan and up to 10 groups (intent such as "implement", "update callers", "add test", "docs"), at most 20 files, each file in exactly one group. The gate refuses the WHOLE set before review if any existing file was not read or changed since it was read. Review: Accept all, Reject all, or Review by group, where each group can be accepted, rejected, or reviewed hunk by hunk (accept or reject the rest of a group at any point). Esc rejects everything not yet decided and keeps decisions already made. All accepted hunks across all files are applied in one `WorkspaceEdit` (one undo step); `Undo Last Change` reverts the whole set only if every file is still exactly what CodeCraft wrote. The result lists, per file, its group and how many hunks were accepted and rejected.
 
 ## Approval flow (verified live with the primary agent)
 The model reaches these tools through TrueForge's `call_tool` system tool. When it calls `propose_write` or `run_tests`, TrueForge pauses the turn (`tool.approval_required` + `turn.update paused`). CodeCraft asks you, posts `user.tool_approval` to the paused turn with `createTurnEvents`, and resumes the same turn with `subscribeToTurn`. Approving only lets the call proceed: `propose_write` still needs your per-hunk review before anything is written.

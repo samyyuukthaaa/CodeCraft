@@ -54,6 +54,26 @@ export const schemas = {
     newContent: z.string().describe('The complete new file content'),
     reason: z.string().min(1).max(500).describe('Why this change is needed'),
   },
+  propose_changes: {
+    plan: z.string().min(1).max(4000).describe('Short numbered plan: which files change and why, in the order of the groups'),
+    groups: z
+      .array(
+        z.object({
+          intent: z.string().min(1).max(80).describe('What this group does, e.g. "rename", "update callers", "fix tests", "add test", "docs"'),
+          files: z
+            .array(
+              z.object({
+                path: z.string().min(1).max(400).describe('Workspace-relative file path'),
+                newContent: z.string().describe('The complete new file content'),
+              }),
+            )
+            .min(1)
+            .max(20),
+        }),
+      )
+      .min(1)
+      .max(10),
+  },
   run_tests: {},
   search_symbols: {
     query: z.string().min(1).max(200).describe("Symbol name or prefix; Class.method narrows to methods of a class"),
@@ -142,6 +162,15 @@ export function createHandlers(deps: ToolDeps) {
       if (!rel) return err('file is not in the index');
       note(`list_related ${p}`);
       return ok(rel);
+    },
+
+    async propose_changes(a: { plan: string; groups: Array<{ intent: string; files: Array<{ path: string; newContent: string }> }> }): Promise<ToolOutput> {
+      const summary = a.groups.map((g) => `${g.intent} (${g.files.map((f) => f.path).join(', ')})`).join('; ');
+      note(`propose_changes ${summary}`);
+      const r = await deps.gate.proposeSet(a.plan, a.groups);
+      note(`propose_changes -> ${r.status}: ${r.message}`);
+      // Honest wording: a proposal is not a write. Only "applied"/"partially_applied" mean files changed.
+      return r.status === 'refused' ? err(r.message) : ok(r);
     },
 
     async run_tests(): Promise<ToolOutput> {

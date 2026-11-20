@@ -3,7 +3,7 @@
 import * as cp from 'node:child_process';
 import * as vscode from 'vscode';
 import { redact } from '../util/redact';
-import type { Applier, Decision, ReviewRequest, Reviewer } from './gate';
+import { Applier, Decision, FileProposal, ReviewRequest, Reviewer, hunkKey } from './gate';
 import type { TestResult, TestRunner } from './tools';
 
 const SCHEME = 'codecraft-proposed';
@@ -23,92 +23,157 @@ export class ProposedContentProvider implements vscode.TextDocumentContentProvid
 
 export const PROPOSED_SCHEME = SCHEME;
 
+type Choice<T> = vscode.QuickPickItem & { value: T };
+
+async function pick<T>(items: Array<Choice<T>>, title: string, placeHolder: string): Promise<T | undefined> {
+  const r = await vscode.window.showQuickPick(items, { title, placeHolder, ignoreFocusOut: true });
+  return r?.value;
+}
+
+/**
+ * Grouped review: accept or reject everything, or go group by group (accept group, reject group, or
+ * hunk by hunk). Esc at any point rejects everything not yet decided. Nothing is written by this class.
+ */
 export class VsCodeReviewer implements Reviewer {
   constructor(
     private readonly root: vscode.Uri,
     private readonly provider: ProposedContentProvider,
   ) {}
 
-  async review(req: ReviewRequest): Promise<Record<number, Decision>> {
-    const current = vscode.Uri.joinPath(this.root, req.path);
-    const proposed = this.provider.set(req.path, req.newText);
-    // For a new file there is nothing on disk to diff against, so diff against an empty virtual document.
-    const left = req.oldText === '' ? this.provider.set(`(empty)/${req.path}`, '') : current;
-    await vscode.commands.executeCommand('vscode.diff', left, proposed, `CodeCraft proposal: ${req.path}`, { preview: true });
+  private async showDiff(f: FileProposal, intent: string): Promise<void> {
+    const proposed = this.provider.set(f.path, f.newText);
+    const left = f.isNew ? this.provider.set(`(empty)/${f.path}`, '') : vscode.Uri.joinPath(this.root, f.path);
+    await vscode.commands.executeCommand('vscode.diff', left, proposed, `CodeCraft [${intent}] ${f.path}${f.isNew ? ' (new file)' : ''}`, { preview: true });
+  }
 
-    const all = (d: Decision): Record<number, Decision> => Object.fromEntries(req.hunks.map((h) => [h.id, d]));
-    const pick = await vscode.window.showQuickPick(
+  async review(req: ReviewRequest): Promise<Record<string, Decision>> {
+    const out: Record<string, Decision> = {};
+    const setFile = (f: FileProposal, d: Decision): void => {
+      for (const h of f.hunks) out[hunkKey(f.path, h.id)] = d;
+    };
+    const setGroups = (from: number, d: Decision): void => {
+      for (const g of req.groups.slice(from)) for (const f of g.files) setFile(f, d);
+    };
+    const hunkCount = req.groups.reduce((n, g) => n + g.files.reduce((m, f) => m + f.hunks.length, 0), 0);
+    const fileCount = req.groups.reduce((n, g) => n + g.files.length, 0);
+    const first = req.groups[0]?.files[0];
+    if (first) await this.showDiff(first, req.groups[0]!.intent);
+
+    const top = await pick(
       [
-        { label: '$(check-all) Accept all', detail: `${req.hunks.length} hunk(s). ${req.reason}`, action: 'all' as const },
-        { label: '$(close-all) Reject all', detail: 'Nothing is written', action: 'none' as const },
-        { label: '$(list-selection) Review hunk by hunk…', detail: 'Accept or reject each hunk', action: 'each' as const },
+        { label: '$(check-all) Accept all', detail: `${req.groups.length} group(s), ${fileCount} file(s), ${hunkCount} hunk(s)`, value: 'all' as const },
+        { label: '$(close-all) Reject all', detail: 'Nothing is written', value: 'none' as const },
+        { label: '$(list-tree) Review by group…', detail: req.groups.map((g) => `${g.intent} (${g.files.length})`).join(' · '), value: 'groups' as const },
       ],
-      { title: `CodeCraft: review change to ${req.path}`, placeHolder: 'Nothing is written until you accept. Esc rejects all.', ignoreFocusOut: true },
+      'CodeCraft: review change set',
+      redact(req.plan.replace(/\s+/g, ' ').slice(0, 240)) || 'Nothing is written until you accept. Esc rejects all.',
     );
-    if (!pick || pick.action === 'none') return all('reject');
-    if (pick.action === 'all') return all('accept');
+    if (!top || top === 'none') {
+      setGroups(0, 'reject');
+      return out;
+    }
+    if (top === 'all') {
+      setGroups(0, 'accept');
+      return out;
+    }
 
-    const out: Record<number, Decision> = {};
-    for (const h of req.hunks) {
-      const del = h.oldLines.length;
-      const add = h.newLines.length;
-      const preview = [...h.oldLines.slice(0, 4).map((l) => `- ${l.trimEnd()}`), ...h.newLines.slice(0, 4).map((l) => `+ ${l.trimEnd()}`)].join('   ');
-      const choice = await vscode.window.showQuickPick(
+    for (let gi = 0; gi < req.groups.length; gi++) {
+      const g = req.groups[gi]!;
+      for (const f of g.files) await this.showDiff(f, g.intent);
+      const hunks = g.files.reduce((n, f) => n + f.hunks.length, 0);
+      const choice = await pick(
         [
-          { label: '$(check) Accept this hunk', value: 'accept' as const },
-          { label: '$(close) Reject this hunk', value: 'reject' as const },
-          { label: '$(check-all) Accept this and all remaining', value: 'accept-rest' as const },
-          { label: '$(close-all) Reject this and all remaining', value: 'reject-rest' as const },
+          { label: '$(check) Accept this group', value: 'accept' as const },
+          { label: '$(close) Reject this group', value: 'reject' as const },
+          { label: '$(list-selection) Review hunks in this group…', value: 'hunks' as const },
+          { label: '$(check-all) Accept this and all remaining groups', value: 'accept-rest' as const },
+          { label: '$(close-all) Reject this and all remaining groups', value: 'reject-rest' as const },
         ],
-        { title: `Hunk ${h.id + 1} of ${req.hunks.length} (line ${h.oldStart + 1}, −${del} +${add})`, placeHolder: preview.slice(0, 200), ignoreFocusOut: true },
+        `Group ${gi + 1} of ${req.groups.length}: ${g.intent}`,
+        `${g.files.map((f) => f.path).join(', ')} (${hunks} hunk(s))`,
       );
-      if (!choice || choice.value === 'reject' || choice.value === 'reject-rest') {
-        out[h.id] = 'reject';
-        if (!choice || choice.value === 'reject-rest') {
-          for (const r of req.hunks) if (r.id > h.id) out[r.id] = 'reject';
-          break;
+      if (!choice || choice === 'reject-rest') {
+        setGroups(gi, 'reject');
+        return out;
+      }
+      if (choice === 'accept-rest') {
+        setGroups(gi, 'accept');
+        return out;
+      }
+      if (choice === 'accept' || choice === 'reject') {
+        for (const f of g.files) setFile(f, choice);
+        continue;
+      }
+      // hunk by hunk inside this group
+      let stop: Decision | undefined;
+      for (const f of g.files) {
+        for (const h of f.hunks) {
+          if (stop) {
+            out[hunkKey(f.path, h.id)] = stop;
+            continue;
+          }
+          const preview = [...h.oldLines.slice(0, 4).map((l) => `- ${l.trimEnd()}`), ...h.newLines.slice(0, 4).map((l) => `+ ${l.trimEnd()}`)].join('   ');
+          const c = await pick(
+            [
+              { label: '$(check) Accept this hunk', value: 'accept' as const },
+              { label: '$(close) Reject this hunk', value: 'reject' as const },
+              { label: '$(check-all) Accept the rest of this group', value: 'accept-rest' as const },
+              { label: '$(close-all) Reject the rest of this group', value: 'reject-rest' as const },
+            ],
+            `[${g.intent}] ${f.path}: hunk ${h.id + 1} of ${f.hunks.length} (line ${h.oldStart + 1}, −${h.oldLines.length} +${h.newLines.length})`,
+            preview.slice(0, 200),
+          );
+          if (!c) {
+            // Esc: reject everything not yet decided; keep decisions already made
+            for (const rg of req.groups.slice(gi)) for (const rf of rg.files) for (const rh of rf.hunks) out[hunkKey(rf.path, rh.id)] ??= 'reject';
+            return out;
+          }
+          if (c === 'accept-rest' || c === 'reject-rest') {
+            stop = c === 'accept-rest' ? 'accept' : 'reject';
+            out[hunkKey(f.path, h.id)] = stop;
+          } else {
+            out[hunkKey(f.path, h.id)] = c;
+          }
         }
-      } else if (choice.value === 'accept-rest') {
-        for (const r of req.hunks) if (r.id >= h.id) out[r.id] = 'accept';
-        break;
-      } else {
-        out[h.id] = 'accept';
       }
     }
     return out;
   }
 }
 
-/** Applies the single approved edit as ONE undo step, refusing if the file has unsaved changes. */
+/** Applies all approved changes as ONE WorkspaceEdit (one undo step), refusing files with unsaved changes. */
 export class VsCodeApplier implements Applier {
   constructor(private readonly root: vscode.Uri) {}
 
-  async apply(relPath: string, newText: string): Promise<void> {
-    const uri = vscode.Uri.joinPath(this.root, relPath);
+  async applyAll(changes: Array<{ path: string; text: string | undefined }>): Promise<void> {
     const edit = new vscode.WorkspaceEdit();
-    let exists = true;
-    try {
-      await vscode.workspace.fs.stat(uri);
-    } catch {
-      exists = false;
+    for (const c of changes) {
+      const uri = vscode.Uri.joinPath(this.root, c.path);
+      if (c.text === undefined) {
+        edit.deleteFile(uri, { ignoreIfNotExists: true });
+        continue;
+      }
+      let exists = true;
+      try {
+        await vscode.workspace.fs.stat(uri);
+      } catch {
+        exists = false;
+      }
+      if (!exists) {
+        edit.createFile(uri, { ignoreIfExists: false });
+        edit.insert(uri, new vscode.Position(0, 0), c.text);
+      } else {
+        const doc = await vscode.workspace.openTextDocument(uri);
+        if (doc.isDirty) throw new Error(`${c.path} has unsaved changes in the editor; save or revert it first`);
+        edit.replace(uri, new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length)), c.text);
+      }
     }
-    if (!exists) {
-      edit.createFile(uri, { ignoreIfExists: false });
-      edit.insert(uri, new vscode.Position(0, 0), newText);
-    } else {
-      const doc = await vscode.workspace.openTextDocument(uri);
-      if (doc.isDirty) throw new Error(`${relPath} has unsaved changes in the editor; save or revert it first`);
-      edit.replace(uri, new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length)), newText);
+    if (!(await vscode.workspace.applyEdit(edit))) throw new Error('VS Code refused the edit');
+    for (const c of changes) {
+      if (c.text === undefined) continue;
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.joinPath(this.root, c.path));
+      await doc.save();
     }
-    if (!(await vscode.workspace.applyEdit(edit))) throw new Error(`VS Code refused the edit to ${relPath}`);
-    const saved = await vscode.workspace.openTextDocument(uri);
-    await saved.save();
-  }
-
-  async remove(relPath: string): Promise<void> {
-    const edit = new vscode.WorkspaceEdit();
-    edit.deleteFile(vscode.Uri.joinPath(this.root, relPath), { ignoreIfNotExists: true });
-    await vscode.workspace.applyEdit(edit);
   }
 }
 

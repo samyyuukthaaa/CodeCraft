@@ -1,6 +1,7 @@
 // The write gate. Pure with respect to VS Code: it talks to the filesystem only through injected
-// interfaces, and the ONLY code path that changes a file is applyApproved(), which refuses anything
-// without a stored per-hunk decision for that exact path and content, and anything stale.
+// interfaces, and the ONLY code path that changes files is applyApproved(), which refuses anything
+// without a stored per-hunk decision for that exact set of paths and contents, and anything stale.
+// A change set may span several files, grouped by intent (e.g. "rename", "update callers", "fix tests").
 import { createHash } from 'node:crypto';
 import { Hunk, applyHunks, computeHunks } from './diff';
 import { normalizeRelPath } from './paths';
@@ -14,47 +15,80 @@ export interface ReadFs {
   list(): Promise<string[]>;
 }
 
-/** Performs the actual write as ONE undo step (host-specific). Never called without a stored decision. */
+/** Performs the actual writes as ONE undo step (host-specific). Never called without a stored decision. */
 export interface Applier {
-  apply(relPath: string, newText: string): Promise<void>;
-  remove(relPath: string): Promise<void>;
+  /** Applies every change together. `text: undefined` deletes a file (used only by undo of a creation). */
+  applyAll(changes: Array<{ path: string; text: string | undefined }>): Promise<void>;
 }
 
-export interface ReviewRequest {
+export interface FileProposal {
   path: string;
   reason: string;
   oldText: string;
   newText: string;
+  /** True when the file does not exist yet. */
+  isNew: boolean;
   hunks: Hunk[];
 }
 
-/** Shows the proposal to the user and returns a decision per hunk id. Missing ids count as reject. */
+export interface GroupProposal {
+  intent: string;
+  files: FileProposal[];
+}
+
+export interface ReviewRequest {
+  plan: string;
+  groups: GroupProposal[];
+}
+
+/** Key of one hunk's decision: `${path}#${hunkId}`. */
+export const hunkKey = (path: string, id: number): string => `${path}#${id}`;
+
+/** Shows the change set to the user and returns a decision per hunk key. Missing keys count as reject. */
 export interface Reviewer {
-  review(req: ReviewRequest): Promise<Record<number, Decision>>;
+  review(req: ReviewRequest): Promise<Record<string, Decision>>;
 }
 
 export type ProposeStatus = 'applied' | 'partially_applied' | 'rejected' | 'refused' | 'no_change';
+
+export interface FileResult {
+  path: string;
+  intent: string;
+  acceptedHunks: number;
+  rejectedHunks: number;
+}
 
 export interface ProposeResult {
   status: ProposeStatus;
   message: string;
   acceptedHunks?: number;
   rejectedHunks?: number;
+  files?: FileResult[];
+}
+
+export interface ChangeInput {
+  intent: string;
+  files: Array<{ path: string; newContent: string }>;
+}
+
+interface StoredFile {
+  path: string;
+  intent: string;
+  baseHash: string | null;
+  hunks: Hunk[];
 }
 
 interface StoredDecision {
-  baseHash: string | null;
-  hunks: Hunk[];
-  decisions: Record<number, Decision>;
+  files: StoredFile[];
+  decisions: Record<string, Decision>;
 }
 
 interface UndoEntry {
-  path: string;
-  before: string | undefined;
-  after: string;
+  files: Array<{ path: string; before: string | undefined; after: string }>;
 }
 
 export const MAX_WRITE_CHARS = 1_000_000;
+export const MAX_SET_FILES = 20;
 
 export const hash = (s: string): string => createHash('sha256').update(s).digest('hex');
 
@@ -75,86 +109,139 @@ export class WriteGate {
     this.readHashes.set(relPath, hash(content));
   }
 
-  /** Proposals are serialized: the user reviews one at a time. */
+  /** Single-file proposal: a change set with one group. */
   propose(rawPath: string, newContent: string, reason: string): Promise<ProposeResult> {
-    const run = this.queue.then(() => this.proposeInner(rawPath, newContent, reason));
+    return this.proposeSet(reason, [{ intent: 'edit', files: [{ path: rawPath, newContent }] }]);
+  }
+
+  /** Proposals are serialized: the user reviews one change set at a time. */
+  proposeSet(plan: string, groups: ChangeInput[]): Promise<ProposeResult> {
+    const run = this.queue.then(() => this.proposeInner(plan, groups));
     this.queue = run.catch(() => undefined);
     return run;
   }
 
-  private async proposeInner(rawPath: string, newContent: string, reason: string): Promise<ProposeResult> {
-    let path: string;
-    try {
-      path = normalizeRelPath(rawPath);
-    } catch (e) {
-      return refuse(e instanceof Error ? e.message : 'invalid path');
+  private async proposeInner(plan: string, groups: ChangeInput[]): Promise<ProposeResult> {
+    const seen = new Set<string>();
+    const normalized: ChangeInput[] = [];
+    let count = 0;
+    for (const g of groups) {
+      const intent = (g.intent ?? '').trim().slice(0, 80) || 'edit';
+      const files: ChangeInput['files'] = [];
+      for (const f of g.files ?? []) {
+        let path: string;
+        try {
+          path = normalizeRelPath(f.path);
+        } catch (e) {
+          return refuse(`${f.path}: ${e instanceof Error ? e.message : 'invalid path'}`);
+        }
+        if (seen.has(path)) return refuse(`${path} appears more than once; put each file in exactly one group`);
+        if (typeof f.newContent !== 'string' || f.newContent.length > MAX_WRITE_CHARS) return refuse(`${path}: content is missing or too large`);
+        seen.add(path);
+        files.push({ path, newContent: f.newContent });
+        count++;
+      }
+      if (files.length) normalized.push({ intent, files });
     }
-    if (typeof newContent !== 'string' || newContent.length > MAX_WRITE_CHARS) return refuse('content is missing or too large');
+    if (count === 0) return refuse('the change set is empty');
+    if (count > MAX_SET_FILES) return refuse(`too many files in one change set (limit ${MAX_SET_FILES})`);
 
-    const current = await this.fs.read(path);
-    if (current !== undefined) {
-      const seen = this.readHashes.get(path);
-      if (seen === undefined) return refuse('read the file with read_file before proposing a change to it');
-      if (seen !== hash(current)) return refuse('the file changed since it was read; read it again and re-propose');
+    // Every existing file must have been read and be unchanged since; otherwise nothing is shown or written.
+    const review: GroupProposal[] = [];
+    const stored: StoredFile[] = [];
+    for (const g of normalized) {
+      const files: FileProposal[] = [];
+      for (const f of g.files) {
+        const current = await this.fs.read(f.path);
+        if (current !== undefined) {
+          const seenHash = this.readHashes.get(f.path);
+          if (seenHash === undefined) return refuse(`read ${f.path} with read_file before proposing a change to it`);
+          if (seenHash !== hash(current)) return refuse(`${f.path} changed since it was read; read it again and re-propose`);
+        }
+        if (current === f.newContent) continue;
+        const hunks = computeHunks(current ?? '', f.newContent);
+        files.push({ path: f.path, reason: plan, oldText: current ?? '', newText: f.newContent, isNew: current === undefined, hunks });
+        stored.push({ path: f.path, intent: g.intent, baseHash: current === undefined ? null : hash(current), hunks });
+      }
+      if (files.length) review.push({ intent: g.intent, files });
     }
-    if (current === newContent) return { status: 'no_change', message: 'content is identical to the current file' };
+    if (stored.length === 0) return { status: 'no_change', message: 'every proposed file is identical to the current file' };
 
-    const hunks = computeHunks(current ?? '', newContent);
-    const chosen = await this.reviewer.review({ path, reason, oldText: current ?? '', newText: newContent, hunks });
-    const decisions: Record<number, Decision> = {};
-    for (const h of hunks) decisions[h.id] = chosen[h.id] === 'accept' ? 'accept' : 'reject';
-    this.decisions.set(key(path, newContent), { baseHash: current === undefined ? null : hash(current), hunks, decisions });
-    return this.applyApproved(path, newContent);
+    const chosen = await this.reviewer.review({ plan, groups: review });
+    const decisions: Record<string, Decision> = {};
+    for (const f of stored) for (const h of f.hunks) decisions[hunkKey(f.path, h.id)] = chosen[hunkKey(f.path, h.id)] === 'accept' ? 'accept' : 'reject';
+    this.decisions.set(setKey(normalized), { files: stored, decisions });
+    return this.applyApprovedSet(normalized);
+  }
+
+  /** Single-file form of applyApprovedSet, kept for callers and tests that write one file. */
+  applyApproved(rawPath: string, newContent: string): Promise<ProposeResult> {
+    return this.applyApprovedSet([{ intent: 'edit', files: [{ path: rawPath, newContent }] }]);
   }
 
   /**
-   * The only writer. Refuses unless a decision is stored for this exact path AND content, the file is
-   * unchanged since the proposal, and at least one hunk was accepted. Decisions are single-use.
+   * The only writer. Refuses unless a decision is stored for this exact set of paths AND contents, no file
+   * changed after the proposal, and at least one hunk was accepted. Decisions are single-use. All accepted
+   * hunks across all files are applied together as one undo step.
    */
-  async applyApproved(rawPath: string, newContent: string): Promise<ProposeResult> {
-    let path: string;
+  async applyApprovedSet(groups: ChangeInput[]): Promise<ProposeResult> {
+    let normalized: ChangeInput[];
     try {
-      path = normalizeRelPath(rawPath);
+      normalized = groups.map((g) => ({ intent: (g.intent ?? '').trim().slice(0, 80) || 'edit', files: g.files.map((f) => ({ path: normalizeRelPath(f.path), newContent: f.newContent })) }));
     } catch (e) {
       return refuse(e instanceof Error ? e.message : 'invalid path');
     }
-    const k = key(path, newContent);
+    const k = setKey(normalized);
     const stored = this.decisions.get(k);
-    if (!stored) return refuse('no stored decision for this exact path and content');
+    if (!stored) return refuse('no stored decision for this exact set of paths and contents');
     this.decisions.delete(k); // single use: an operation is never applied twice
 
-    const current = await this.fs.read(path);
-    const nowHash = current === undefined ? null : hash(current);
-    if (nowHash !== stored.baseHash) return refuse('the file changed after the proposal; nothing was written');
-
-    const accepted = new Set(stored.hunks.filter((h) => stored.decisions[h.id] === 'accept').map((h) => h.id));
-    const rejectedCount = stored.hunks.length - accepted.size;
-    if (accepted.size === 0) {
-      return { status: 'rejected', message: 'all hunks were rejected; nothing was written', acceptedHunks: 0, rejectedHunks: rejectedCount };
+    const currents = new Map<string, string | undefined>();
+    for (const f of stored.files) {
+      const current = await this.fs.read(f.path);
+      const nowHash = current === undefined ? null : hash(current);
+      if (nowHash !== f.baseHash) return refuse(`${f.path} changed after the proposal; nothing was written`);
+      currents.set(f.path, current);
     }
-    const finalText = applyHunks(current ?? '', stored.hunks, accepted);
-    await this.applier.apply(path, finalText);
-    this.undoStack.push({ path, before: current, after: finalText });
-    this.readHashes.set(path, hash(finalText));
+
+    const changes: Array<{ path: string; text: string }> = [];
+    const files: FileResult[] = [];
+    let acc = 0;
+    let rej = 0;
+    for (const f of stored.files) {
+      const accepted = new Set(f.hunks.filter((h) => stored.decisions[hunkKey(f.path, h.id)] === 'accept').map((h) => h.id));
+      const fr: FileResult = { path: f.path, intent: f.intent, acceptedHunks: accepted.size, rejectedHunks: f.hunks.length - accepted.size };
+      files.push(fr);
+      acc += fr.acceptedHunks;
+      rej += fr.rejectedHunks;
+      if (accepted.size) changes.push({ path: f.path, text: applyHunks(currents.get(f.path) ?? '', f.hunks, accepted) });
+    }
+    if (changes.length === 0) {
+      return { status: 'rejected', message: 'all hunks were rejected; nothing was written', acceptedHunks: 0, rejectedHunks: rej, files };
+    }
+    await this.applier.applyAll(changes);
+    this.undoStack.push({ files: changes.map((c) => ({ path: c.path, before: currents.get(c.path), after: c.text })) });
+    for (const c of changes) this.readHashes.set(c.path, hash(c.text));
     return {
-      status: rejectedCount === 0 ? 'applied' : 'partially_applied',
-      message: `applied ${accepted.size} of ${stored.hunks.length} hunk(s)`,
-      acceptedHunks: accepted.size,
-      rejectedHunks: rejectedCount,
+      status: rej === 0 ? 'applied' : 'partially_applied',
+      message: `applied ${acc} of ${acc + rej} hunk(s) in ${changes.length} file(s)`,
+      acceptedHunks: acc,
+      rejectedHunks: rej,
+      files,
     };
   }
 
-  /** Reverts the most recent applied change, only if the file is still exactly what we wrote. */
+  /** Reverts the most recent applied change set, only if every file is still exactly what we wrote. */
   async undoLast(): Promise<ProposeResult> {
     const last = this.undoStack[this.undoStack.length - 1];
     if (!last) return refuse('nothing to undo');
-    const current = await this.fs.read(last.path);
-    if (current !== last.after) return refuse(`${last.path} changed since CodeCraft wrote it; not undoing`);
-    if (last.before === undefined) await this.applier.remove(last.path);
-    else await this.applier.apply(last.path, last.before);
+    for (const f of last.files) {
+      if ((await this.fs.read(f.path)) !== f.after) return refuse(`${f.path} changed since CodeCraft wrote it; not undoing`);
+    }
+    await this.applier.applyAll(last.files.map((f) => ({ path: f.path, text: f.before })));
     this.undoStack.pop();
-    this.readHashes.delete(last.path);
-    return { status: 'applied', message: `reverted ${last.path}` };
+    for (const f of last.files) this.readHashes.delete(f.path);
+    return { status: 'applied', message: `reverted ${last.files.map((f) => f.path).join(', ')}` };
   }
 
   get undoDepth(): number {
@@ -162,8 +249,9 @@ export class WriteGate {
   }
 }
 
-function key(path: string, content: string): string {
-  return `${path}\0${hash(content)}`;
+function setKey(groups: ChangeInput[]): string {
+  const parts = groups.flatMap((g) => g.files.map((f) => `${f.path}\0${hash(f.newContent)}`)).sort();
+  return hash(parts.join('\n'));
 }
 
 function refuse(message: string): ProposeResult {

@@ -33,14 +33,14 @@ async function boot(answer = acceptAll) {
   return { ws, applier, reviewer, call, testRuns: () => testRuns, close: async () => { await client.close(); await server.close(); await ws.cleanup(); }, server };
 }
 
-test('mcp: lists the seven editor tools', async () => {
+test('mcp: lists the eight editor tools', async () => {
   const t = await boot();
   try {
     // callTool wrapper hides listTools, so list through a second client
     const c = new Client({ name: 'x', version: '0' });
     await c.connect(new StreamableHTTPClientTransport(new URL(t.server.url), { requestInit: { headers: { Authorization: `Bearer ${TOKEN}` } } }));
     const names = (await c.listTools()).tools.map((x) => x.name).sort();
-    assert.deepEqual(names, ['list_files', 'list_related', 'propose_write', 'read_file', 'run_tests', 'search_symbols', 'search_text']);
+    assert.deepEqual(names, ['list_files', 'list_related', 'propose_changes', 'propose_write', 'read_file', 'run_tests', 'search_symbols', 'search_text']);
     await c.close();
   } finally {
     await t.close();

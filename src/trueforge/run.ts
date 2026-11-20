@@ -80,6 +80,13 @@ export function summarizeCall(name: string, rawArgs: string): { name: string; su
   if (!r.input) return { name: display, summary: '(arguments not parseable)' };
   const str = (k: string): string => (typeof r.input?.[k] === 'string' ? (r.input[k] as string) : '');
   if (r.tool === 'propose_write') return { name: display, summary: redact(`path=${str('path')} reason=${str('reason').slice(0, 160)}`) };
+  if (r.tool === 'propose_changes') {
+    const groups = Array.isArray(r.input.groups) ? (r.input.groups as Array<{ intent?: unknown; files?: Array<{ path?: unknown }> }>) : [];
+    const shown = groups
+      .map((g) => `${typeof g.intent === 'string' ? g.intent : 'edit'}: ${(g.files ?? []).map((f) => (typeof f.path === 'string' ? f.path : '?')).join(', ')}`)
+      .join(' | ');
+    return { name: display, summary: redact(`plan=${str('plan').replace(/\s+/g, ' ').slice(0, 300)} groups=[${shown.slice(0, 400)}]`) };
+  }
   if (r.tool === 'run_tests') return { name: display, summary: 'run the project test command' };
   return { name: display, summary: redact(JSON.stringify(r.input).slice(0, 200)) };
 }

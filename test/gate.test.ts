@@ -4,9 +4,9 @@ import * as fs from 'node:fs/promises';
 import * as nodeFs from 'node:fs';
 import * as path from 'node:path';
 import { applyHunks, computeHunks } from '../src/mcp/diff';
-import { WriteGate } from '../src/mcp/gate';
+import { WriteGate, hunkKey } from '../src/mcp/gate';
 import { normalizeRelPath } from '../src/mcp/paths';
-import { DiskApplier, ScriptedReviewer, acceptAll, readDisk, rejectAll, tempWorkspace } from './helpers';
+import { DiskApplier, ScriptedReviewer, acceptAll, firstHunks, readDisk, rejectAll, tempWorkspace } from './helpers';
 
 const ORIGINAL = 'line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\n';
 const CHANGED = 'line1\nLINE2\nline3\nline4\nline5\nline6\nLINE7\nline8\nextra\n';
@@ -87,14 +87,17 @@ test('gate: rejected hunks are never written (reject all)', async () => {
 });
 
 test('gate: only accepted hunks are applied, the rejected one stays as it was', async () => {
-  const { ws, applier, gate } = await setup((req) => ({ [req.hunks[0]!.id]: 'reject', [req.hunks[1]!.id]: 'accept', [req.hunks[2]!.id]: 'reject' }));
+  const { ws, applier, gate } = await setup((req) => {
+    const { path: p, hunks } = firstHunks(req);
+    return { [hunkKey(p, hunks[0]!.id)]: 'reject', [hunkKey(p, hunks[1]!.id)]: 'accept', [hunkKey(p, hunks[2]!.id)]: 'reject' };
+  });
   try {
     gate.recordRead('a.txt', ORIGINAL);
     const r = await gate.propose('a.txt', CHANGED, 'why');
     assert.equal(r.status, 'partially_applied');
     assert.equal(r.acceptedHunks, 1);
     assert.equal(r.rejectedHunks, 2);
-    assert.equal(applier.writes.length, 1); // one apply call = one undo step
+    assert.equal(applier.calls.length, 1); // one apply call = one undo step
     const disk = await readDisk(ws.root, 'a.txt');
     assert.ok(disk.includes('LINE7'));
     assert.ok(!disk.includes('LINE2'));
@@ -156,7 +159,7 @@ test('gate: an existing file must be read first; a new file need not be', async 
   try {
     const r = await gate.propose('a.txt', CHANGED, 'why');
     assert.equal(r.status, 'refused');
-    assert.match(r.message, /read the file/);
+    assert.match(r.message, /read a.txt with read_file/);
     const n = await gate.propose('new/b.txt', 'hello\n', 'create');
     assert.equal(n.status, 'applied');
     assert.equal(await readDisk(ws.root, 'new/b.txt'), 'hello\n');

@@ -181,7 +181,7 @@ test('manifestMatches: a stored manifest with server-filled defaults (observed l
   const wanted = manifestFor('groq/gpt-oss-120b');
   const stored = {
     ...wanted,
-    mcpServers: [{ name: EDITOR_SERVER_NAME, enableTools: ['@all'], disableTools: [], preloadTools: [], requireApprovalForTools: ['propose_write', 'run_tests'], preload: false }],
+    mcpServers: [{ name: EDITOR_SERVER_NAME, enableTools: ['@all'], disableTools: [], preloadTools: [], requireApprovalForTools: ['propose_write', 'propose_changes', 'run_tests'], preload: false }],
     config: { iterationLimit: 512, sandbox: { enabled: false, fileDownloads: true } },
   };
   assert.equal(manifestMatches(stored as typeof wanted, wanted), true);
@@ -190,9 +190,9 @@ test('manifestMatches: a stored manifest with server-filled defaults (observed l
   assert.equal(manifestMatches({ ...stored, instructions: 'old' } as typeof wanted, wanted), false);
 });
 
-test('manifest: both agents mount the editor server with approval required for propose_write and run_tests', () => {
+test('manifest: both agents mount the editor server with approval required for propose_write, propose_changes and run_tests', () => {
   for (const model of ['a/b', 'c/d']) {
-    assert.deepEqual(manifestFor(model).mcpServers, [{ name: EDITOR_SERVER_NAME, requireApprovalForTools: ['propose_write', 'run_tests'] }]);
+    assert.deepEqual(manifestFor(model).mcpServers, [{ name: EDITOR_SERVER_NAME, requireApprovalForTools: ['propose_write', 'propose_changes', 'run_tests'] }]);
   }
-  assert.deepEqual([...APPROVAL_TOOLS], ['propose_write', 'run_tests']);
+  assert.deepEqual([...APPROVAL_TOOLS], ['propose_write', 'propose_changes', 'run_tests']);
 });

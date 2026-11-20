@@ -62,6 +62,18 @@ function buildServer(h: Handlers): McpServer {
     async (a) => wrap(await h.propose_write(a)),
   );
   server.registerTool(
+    'propose_changes',
+    {
+      description:
+        'Propose a multi-file change set grouped by intent (for example "rename", "update callers", "fix tests"), with a short plan. ' +
+        'Read every existing file with read_file first. This does NOT write: the user accepts or rejects whole groups or single hunks, ' +
+        'and only accepted hunks are applied, all together as one undo step. The result states exactly what was applied per file.',
+      inputSchema: schemas.propose_changes,
+      annotations: { destructiveHint: true },
+    },
+    async (a) => wrap(await h.propose_changes(a)),
+  );
+  server.registerTool(
     'run_tests',
     {
       description: 'Run the project test command in the workspace after user confirmation. Reports the real exit code.',
