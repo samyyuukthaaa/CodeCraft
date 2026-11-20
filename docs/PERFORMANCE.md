@@ -8,8 +8,10 @@ Method: `test/perf-index.ts`. One untimed warm-up build, then 5 timed full build
 
 | Repository | Files indexed | Python | TS/JS | Other | Symbols | Import edges | Test files | Cold build (median of 5) | Warm build (median of 5) | Save / load JSON | Index size |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| `fixtures/flask` (pallets/flask @ 49943b5) | 235 | 83 | 0 | 152 | 1,622 | 226 | 68 | 39 ms (36-41) | 10 ms (10-11) | 3.5 ms / 1.2 ms | 220 KB |
-| CodeCraft workspace (includes `fixtures/flask`) | 286 | 84 | 38 | 164 | 1,776 | 201 | 78 | 46 ms (42-48) | 12 ms (11-12) | 3.5 ms / 1.3 ms | 254 KB |
+| `fixtures/flask` (pallets/flask 3.1.3 @ 22d92470) | 234 | 83 | 0 | 151 | 1,574 | 225 | 68 | 38 ms (36-41) | 10 ms (9-10) | 3.1 ms / 1.1 ms | 217 KB |
+| CodeCraft workspace (includes `fixtures/flask` 3.1.3) | 288 | 84 | 38 | 166 | 1,728 | 201 | 78 | 45 ms (41-50) | 13 ms (12-14) | 3.4 ms / 1.3 ms | 252 KB |
+
+Re-measured after the fixture moved to the organizers' required release (3.1.3); the earlier figures were for a newer development commit and are no longer quoted.
 
 Notes
 - Skipped during the scan: `node_modules`, `.git`, `out`, `dist`, `build`, virtualenvs (`.venv`, `venv`, `env`), `__pycache__`, tool caches, `site-packages`, `*.egg-info`, `coverage`, plus secret-like files (`.env*`, keys).
