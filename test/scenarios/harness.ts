@@ -143,7 +143,9 @@ function scenarioToken(): string {
   fs.writeFileSync(file, t, { mode: 0o600 });
   return t;
 }
-const RUN_LIMIT_MS = 15 * 60_000;
+// Safety net for the harness (not a task check). Task B under Gemini's free-tier per-minute token quota
+// (250k input tokens/min) legitimately needed more than 15 minutes in one run on 2026-11-21.
+const RUN_LIMIT_MS = 25 * 60_000;
 
 export async function runScenario(s: Scenario, runNo: number, log: (l: string) => void): Promise<RunRecord> {
   const started = Date.now();
