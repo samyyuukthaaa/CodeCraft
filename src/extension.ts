@@ -5,6 +5,7 @@ import { EditorSelection, composePrompt, selectContext } from './index/context';
 import { IndexService } from './index/service';
 import { FileSink } from './journal/fileSink';
 import { Journal } from './journal/journal';
+import { renderJournal } from './journal/render';
 import { WriteGate } from './mcp/gate';
 import { NodeReadFs } from './mcp/nodeFs';
 import { RunningServer, startMcpServer } from './mcp/server';
@@ -371,6 +372,12 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
           await vscode.window.showTextDocument(doc, { preview: true, viewColumn: vscode.ViewColumn.One });
         },
       );
+    }),
+    vscode.commands.registerCommand('codecraft.showJournal', async () => {
+      if (!host) return void vscode.window.showWarningMessage('CodeCraft: open a folder first.');
+      await host.journal.load();
+      const doc = await vscode.workspace.openTextDocument({ language: 'markdown', content: renderJournal(host.journal.all()) });
+      await vscode.window.showTextDocument(doc, { preview: true });
     }),
     vscode.commands.registerCommand('codecraft.undoLastChange', async () => {
       if (!host) return void vscode.window.showWarningMessage('CodeCraft: open a folder first.');

@@ -32,6 +32,10 @@
       {
         "command": "codecraft.stopRun",
         "title": "CodeCraft: Stop Run"
+      },
+      {
+        "command": "codecraft.showJournal",
+        "title": "CodeCraft: Show Edit Journal"
       }
     ],
     "configuration": {
