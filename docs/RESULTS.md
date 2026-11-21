@@ -2,7 +2,7 @@
 
 All runs: 2026-11-20, against pallets/flask 3.1.3 (`22d92470`) in `fixtures/flask`, real TrueForge 0.185.1, real models (primary `google-gemini/gemini-3-1-flash-lite`, fallback `google-gemini/gemini-3-5-flash-lite`, both on the Gemini free tier), the real MCP server, and real verification commands (python, pytest, flask CLI). Only the human is scripted (tool approval and hunk review). Commands: `npm run scenario -- task1|task2|task3-fallback|task3-nofallback`. Full per-run JSON: `docs/results/`.
 
-## Status as of 2026-11-21 11:20 UTC (3-in-a-row goal)
+## Status as of 2026-11-21 12:10 UTC (3-in-a-row goal)
 
 No task is currently at "3 passing runs in a row on the final code". Every run since the first summary, in order (all rows are in the raw table below):
 
@@ -27,6 +27,8 @@ No task is currently at "3 passing runs in a row on the final code". Every run s
 | `7176115` | task3-fallback | 3 | **PASS, PASS, PASS** | invalid key -> automatic takeover by gemini-3-5-flash-lite, proposal rejected by the scripted user, git clean |
 | `7176115` | task3-nofallback | 3 | **PASS, PASS, PASS** | |
 | `7176115` | task2 | 1 | FAIL | Gemini free-tier per-minute input-token quota: the primary waited out 10 per-minute 429s while progressing, failed over, the fallback hit the same limit, and the harness's own 15-minute run limit cancelled the run mid-change (raised to 25 minutes; no task check changed) |
+| `ec18181` | task2 | 1 | FAIL | every TASKS.md check passed (3 files, test_cli 59 passed, masked JSON, `config` in --help, test, docs, suite 491 passed), but the plan before the first review listed cli.py and a new test only; docs were planned after the code was proposed (instructions changed in `64a515a`) |
+| `64a515a` | task2 | 1 | FAIL | the first plan listed cli.py, docs/cli.rst and tests/test_cli.py (fixed), but the fallback model's `flask config` failed to JSON-encode some config values; it then spent 15 debug cycles (4.2M tokens) until the free-tier quota stopped it with 1 failing test in test_cli.py |
 
 Environment facts, not code: both Gemini models are on the free tier (15 requests/min, 250k input tokens/min, 500 requests/day per model; the daily quota resets at midnight Pacific = 08:00 UTC); one DNS outage; the machine slept during one batch. Code changes made because of these runs: per-minute 429 retries count only consecutive failures without progress; daily-quota 429s are not retried and say so; over-escaped edit text is decoded once as a fallback. No check was weakened.
 
@@ -212,3 +214,9 @@ A stopped 3-run batch of task1 kept running in the background (only its shell wr
 | scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
 |---|---|---|---|---|---|---|---|---|---|---|
 | task2 | 1 | FAIL | codecraft-fallback (failover x1) | docs/cli.rst<br>src/flask/cli.py<br>tests/test_config_cli.py | src/flask/app.py<br>src/flask/cli.py<br>src/flask/config.py<br>docs/cli.rst<br>docs/config.rst<br>tests/test_async.py<br>tests/test_cli.py<br>tests/test_config.py<br>tests/test_testing.py<br>src/flask/__init__.py | 5/234 | 2140010 | 986 s | 28 ms | plan shown before proposing, listing src/flask/cli.py, a tests/ file and docs/cli.rst to change |
+
+### task2: 3 run(s), 2026-11-21T12:07:13.386Z
+
+| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| task2 | 1 | FAIL | codecraft-fallback (failover x1) | docs/cli.rst<br>src/flask/cli.py<br>tests/test_cli.py | src/flask/app.py<br>src/flask/cli.py<br>src/flask/config.py<br>docs/cli.rst<br>docs/config.rst<br>tests/test_async.py<br>tests/test_cli.py<br>tests/test_config.py<br>tests/test_testing.py<br>src/flask/__init__.py | 8/234 | 4228534 | 1279 s | 35 ms | agent run finished; TASKS.md: pytest tests/test_cli.py -q passes; TASKS.md: `flask config` prints JSON; full Flask test suite passes (0 failed) |
