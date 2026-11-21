@@ -4,6 +4,7 @@ import * as cp from 'node:child_process';
 import * as vscode from 'vscode';
 import { redact } from '../util/redact';
 import { Applier, Decision, FileProposal, ReviewRequest, Reviewer, hunkKey } from './gate';
+import { parseTestCommand, scrubEnv } from './safeTests';
 import type { TestResult, TestRunner } from './tools';
 
 const SCHEME = 'codecraft-proposed';
@@ -209,15 +210,25 @@ export class VsCodeTestRunner implements TestRunner {
   ) {}
 
   async run(): Promise<TestResult> {
-    const cmd = this.command();
+    const parsed = parseTestCommand(this.command());
+    if (!parsed.ok) return { ran: false, output: '', message: parsed.error };
+    const { command } = parsed;
+    const { env, removed } = scrubEnv(process.env);
     const choice = await vscode.window.showWarningMessage(
-      `CodeCraft wants to run your test command in the workspace:\n\n${cmd}`,
-      { modal: true, detail: 'TrueForge has no sandbox on Windows, so this runs directly on your machine.' },
+      `CodeCraft wants to run your test command in the workspace:\n\n${command.display}`,
+      {
+        modal: true,
+        detail:
+          'TrueForge has no sandbox on Windows, so this runs directly on your machine, without shell operators, with a time limit' +
+          (removed.length ? ` and without these environment variables: ${removed.join(', ')}.` : '.'),
+      },
       'Run tests',
     );
     if (choice !== 'Run tests') return { ran: false, output: '', message: 'the user declined to run the tests' };
     return new Promise<TestResult>((resolve) => {
-      const child = cp.spawn(cmd, { cwd: this.cwd, shell: true, windowsHide: true });
+      // No shell on POSIX. On Windows a shell is needed to find .cmd launchers (npm.cmd); the arguments were
+      // validated to contain no shell operators, so nothing can be chained or redirected.
+      const child = cp.spawn(command.file, command.args, { cwd: this.cwd, env, shell: process.platform === 'win32', windowsHide: true });
       this.child = child;
       let out = '';
       const add = (b: Buffer): void => {
