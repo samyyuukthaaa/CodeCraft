@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Building, SceneState, TownEvent } from '../town/types';
 import { HostToTown, TownToHost } from '../town/protocol';
 import { initialSceneState, sceneReducer } from '../town/reducer';
+import { KIND_VISUALS, TEST_VISUALS } from '../town/grammar';
 
 declare function acquireVsCodeApi(): { postMessage(msg: TownToHost): void };
 const vscode = acquireVsCodeApi();
@@ -97,7 +98,7 @@ function render2D(state: SceneState): void {
 
       const meta = document.createElement('div');
       meta.className = 'fallback-card-meta';
-      meta.textContent = `${b.language} • ${b.lines} lines`;
+      meta.textContent = `${KIND_VISUALS[b.kind].icon} ${KIND_VISUALS[b.kind].label} • ${b.lines} lines • ${TEST_VISUALS[b.testStatus].icon} ${TEST_VISUALS[b.testStatus].label}${b.placeholder ? ' • not in the index' : ''}`;
 
       const status = document.createElement('div');
       status.className = 'fallback-card-status';

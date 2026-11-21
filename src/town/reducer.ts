@@ -11,6 +11,7 @@ import {
   TownEvent,
   TownFileInput,
 } from './types';
+import { AGGREGATE_THRESHOLD, computeRoads, districtOf, kindOf } from './grammar';
 
 export const MIN_BUILDING_HEIGHT = 1;
 export const MAX_BUILDING_HEIGHT = 20;
@@ -36,7 +37,7 @@ export function createEmptyStats(): SceneStats {
 }
 
 export function initialSceneState(): SceneState {
-  return { districts: {}, buildings: {}, activeBuildingId: undefined, totalBuildings: 0, stats: createEmptyStats(), power: { status: 'healthy' }, version: 0 };
+  return { districts: {}, buildings: {}, activeBuildingId: undefined, totalBuildings: 0, stats: createEmptyStats(), power: { status: 'healthy' }, roads: [], aggregated: false, version: 0 };
 }
 
 function calculateStats(buildings: Record<string, Building>): SceneStats {
@@ -49,9 +50,11 @@ const LANGUAGE_BY_EXT: Record<string, string> = { py: 'python', ts: 'typescript'
 const languageOf = (p: string): string => LANGUAGE_BY_EXT[p.split('.').pop()?.toLowerCase() ?? ''] ?? 'other';
 const looksLikeTest = (p: string): boolean => /(^|\/)(tests?|__tests__)\/|(^|\/)test_[^/]*\.py$|_test\.py$|\.(test|spec)\.[cm]?[jt]sx?$/.test(p);
 
-export function createBuilding(input: TownFileInput, state: BuildingState = 'idle', placeholder = false): Building {
+export function createBuilding(input: TownFileInput, state: BuildingState = 'idle', placeholder = false, aggregated = false): Building {
   const normPath = normalizePath(input.path);
-  const { district, name } = getDistrictAndName(normPath);
+  const { district: folder, name } = getDistrictAndName(normPath);
+  const district = aggregated ? districtOf(normPath, true) : folder;
+  const isTest = input.isTest ?? looksLikeTest(normPath);
   const lines = Math.max(0, input.lines ?? 0);
   const visual = STATE_VISUALS[state];
   return {
@@ -59,10 +62,12 @@ export function createBuilding(input: TownFileInput, state: BuildingState = 'idl
     path: normPath,
     name,
     district,
+    folder,
+    kind: kindOf(normPath, isTest),
     lines,
     height: computeBuildingHeight(lines),
     language: input.language ?? languageOf(normPath),
-    isTest: input.isTest ?? looksLikeTest(normPath),
+    isTest,
     state,
     testStatus: 'unknown',
     color: visual.color,
@@ -79,20 +84,22 @@ function addToDistrict(districts: Record<string, District>, b: Building): Record
     ...districts,
     [b.district]: existing
       ? { ...existing, buildingIds: [...existing.buildingIds, b.id] }
-      : { id: b.district, name: b.district === '.' ? 'root' : b.district, path: b.district, buildingIds: [b.id] },
+      : { id: b.district, name: b.district === '.' ? 'root' : b.district, path: b.district, buildingIds: [b.id], ...(b.district !== b.folder ? { aggregated: true } : {}) },
   };
 }
 
 export function initSceneFromFiles(files: TownFileInput[]): SceneState {
   let districts: Record<string, District> = {};
   const buildings: Record<string, Building> = {};
+  const aggregated = files.length > AGGREGATE_THRESHOLD;
   for (const file of files) {
-    const b = createBuilding(file, 'idle');
+    const b = createBuilding(file, 'idle', false, aggregated);
     if (buildings[b.id]) continue;
     buildings[b.id] = b;
     districts = addToDistrict(districts, b);
   }
-  return { ...initialSceneState(), districts, buildings, totalBuildings: Object.keys(buildings).length, stats: calculateStats(buildings), version: 1 };
+  const roads = computeRoads(files.map((f) => ({ path: normalizePath(f.path), imports: f.imports?.map(normalizePath) })), (p) => buildings[p]?.district);
+  return { ...initialSceneState(), districts, buildings, roads, aggregated, totalBuildings: Object.keys(buildings).length, stats: calculateStats(buildings), version: 1 };
 }
 
 /** Which test file a failing test ID belongs to ("tests/test_cli.py::test_x" -> "tests/test_cli.py"). */
@@ -108,7 +115,7 @@ function touch(state: SceneState, path: string, ev: Exclude<TownEvent, { type: '
   let districts = state.districts;
   let existing = state.buildings[id];
   if (!existing) {
-    existing = createBuilding({ path: id, lines: 0 }, 'idle', true);
+    existing = createBuilding({ path: id, lines: 0 }, 'idle', true, state.aggregated);
     districts = addToDistrict(districts, existing);
   }
   const next = patch.state ?? existing.state;

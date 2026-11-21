@@ -495,7 +495,7 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
         journal: h.journal,
         loadFiles: async () => {
           const idx = await h.index.get();
-          return Object.values(idx.files).map((f) => ({ path: f.path, lines: f.lines, size: f.size, language: f.language, isTest: f.isTest }));
+          return Object.values(idx.files).map((f) => ({ path: f.path, lines: f.lines, size: f.size, language: f.language, isTest: f.isTest, imports: f.imports }));
         },
         onOpenFile: async (relPath) => {
           if (!folder) return;

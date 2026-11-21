@@ -1,5 +1,6 @@
 // Code Town scene model. Pure data: no VS Code, no Three.js. The scene is laid out from the repository index and
 // changed ONLY by town events, which are a projection of the append-only journal (src/town/fromJournal.ts).
+import type { BuildingKind, Road } from './grammar';
 
 export type BuildingState = 'idle' | 'planned' | 'read' | 'proposed' | 'applied' | 'rejected' | 'failed' | 'recovered';
 
@@ -31,6 +32,8 @@ export interface TownFileInput {
   size?: number;
   language?: string;
   isTest?: boolean;
+  /** Workspace-relative paths this file imports (from the index): roads. */
+  imports?: string[];
 }
 
 /** What the agent last did to a building (for the inspector). */
@@ -44,7 +47,12 @@ export interface Building {
   id: string;
   path: string;
   name: string;
+  /** The district (the folder, or its top levels when the town is aggregated). */
   district: string;
+  /** The real folder. */
+  folder: string;
+  /** Code, lab (tests), library (docs) or control centre (config, CLI). */
+  kind: BuildingKind;
   lines: number;
   height: number;
   language: string;
@@ -65,6 +73,8 @@ export interface District {
   name: string;
   path: string;
   buildingIds: string[];
+  /** True when nested folders were merged into this district (large workspaces). */
+  aggregated?: boolean;
 }
 
 /** The model provider "power plant". */
@@ -103,6 +113,10 @@ export interface SceneState {
   totalBuildings: number;
   stats: SceneStats;
   power: PowerPlant;
+  /** Import links between districts (filtered), from the index. */
+  roads: Road[];
+  /** True above AGGREGATE_THRESHOLD files: districts are the top folder levels. */
+  aggregated: boolean;
   /** The run the scene shows. */
   runId?: string;
   /** Last real test run of the run. */
