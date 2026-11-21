@@ -184,6 +184,7 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
 
       // Repository context within the budget; the panel shows exactly what was included and why.
       let prompt = text;
+      let trimPrompt: (() => Promise<string | undefined>) | undefined;
       if (host) {
         const index = await host.index.get();
         out.appendLine(`[index] ${index.stats.totalFiles} files, ${index.stats.symbolCount} symbols, ${index.stats.edgeCount} edges, ${index.stats.buildMs} ms (${index.stats.reusedFiles} reused)`);
@@ -192,6 +193,13 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
         post({ type: 'context', report });
         out.appendLine(`[context] ${report.items.filter((i) => i.included).length} file(s), ~${report.usedTokens}/${budget} tokens${report.unresolved.length ? `; not found: ${report.unresolved.join(', ')}` : ''}`);
         prompt = composePrompt(contextText, text);
+        // Context too large: rebuild with a quarter of the budget (one retry, in a fresh session).
+        trimPrompt = async () => {
+          if (budget <= 0) return undefined;
+          const small = await selectContext({ index, text, budgetTokens: Math.floor(budget / 4), read: (p) => host.fs.read(p), selection: lastSelection });
+          out.appendLine(`[context] too large for the model: retrying with ~${small.report.usedTokens} tokens of context`);
+          return composePrompt(small.contextText, text);
+        };
         readThisRun.clear();
         planStore.reset();
         postPlan = (pl) => post({ type: 'plan', plan: pl });
@@ -204,6 +212,7 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
       const attempts = [attemptFor(client, PRIMARY_AGENT_NAME, cfg.primaryModel), attemptFor(client, FALLBACK_AGENT_NAME, cfg.fallbackModel)];
       const result = await runWithFailover(prompt, attempts, {
         signal: abort.signal,
+        trimPrompt: trimPrompt ? () => trimPrompt?.() : undefined,
         onSwitch: (s) => {
           const banner = failoverBanner(s.fromModel, s.toModel, s.reason);
           out.appendLine(`[failover] ${banner} (detail: ${redact(s.reason).slice(0, 300)})`);

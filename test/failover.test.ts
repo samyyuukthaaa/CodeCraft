@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { TurnEvent } from '../src/trueforge/client';
 import { AgentAttempt, CONTINUE_PROMPT, FAILOVER_NOTE, SwitchInfo, runWithFailover } from '../src/trueforge/failover';
-import { MAX_RATE_LIMIT_WAITS, MAX_RETRIES, retryDelayMs } from '../src/trueforge/errors';
+import { MAX_RATE_LIMIT_WAITS, MAX_RETRIES, RETRY_BUDGET, retryAfterMs, retryDelayMs } from '../src/trueforge/errors';
 import type { TurnDriver } from '../src/trueforge/run';
 
 const ev = (e: unknown): TurnEvent => e as TurnEvent;
@@ -126,7 +126,7 @@ test('retry: a rate limit waits for the server hint and CONTINUES in the same se
   assert.equal(r.switches.length, 0);
 });
 
-test('retry: unavailable (503) is retried 3 times with backoff, then fails over', async () => {
+test('retry: an outage (503) is retried 2 times with backoff, then fails over', async () => {
   const prompts: string[] = [];
   const waits: number[] = [];
   const r = await runWithFailover('x', [seqAttempt('primary', [errorTurn(DEMAND), errorTurn(DEMAND), errorTurn(DEMAND), errorTurn(DEMAND)], prompts, []), seqAttempt('fallback', [okTurn('ok')], prompts, [])], {
@@ -136,10 +136,10 @@ test('retry: unavailable (503) is retried 3 times with backoff, then fails over'
     },
     rand: () => 0,
   });
-  assert.deepEqual(waits, [5000, 15000, 30000]);
+  assert.deepEqual(waits, [5000, 15000]);
   assert.equal(r.agent, 'fallback');
   assert.equal(r.switches.length, 1);
-  assert.equal(prompts.filter((p) => p.startsWith('primary:')).length, 4);
+  assert.equal(prompts.filter((p) => p.startsWith('primary:')).length, 3);
 });
 
 /** A turn that made progress (a tool ran) and then hit the per-minute quota, as observed live. */
@@ -191,7 +191,7 @@ test('retry: rate-limit waits are hard-capped at 10 per agent per run even with 
   assert.equal(r.agent, 'fallback');
 });
 
-test('retry: 503s stay limited to 3 per run even with progress in between', async () => {
+test('retry: outages stay limited to 2 per run even with progress in between', async () => {
   const waits: number[] = [];
   const progressThen503 = (): TurnEvent[] => [ev({ type: 'tool.response', id: 'r', threadId: 'main', toolCallId: 'c', content: '{}' }), ev({ type: 'turn.done', id: 'b', threadId: null, state: { status: 'error', message: DEMAND } })];
   const r = await runWithFailover('x', [seqAttempt('primary', Array.from({ length: 6 }, progressThen503), [], []), seqAttempt('fallback', [okTurn('ok')], [], [])], {
@@ -201,7 +201,7 @@ test('retry: 503s stay limited to 3 per run even with progress in between', asyn
     },
     rand: () => 0,
   });
-  assert.deepEqual(waits, [5000, 15000, 30000]);
+  assert.deepEqual(waits, [5000, 15000]);
   assert.equal(r.agent, 'fallback');
 });
 
@@ -250,4 +250,48 @@ test('failover: cancelled (Stop Run) does not fail over', async () => {
   const r = await runWithFailover('x', [attempt('primary', okTurn('a'), [], created), attempt('fallback', okTurn('b'), [], created)], { approver, signal: ac.signal });
   assert.equal(r.outcome.status, 'cancelled');
   assert.deepEqual(created, ['primary']);
+});
+
+test('retry: bad output is retried once, then fails over', async () => {
+  const BAD = '[Model Error] Failed to parse tool call arguments: invalid JSON';
+  const waits: number[] = [];
+  const r = await runWithFailover('x', [seqAttempt('primary', [errorTurn(BAD), errorTurn(BAD), okTurn('unused')], [], []), seqAttempt('fallback', [okTurn('ok')], [], [])], {
+    approver,
+    delay: async (ms) => {
+      waits.push(ms);
+    },
+    rand: () => 0,
+  });
+  assert.deepEqual(waits, [2000]);
+  assert.equal(r.agent, 'fallback');
+});
+
+test('retry: context too large retries ONCE with a trimmed prompt in a fresh session; without trimPrompt it fails over', async () => {
+  const BIG = '[Model Error] Request failed (400): The input is too long: maximum context length exceeded';
+  const prompts: string[] = [];
+  const created: string[] = [];
+  const r = await runWithFailover('long prompt', [seqAttempt('primary', [errorTurn(BIG), okTurn('done small')], prompts, created), seqAttempt('fallback', [okTurn('unused')], prompts, created)], {
+    approver,
+    delay: async () => undefined,
+    trimPrompt: (p) => `TRIMMED(${p})`,
+  });
+  assert.equal(r.outcome.status, 'done');
+  assert.equal(r.agent, 'primary');
+  assert.deepEqual(prompts, ['primary:long prompt', 'primary:TRIMMED(long prompt)']);
+  assert.deepEqual(created, ['primary', 'primary'], 'a fresh session for the trimmed retry');
+
+  const twice = await runWithFailover('p', [seqAttempt('primary', [errorTurn(BIG), errorTurn(BIG)], [], []), seqAttempt('fallback', [okTurn('ok')], [], [])], { approver, delay: async () => undefined, trimPrompt: (p) => p.slice(0, 1) });
+  assert.equal(twice.agent, 'fallback', 'only one trimmed retry');
+  const none = await runWithFailover('p', [seqAttempt('primary', [errorTurn(BIG)], [], []), seqAttempt('fallback', [okTurn('ok')], [], [])], { approver, delay: async () => undefined });
+  assert.equal(none.agent, 'fallback');
+  assert.equal(none.retries.length, 0);
+});
+
+test('retryAfterMs and RETRY_BUDGET: Retry-After header text and the observed hint; policy table', () => {
+  assert.equal(retryAfterMs('429 Too Many Requests. Retry-After: 12'), 12000);
+  assert.equal(retryAfterMs('{"retry_after": 7.5}'), 7500);
+  assert.equal(retryAfterMs('Please retry in 59.382723513s.'), 59383);
+  assert.equal(retryAfterMs('no hint'), undefined);
+  assert.deepEqual(RETRY_BUDGET, { tls_error: 0, invalid_or_revoked_key: 0, bad_request: 0, unknown: 0, rate_limit: 3, unavailable_or_timeout: 2, bad_output: 1, context_too_large: 1 });
+  assert.equal(retryDelayMs('[Model Error] Request failed (429): Too Many Requests. Retry-After: 3', 0, () => 0), 3000);
 });

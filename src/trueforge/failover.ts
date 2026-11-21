@@ -10,7 +10,7 @@
 // and a new per-hunk decision for every write, so accepted changes stay applied and are re-proposed only if
 // the agent reads the current file and proposes something different.
 import { redact } from '../util/redact';
-import { MAX_RATE_LIMIT_WAITS, classifyError, retryDelayMs } from './errors';
+import { ErrorClass, MAX_RATE_LIMIT_WAITS, classifyError, retryDelayMs } from './errors';
 import { RunOptions, RunOutcome, TurnDriver, runWithApprovals } from './run';
 
 export interface AgentAttempt {
@@ -75,6 +75,11 @@ export async function runWithFailover(
   opts: Omit<RunOptions, 'driver'> & {
     onSwitch?: (s: SwitchInfo) => void;
     onRetry?: (r: RetryInfo) => void;
+    /**
+     * Context too large: returns a smaller prompt (e.g. the request with a halved context budget), or
+     * undefined when nothing can be trimmed. The retry then runs once in a fresh session.
+     */
+    trimPrompt?: (prompt: string) => string | undefined | Promise<string | undefined>;
     /** Injectable for tests. */
     delay?: (ms: number, signal?: AbortSignal) => Promise<void>;
     rand?: () => number;
@@ -90,10 +95,10 @@ export async function runWithFailover(
     let outcome: RunOutcome;
     let prompt = i === 0 ? text : `${text}\n\n${FAILOVER_NOTE}`;
     let driver: TurnDriver | undefined;
-    // Retry budgets (see errors.ts): unavailable/timeout at most MAX_RETRIES per run in total; rate limits
-    // count only CONSECUTIVE failures without progress (a long task that hits a per-minute quota several
-    // times while advancing keeps going), with a hard cap of MAX_RATE_LIMIT_WAITS per agent per run.
-    let transient = 0;
+    // Retry budgets per class (RETRY_BUDGET in errors.ts). Rate limits count only CONSECUTIVE failures
+    // without progress (a long task that hits a per-minute quota several times while advancing keeps
+    // going), with a hard cap of MAX_RATE_LIMIT_WAITS per agent per run.
+    const used: Partial<Record<ErrorClass, number>> = {};
     let rateStreak = 0;
     let rateWaits = 0;
     for (let n = 0; ; n++) {
@@ -121,8 +126,15 @@ export async function runWithFailover(
         rateStreak++;
         rateWaits++;
       } else {
-        delayMs = retryDelayMs(outcome.message, transient, opts.rand);
-        transient++;
+        const k = used[cls] ?? 0;
+        delayMs = retryDelayMs(outcome.message, k, opts.rand);
+        used[cls] = k + 1;
+      }
+      // Context too large: retry once with a trimmed prompt in a FRESH session (the old history is too big).
+      let freshPrompt: string | undefined;
+      if (cls === 'context_too_large' && delayMs !== undefined) {
+        freshPrompt = await opts.trimPrompt?.(i === 0 ? text : `${text}\n\n${FAILOVER_NOTE}`);
+        if (freshPrompt === undefined) delayMs = undefined;
       }
       if (delayMs === undefined || opts.signal?.aborted) break;
       const info: RetryInfo = { agent: a.agent, model: a.model, retry: n + 1, delayMs, reason: outcome.message };
@@ -130,8 +142,13 @@ export async function runWithFailover(
       opts.onRetry?.(info);
       await wait(delayMs, opts.signal);
       if (opts.signal?.aborted) return { outcome: { status: 'cancelled', rounds: 0 }, agent: a.agent, switches, retries };
-      // A session that could not even be created is created again; otherwise continue in the same session.
-      prompt = driver ? CONTINUE_PROMPT : prompt;
+      if (freshPrompt !== undefined) {
+        driver = undefined; // new session
+        prompt = freshPrompt;
+      } else {
+        // A session that could not even be created is created again; otherwise continue in the same session.
+        prompt = driver ? CONTINUE_PROMPT : prompt;
+      }
     }
     last = { outcome, agent: a.agent, switches, retries };
     if (outcome.status !== 'error') return last;

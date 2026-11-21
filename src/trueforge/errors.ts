@@ -23,35 +23,71 @@ export function classifyError(message: string): Classified {
   if (status === 429 || /quota|rate limit|too many requests/.test(t)) return { cls: 'rate_limit', status };
   // observed: "(503): ... high demand", "Cannot connect to API: Headers Timeout Error", "terminated: read ECONNRESET"
   if ((status !== undefined && status >= 500) || /high demand|cannot connect to api|timeout|econnreset|econnrefused|unavailable/.test(t)) return { cls: 'unavailable_or_timeout', status };
-  if (/context (length|window)|maximum context|too many tokens|prompt is too long/.test(t)) return { cls: 'context_too_large', status };
+  if (/context (length|window)|maximum context|too many tokens|prompt is too long|input is too long|exceeds the maximum/.test(t)) return { cls: 'context_too_large', status };
+  // Output the agent loop could not use (malformed tool call JSON, empty or blocked response). Not observed
+  // live yet; patterns follow the common provider texts and are covered by unit tests only.
+  if (/invalid json|malformed|could not parse|failed to parse|unexpected token|empty (response|output|completion)|no candidates|finish_reason[^a-z]*(malformed|recitation)/.test(t)) return { cls: 'bad_output', status };
   // observed: "(400): * GenerateContentRequest.generation_config.temperature: ...", "(400): Bad Request"
   if (status === 400) return { cls: 'bad_request', status };
   return { cls: 'unknown', status };
 }
 
-export const MAX_RETRIES = 3;
+/**
+ * Retries per class within one run on one agent, before failing over (P4 policy):
+ *  - invalid key / TLS / bad request / unknown: 0 (fail over at once; a key problem shows the banner)
+ *  - rate limit (per minute): wait for Retry-After / "retry in N s"; counted as CONSECUTIVE failures without
+ *    progress (MAX_RETRIES), hard-capped at MAX_RATE_LIMIT_WAITS per run; a DAILY quota is never retried
+ *  - outage / timeout: 2, with backoff
+ *  - bad output: 1
+ *  - context too large: 1, after the caller trims the context (see runWithFailover's trimPrompt)
+ */
+export const RETRY_BUDGET: Record<ErrorClass, number> = {
+  tls_error: 0,
+  invalid_or_revoked_key: 0,
+  bad_request: 0,
+  unknown: 0,
+  rate_limit: 3,
+  unavailable_or_timeout: 2,
+  bad_output: 1,
+  context_too_large: 1,
+};
+/** Consecutive rate-limit failures without progress before failing over. */
+export const MAX_RETRIES = RETRY_BUDGET.rate_limit;
 /** Hard cap on rate-limit waits per agent per run, even while the agent keeps making progress. */
 export const MAX_RATE_LIMIT_WAITS = 10;
 const MAX_HINT_MS = 65_000;
 
+/** Server-provided wait: a Retry-After value (seconds) or the observed "Please retry in 59.38s." text. */
+export function retryAfterMs(message: string): number | undefined {
+  const m = /retry[-_ ]after["':\s]+([\d.]+)\s*(?:s|sec|secs|seconds)?\b/i.exec(message) ?? /retry in ([\d.]+)\s*s/i.exec(message);
+  return m ? Math.ceil(Number(m[1]) * 1000) : undefined;
+}
+
 /**
- * Delay before retrying the same agent, or undefined when the error must not be retried (it then fails
- * over at once). Observed rate-limit text carries a hint: "Please retry in 59.382723513s."
+ * Delay before retry number `retryIndex` (0-based, counted per class) of the same agent, or undefined when
+ * this class must not be retried (any more); the run then fails over.
  */
 export function retryDelayMs(message: string, retryIndex: number, rand: () => number = Math.random): number | undefined {
-  if (retryIndex >= MAX_RETRIES) return undefined;
   const c = classifyError(message);
+  if (retryIndex >= RETRY_BUDGET[c.cls]) return undefined;
   const jitter = Math.floor(rand() * 1000);
-  if (c.cls === 'rate_limit') {
-    // observed: "Generate content requests per day limit exceeded on Free Tier" (limit 500); waiting a minute
-    // cannot help, so a daily quota is never retried (it fails over at once).
-    if (isDailyQuota(message)) return undefined;
-    const hint = /retry in ([\d.]+)\s*s/i.exec(message);
-    const ms = hint ? Math.ceil(Number(hint[1]) * 1000) : 10_000 * (retryIndex + 1);
-    return Math.min(ms, MAX_HINT_MS) + jitter;
+  switch (c.cls) {
+    case 'rate_limit': {
+      // observed: "Generate content requests per day limit exceeded on Free Tier" (limit 500); waiting a minute
+      // cannot help, so a daily quota is never retried (it fails over at once).
+      if (isDailyQuota(message)) return undefined;
+      const ms = retryAfterMs(message) ?? 10_000 * (retryIndex + 1);
+      return Math.min(ms, MAX_HINT_MS) + jitter;
+    }
+    case 'unavailable_or_timeout':
+      return [5_000, 15_000][retryIndex]! + jitter;
+    case 'bad_output':
+      return 2_000 + jitter;
+    case 'context_too_large':
+      return 0; // retried at once with a trimmed context
+    default:
+      return undefined;
   }
-  if (c.cls === 'unavailable_or_timeout') return [5_000, 15_000, 30_000][retryIndex]! + jitter;
-  return undefined; // TLS, invalid key, bad request, context too large, unknown: no blind retries
 }
 
 /** True for a provider's per-day quota (not a per-minute limit). */
