@@ -86,9 +86,12 @@ export const task2: Scenario = {
 
     // Agent quality (P3 step 1): with no files named, it found the CLI module, a test and the docs itself and
     // showed a plan listing them BEFORE the first proposal was reviewed.
-    const first = run.plans[0];
+    // The plan in force when the first change was reviewed = the LATEST plan submitted before any review
+    // (agents may first submit an exploration plan with only "context" files, then the edit plan).
+    const beforeReview = run.plans.filter((p) => p.reviewsBefore === 0);
+    const first = beforeReview[beforeReview.length - 1];
     const planned = new Set((first?.plan.files ?? []).filter((f) => f.action !== 'context').map((f) => f.path));
-    const proposedBeforePlan = !first || first.reviewsBefore > 0;
+    const proposedBeforePlan = !first;
     checks.push({
       name: 'plan shown before proposing, listing src/flask/cli.py, a tests/ file and docs/cli.rst to change',
       pass: !proposedBeforePlan && planned.has('src/flask/cli.py') && [...planned].some((p) => p.startsWith('tests/')) && planned.has('docs/cli.rst'),

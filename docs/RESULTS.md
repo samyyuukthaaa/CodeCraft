@@ -200,3 +200,9 @@ A stopped 3-run batch of task1 kept running in the background (only its shell wr
 | scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
 |---|---|---|---|---|---|---|---|---|---|---|
 | task2 | 1 | FAIL | codecraft-fallback (failover x1) | src/flask/cli.py | src/flask/app.py<br>src/flask/cli.py<br>src/flask/config.py<br>docs/cli.rst<br>docs/config.rst<br>tests/test_async.py<br>tests/test_cli.py<br>tests/test_config.py<br>tests/test_testing.py<br>src/flask/__init__.py | 1/234 | 3302822 | 902 s | 38 ms | agent run finished; TASKS.md: the diff touches at least three files; TASKS.md: pytest tests/test_cli.py -q passes; TASKS.md: `flask config` prints JSON; TASKS.md: `config` appears in flask --help; covered by a test (added test code invokes "config"); documented in docs/cli.rst with the other built-in commands; full Flask test suite passes (0 failed); plan shown before proposing, listing src/flask/cli.py, a tests/ file and docs/cli.rst to change |
+
+### task2: 3 run(s), 2026-11-21T11:28:03.658Z
+
+| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| task2 | 1 | FAIL | codecraft-fallback (failover x1) | docs/cli.rst<br>src/flask/cli.py<br>tests/test_cli.py | src/flask/app.py<br>src/flask/cli.py<br>src/flask/config.py<br>docs/cli.rst<br>docs/config.rst<br>tests/test_async.py<br>tests/test_cli.py<br>tests/test_config.py<br>tests/test_testing.py<br>src/flask/__init__.py | 5/234 | 1146054 | 682 s | 28 ms | plan shown before proposing, listing src/flask/cli.py, a tests/ file and docs/cli.rst to change |
