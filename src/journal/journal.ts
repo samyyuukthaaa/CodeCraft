@@ -5,7 +5,7 @@ import { redact } from '../util/redact';
 
 export type JournalEntry =
   | { t: 'run_started'; runId: string; at: number; request: string }
-  | { t: 'plan'; runId: string; at: number; summary: string; files: Array<{ path: string; action: string }> }
+  | { t: 'plan'; runId: string; at: number; summary: string; files: Array<{ path: string; action: string; why?: string }> }
   | { t: 'op_started'; runId: string; at: number; opId: string; files: Array<{ path: string; intent: string }> }
   | { t: 'op_applied'; runId: string; at: number; opId: string; files: Array<{ path: string; intent: string; before: string | null; after: string; accepted: number; rejected: number }> }
   | { t: 'op_rejected'; runId: string; at: number; files: string[] }

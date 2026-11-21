@@ -8,6 +8,7 @@ import { initialSceneState, sceneReducer } from '../town/reducer';
 import type { Building, SceneState, TownEvent } from '../town/types';
 import type { HostToTown, TownToHost } from '../town/protocol';
 import { CaptionPart, TextureFactory, TownGraph } from './town/graph';
+import { VIEW_MODES, ViewMode, inspect, legendFor } from '../town/view';
 
 declare function acquireVsCodeApi(): { postMessage(msg: TownToHost): void };
 const vscode = acquireVsCodeApi();
@@ -32,6 +33,14 @@ const badges = Object.fromEntries(STATE_KEYS.map((k) => [k, $(`badge-${k}`)])) a
 
 let current: SceneState = initialSceneState();
 let is3D = true;
+let mode: ViewMode = 'journey';
+let inspected: string | undefined;
+const legend = $('legend');
+const inspector = $('inspector');
+const inspTitle = $('insp-title');
+const inspPath = $('insp-path');
+const inspRows = $('insp-rows');
+const modeButtons = { journey: $<HTMLButtonElement>('mode-journey'), architecture: $<HTMLButtonElement>('mode-architecture') };
 
 function isWebGLAvailable(): boolean {
   try {
@@ -222,7 +231,7 @@ function setupControls(dom: HTMLCanvasElement): void {
   );
   on(dom, 'click', (e: MouseEvent) => {
     const b = buildingAt(e);
-    if (b) vscode.postMessage({ type: 'open_file', path: b.path });
+    if (b) openInspector(b.id);
   });
 }
 
@@ -269,7 +278,7 @@ function cardFor(b: Building): HTMLElement {
   const status = document.createElement('div');
   status.className = 'fallback-card-status';
   card.append(title, meta, status);
-  card.addEventListener('click', () => vscode.postMessage({ type: 'open_file', path: b.path }));
+  card.addEventListener('click', () => openInspector(b.id));
   return card;
 }
 function fillCard(card: HTMLElement, b: Building, active: boolean): void {
@@ -335,10 +344,64 @@ function updateHud(s: SceneState): void {
   activeTag.textContent = b ? `• ${b.icon} ${b.label}: ${b.name}` : '';
 }
 
+// ---------------------------------------------------------------------------
+// Modes, legend and inspector
+// ---------------------------------------------------------------------------
+function renderLegend(): void {
+  legend.replaceChildren();
+  for (const sec of legendFor(mode)) {
+    const h = document.createElement('h5');
+    h.textContent = sec.title;
+    legend.append(h);
+    for (const it of sec.items) {
+      const row = document.createElement('div');
+      row.className = 'legend-item';
+      const sw = document.createElement('span');
+      sw.className = 'swatch';
+      sw.style.background = it.color;
+      const tx = document.createElement('span');
+      tx.textContent = `${it.icon} ${it.label}`;
+      row.append(sw, tx);
+      legend.append(row);
+    }
+  }
+}
+
+function setViewMode(m: ViewMode): void {
+  mode = m;
+  for (const [k, b] of Object.entries(modeButtons)) b.setAttribute('aria-pressed', String(k === m));
+  graph?.setMode(m);
+  renderLegend();
+}
+
+function renderInspector(): void {
+  const info = inspected ? inspect(current, inspected) : undefined;
+  inspector.classList.toggle('hidden', !info);
+  graph?.select(info ? inspected : undefined);
+  if (!info) return;
+  inspTitle.textContent = info.title;
+  inspPath.textContent = info.path;
+  inspRows.replaceChildren();
+  for (const r of info.rows) {
+    const dt = document.createElement('dt');
+    dt.textContent = r.label;
+    const dd = document.createElement('dd');
+    dd.textContent = r.value;
+    if (r.color) dd.style.color = r.color;
+    inspRows.append(dt, dd);
+  }
+}
+
+function openInspector(id: string): void {
+  inspected = id;
+  renderInspector();
+}
+
 function show(next: SceneState): void {
   const prev = current;
   current = next;
   updateHud(next);
+  if (inspected && prev.buildings[inspected] !== next.buildings[inspected]) renderInspector();
   if (is3D) graph?.sync(next);
   else update2D(prev, next);
 }
@@ -379,6 +442,16 @@ function replay(): void {
 }
 
 on(btnToggleView, 'click', () => setMode3D(!is3D));
+on(modeButtons.journey, 'click', () => setViewMode('journey'));
+on(modeButtons.architecture, 'click', () => setViewMode('architecture'));
+on($('insp-close'), 'click', () => {
+  inspected = undefined;
+  renderInspector();
+});
+on($('insp-open'), 'click', () => {
+  if (inspected) vscode.postMessage({ type: 'open_file', path: inspected });
+});
+for (const [k, b] of Object.entries(modeButtons)) b.title = `${VIEW_MODES[k as ViewMode]}: ${b.title}`;
 on(btnResetCam, 'click', resetCamera);
 on(btnReplay, 'click', () => {
   vscode.postMessage({ type: 'replay_run' });
@@ -394,9 +467,11 @@ on(window, 'message', (event: MessageEvent<HostToTown>) => {
     updateHud(current);
     graph?.rebuild(current);
     if (!is3D) rebuild2D(current);
+    renderInspector();
     resetCamera();
   } else if (m.type === 'journal') recorded = m.events;
   else if (m.type === 'event') show(sceneReducer(current, m.event));
+  else if (m.type === 'focus' && typeof m.path === 'string') openInspector(m.path);
 });
 
 // Clean shutdown: stop the loop, remove every listener, free GPU resources.
@@ -408,6 +483,7 @@ on(window, 'unload', () => {
   renderer?.dispose();
 });
 
+renderLegend();
 if (hasWebGL) init3D();
 else btnToggleView.classList.add('hidden');
 setMode3D(hasWebGL);

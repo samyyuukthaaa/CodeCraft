@@ -44,7 +44,8 @@ export function buildTownHtml(opts: { cspSource: string; nonce: string; scriptUr
   .stat-badge { padding: 2px 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.08); }
 ${stateRules}
   .stat-power { border-left: 3px solid #22c55e; font-weight: 600; }
-  .controls-group { display: flex; gap: 6px; }
+  .controls-group { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .controls-group button { white-space: nowrap; }
   button { background: rgba(30, 41, 59, 0.92); color: #e2e8f0; border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
   button:hover { background: rgba(51, 65, 85, 0.92); }
   button:disabled { opacity: 0.5; cursor: default; }
@@ -66,6 +67,24 @@ ${stateRules}
   .fallback-card.active { border-color: var(--warm); box-shadow: 0 0 10px rgba(250, 204, 21, 0.35); }
   .fallback-card-title { font-size: 12px; font-weight: 700; color: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .fallback-card-meta { font-size: 11px; color: #94a3b8; }
+  .mode-switch { display: flex; gap: 0; }
+  .mode-switch button { border-radius: 0; }
+  .mode-switch button:first-child { border-radius: 6px 0 0 6px; }
+  .mode-switch button:last-child { border-radius: 0 6px 6px 0; }
+  .mode-switch button[aria-pressed="true"] { background: #facc15; color: #0a1330; font-weight: 700; }
+  #legend { position: absolute; left: 12px; bottom: 12px; z-index: 10; font-size: 11px; max-width: 300px; }
+  #legend h5 { margin: 6px 0 3px; font-size: 11px; color: #ffffff; text-transform: uppercase; letter-spacing: 0.04em; }
+  #legend h5:first-child { margin-top: 0; }
+  .legend-item { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+  .swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+  #inspector { position: absolute; right: 12px; top: 96px; z-index: 12; width: 320px; max-height: calc(100% - 120px); overflow-y: auto; font-size: 12px; }
+  .insp-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .insp-head b { font-size: 14px; color: #ffffff; word-break: break-all; }
+  .insp-head button { padding: 2px 8px; }
+  #insp-path { margin: 2px 0 8px; word-break: break-all; }
+  #insp-rows { display: grid; grid-template-columns: max-content 1fr; gap: 4px 10px; margin: 0 0 10px; }
+  #insp-rows dt { color: #94a3b8; }
+  #insp-rows dd { margin: 0; word-break: break-word; }
   .fallback-card-status { font-size: 11px; padding: 2px 6px; border-radius: 3px; border: 1px solid; width: fit-content; font-weight: 600; }
 </style>
 </head>
@@ -80,11 +99,24 @@ ${stateRules}
       </div>
     </div>
     <div class="hud-panel controls-group">
+      <div class="mode-switch" role="group" aria-label="View mode">
+        <button id="mode-journey" type="button" aria-pressed="true" title="The path the agent took in this run">Agent Journey</button>
+        <button id="mode-architecture" type="button" aria-pressed="false" title="Districts, roads (imports) and building kinds">Architecture</button>
+      </div>
       <button id="btn-replay" type="button" title="Replay the last agent run">▶ Replay</button>
       <button id="btn-toggle-view" type="button">Switch to 2D</button>
       <button id="btn-reset-cam" type="button">Reset View</button>
     </div>
   </div>
+
+  <div id="legend" class="hud-panel" aria-label="Legend"></div>
+
+  <aside id="inspector" class="hud-panel hidden" aria-label="Building inspector">
+    <div class="insp-head"><b id="insp-title"></b><button id="insp-close" type="button" aria-label="Close the inspector">✕</button></div>
+    <div id="insp-path" class="muted"></div>
+    <dl id="insp-rows"></dl>
+    <button id="insp-open" type="button">Open file</button>
+  </aside>
 
   <div id="tooltip" role="tooltip">
     <div class="title" id="tt-title"></div>

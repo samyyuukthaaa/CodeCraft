@@ -64,6 +64,11 @@ export interface Building {
   label: string;
   /** True for a file that is not in the index (e.g. created during the run): drawn as a small lot. */
   placeholder: boolean;
+  /** Why the agent touched it (plan or change group), when the journal says. */
+  reason?: string;
+  /** The change group's plain-English sentence and confidence tag (P5), when applied. */
+  plain?: string;
+  confidence?: string;
   lastAction?: LastAction;
   lastUpdated?: number;
 }
@@ -88,6 +93,13 @@ export interface PowerPlant {
   at?: number;
 }
 
+/** One stop of the agent's journey. */
+export interface JourneyStep {
+  path: string;
+  type: TownEvent['type'];
+  at: number;
+}
+
 /** Every event carries its own timestamp (`at`, epoch ms); the reducer never reads the clock. */
 export type TownEvent =
   | { type: 'init'; files: TownFileInput[]; at: number }
@@ -102,6 +114,7 @@ export type TownEvent =
   | { type: 'test_run'; passed: boolean; failing: string[]; phase: string; at: number }
   | { type: 'file_failed'; path: string; reason: string; at: number }
   | { type: 'provider'; status: PowerStatus; model?: string; detail?: string; at: number }
+  | { type: 'file_note'; path: string; reason: string; plain: string; confidence: string; at: number }
   | { type: 'reset' };
 
 export type SceneStats = Record<BuildingState, number>;
@@ -119,6 +132,8 @@ export interface SceneState {
   aggregated: boolean;
   /** The run the scene shows. */
   runId?: string;
+  /** The path the agent took through the town in this run (Agent Journey mode), in order. */
+  journey: JourneyStep[];
   /** Last real test run of the run. */
   tests?: { passed: boolean; failing: string[]; phase: string; at: number };
   lastEvent?: TownEvent;

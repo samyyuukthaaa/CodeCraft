@@ -71,7 +71,9 @@ test('graph: one full build, then every event is incremental; no geometry or mat
   assert.equal(st.rebuilds, 1, 'never rebuilt on an event');
   assert.equal(st.incremental, 200);
   assert.equal(st.buildingRebuilds, 0);
-  assert.equal(st.owned, ownedAfterFirst, 'resources are reused: only the active caption is swapped (old one disposed)');
+  // reused: the active caption and the journey line are swapped (old ones disposed); the only growth is the
+  // numbered journey stop labels (texture + material each), capped at 40 stops
+  assert.equal(st.owned, ownedAfterFirst + 2 * 40 - 2 + 2, `owned ${st.owned}`);
 });
 
 test('graph: one InstancedMesh for all buildings; the touched instance changes colour, the others keep theirs', () => {
@@ -152,9 +154,9 @@ test('graph: dispose releases every geometry, material, texture and instance buf
   });
   let liveDisposed = 0;
   for (const x of new Set(live)) (x as THREE.EventDispatcher<{ dispose: object }>).addEventListener('dispose', () => liveDisposed++);
-  // live textures: 5 district captions + active caption + power caption + window texture; every replaced
-  // active caption (20 events) was disposed when it was replaced
-  assert.equal(created.length - disposed, 8);
+  // live textures: 5 district captions + active caption + power caption + window texture + 20 journey stop
+  // labels; every replaced active caption (20 events) was disposed when it was replaced
+  assert.equal(created.length - disposed, 8 + 20);
   g.dispose();
   assert.equal(disposed, created.length, 'all textures disposed');
   assert.equal(liveDisposed, new Set(live).size, 'all live geometries and materials disposed');

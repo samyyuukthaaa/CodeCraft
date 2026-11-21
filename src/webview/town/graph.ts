@@ -12,6 +12,7 @@ import { diffScenes } from '../../town/diff';
 import { KIND_VISUALS, POWER_VISUALS } from '../../town/grammar';
 import { FOOTPRINT, Layout, layoutScene } from '../../town/layout';
 import type { Building, SceneState } from '../../town/types';
+import { ViewMode, journeyStops } from '../../town/view';
 
 export interface CaptionPart {
   text: string;
@@ -45,7 +46,8 @@ const VERB: Partial<Record<string, string>> = {
 export const buildingHeight = (b: Building): number => 0.9 + b.height * 0.32;
 
 /** Body colour: idle buildings are a dark tint of their kind; any other state shows its state colour. */
-export function bodyColor(b: Building): THREE.Color {
+export function bodyColor(b: Building, mode: ViewMode = 'journey'): THREE.Color {
+  if (mode === 'architecture') return new THREE.Color(KIND_VISUALS[b.kind].color).lerp(NAVY, 0.3);
   return b.state === 'idle' ? new THREE.Color(KIND_VISUALS[b.kind].color).lerp(NAVY, 0.55) : new THREE.Color(b.color);
 }
 
@@ -85,6 +87,12 @@ export class TownGraph {
   private activeCaption: THREE.Sprite | undefined;
   private powerGlow: THREE.Mesh | undefined;
   private powerCaption: THREE.Sprite | undefined;
+  private roads: THREE.LineSegments | undefined;
+  private journeyLine: THREE.Line | undefined;
+  private readonly stopLabels = new Map<string, THREE.Sprite>();
+  private selectRing: THREE.Mesh | undefined;
+  private selected: string | undefined;
+  private mode: ViewMode = 'journey';
 
   private readonly counters = { rebuilds: 0, buildingRebuilds: 0, incremental: 0 };
   private readonly tmp = new THREE.Matrix4();
@@ -116,6 +124,84 @@ export class TownGraph {
     x.dispose();
     this.perBuild.delete(x);
     this.owned.delete(x);
+  }
+
+  get viewMode(): ViewMode {
+    return this.mode;
+  }
+
+  /** Switches between Agent Journey and Architecture over the same scene (recolours once: a user action). */
+  setMode(mode: ViewMode): void {
+    if (mode === this.mode) return;
+    this.mode = mode;
+    const s = this.scene;
+    if (!s) return;
+    for (const [id, i] of this.indexById) this.placeBuilding(s.buildings[id]!, i);
+    this.flush();
+    this.applyModeVisibility();
+  }
+
+  /** Highlights the inspected building (or none). */
+  select(id: string | undefined): void {
+    this.selected = id;
+    const lot = id ? this.layout?.buildings[id] : undefined;
+    if (!this.selectRing) return;
+    this.selectRing.visible = Boolean(lot);
+    if (lot) this.selectRing.position.set(lot.x, 0.06, lot.z);
+  }
+
+  private applyModeVisibility(): void {
+    const journey = this.mode === 'journey';
+    if (this.roads) {
+      const m = this.roads.material as THREE.LineBasicMaterial;
+      m.opacity = journey ? 0.35 : 1;
+      m.color.set(journey ? '#2b4a7a' : '#7aa2e3');
+    }
+    if (this.journeyLine) this.journeyLine.visible = journey;
+    for (const sp of this.stopLabels.values()) sp.visible = journey;
+    if (this.beacons) this.beacons.visible = journey;
+    if (this.shaft) this.shaft.visible = journey && Boolean(this.scene?.activeBuildingId && this.layout?.buildings[this.scene.activeBuildingId]);
+    if (this.activeCaption) this.activeCaption.visible = journey;
+  }
+
+  /** The agent's path through the town: a yellow line over the building tops, with numbered stops (first 40). */
+  private updateJourney(s: SceneState): void {
+    if (this.journeyLine) {
+      this.root.remove(this.journeyLine);
+      this.release(this.journeyLine.geometry);
+      this.release(this.journeyLine.material as THREE.Material);
+      this.journeyLine = undefined;
+    }
+    const stops = journeyStops(s);
+    if (stops.length < this.stopLabels.size || [...this.stopLabels.keys()].some((p, i) => stops[i]?.path !== p)) {
+      for (const sp of this.stopLabels.values()) this.dropSprite(sp);
+      this.stopLabels.clear();
+    }
+    const pts: number[] = [];
+    for (const step of s.journey) {
+      const lot = this.layout?.buildings[step.path];
+      const b = s.buildings[step.path];
+      if (lot && b) pts.push(lot.x, buildingHeight(b) + 1.2, lot.z);
+    }
+    if (pts.length >= 6) {
+      const g = this.build(new THREE.BufferGeometry());
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+      this.journeyLine = new THREE.Line(g, this.build(new THREE.LineBasicMaterial({ color: '#facc15', transparent: true, opacity: 0.95 })));
+      this.journeyLine.name = 'journey';
+      this.root.add(this.journeyLine);
+    }
+    for (const st of stops.slice(0, 40)) {
+      if (this.stopLabels.has(st.path)) continue;
+      const lot = this.layout?.buildings[st.path];
+      const b = s.buildings[st.path];
+      if (!lot || !b) continue;
+      const sp = this.sprite([{ text: String(st.n), yellow: true }], 1.7);
+      sp.position.set(lot.x + 1.3, buildingHeight(b) + 1.6, lot.z);
+      sp.name = `stop:${st.n}`;
+      this.stopLabels.set(st.path, sp);
+      this.root.add(sp);
+    }
+    this.applyModeVisibility();
   }
 
   stats(): GraphStats {
@@ -167,6 +253,8 @@ export class TownGraph {
     }
     if (d.activeChanged || d.changed.includes(next.activeBuildingId ?? '') || d.added.includes(next.activeBuildingId ?? '')) this.updateActive(next);
     if (d.powerChanged) this.updatePower(next);
+    // the path line is small (at most MAX_JOURNEY points): replaced (old one disposed) when the journey changes
+    if (this.scene?.journey !== next.journey) this.updateJourney(next);
     this.scene = next;
   }
 
@@ -176,6 +264,8 @@ export class TownGraph {
     for (const x of [...this.perBuild]) this.release(x);
     this.root.clear();
     this.captions.clear();
+    this.stopLabels.clear();
+    this.journeyLine = undefined;
     this.layout = layoutScene(s);
     const L = this.layout;
 
@@ -203,6 +293,7 @@ export class TownGraph {
     roadGeo.setAttribute('position', new THREE.Float32BufferAttribute(roadPts, 3));
     const roads = new THREE.LineSegments(roadGeo, this.build(new THREE.LineBasicMaterial({ color: '#2b4a7a', transparent: true, opacity: 0.85 })));
     roads.name = 'roads';
+    this.roads = roads;
     this.root.add(roads);
     const bulbGeo = this.build(new THREE.BufferGeometry());
     bulbGeo.setAttribute('position', new THREE.Float32BufferAttribute(bulbs, 3));
@@ -233,6 +324,16 @@ export class TownGraph {
     this.shaft.name = 'light-shaft';
     this.root.add(this.shaft);
     this.updateActive(s);
+
+    // selection ring for the inspector
+    this.selectRing = new THREE.Mesh(
+      this.build(new THREE.RingGeometry(1.9, 2.3, 24).rotateX(-Math.PI / 2)),
+      this.build(new THREE.MeshBasicMaterial({ color: '#facc15', transparent: true, opacity: 0.9, side: THREE.DoubleSide })),
+    );
+    this.selectRing.name = 'selection';
+    this.root.add(this.selectRing);
+    this.select(this.selected && s.buildings[this.selected] ? this.selected : undefined);
+    this.updateJourney(s);
   }
 
   private addDistrict(s: SceneState, id: string, slabsIn?: THREE.InstancedMesh): void {
@@ -328,7 +429,7 @@ export class TownGraph {
     const footprint = b.placeholder ? 0.6 : 1;
     this.tmp.compose(new THREE.Vector3(lot.x, 0, lot.z), new THREE.Quaternion(), new THREE.Vector3(footprint, h, footprint));
     this.buildings.setMatrixAt(i, this.tmp);
-    this.buildings.setColorAt(i, bodyColor(b));
+    this.buildings.setColorAt(i, bodyColor(b, this.mode));
     const showBeacon = b.state !== 'idle';
     this.tmp.compose(new THREE.Vector3(lot.x, h + 0.7, lot.z), new THREE.Quaternion(), new THREE.Vector3().setScalar(showBeacon ? 1 : 0));
     this.beacons.setMatrixAt(i, this.tmp);
@@ -362,6 +463,7 @@ export class TownGraph {
     this.activeCaption.position.set(lot.x, h + 2.2, lot.z);
     this.activeCaption.name = 'active-caption';
     this.root.add(this.activeCaption);
+    this.applyModeVisibility();
   }
 
   private updatePower(s: SceneState): void {
@@ -390,6 +492,9 @@ export class TownGraph {
     this.perBuild.clear();
     this.root.clear();
     this.captions.clear();
+    this.stopLabels.clear();
+    this.journeyLine = this.selectRing = this.shaft = this.powerGlow = this.roads = undefined;
+    this.activeCaption = this.powerCaption = undefined;
     this.buildings = this.beacons = undefined;
     this.porch = this.stringLights = undefined;
     this.scene = undefined;

@@ -138,7 +138,7 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
           // An operation ID is journaled (and written) before every tool call runs.
           beforeTool: (tool, args) => journal.append({ t: 'tool_call', opId: randomBytes(6).toString('hex'), tool, args: toolArgsSummary(tool, args) }),
           onPlan: (pl) => {
-            void journal.append({ t: 'plan', summary: pl.summary, files: pl.files.map((f) => ({ path: f.path, action: f.action })) });
+            void journal.append({ t: 'plan', summary: pl.summary, files: pl.files.map((f) => ({ path: f.path, action: f.action, why: f.why })) });
             out.appendLine(`[plan] ${pl.summary} | ${pl.files.map((f) => `${f.action} ${f.path}: ${f.why}`).join(' | ')}`);
             postPlan?.(pl);
             // Warn-before-edit list, and the test baseline on the unchanged files (writes wait for it).

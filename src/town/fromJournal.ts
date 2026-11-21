@@ -11,7 +11,9 @@ export function townEventsFor(e: JournalEntry): TownEvent[] {
     case 'run_finished':
       return [{ type: 'run_finished', status: e.status, at }];
     case 'plan':
-      return e.files.filter((f) => f.action === 'edit' || f.action === 'create').map((f) => ({ type: 'file_planned' as const, path: f.path, action: f.action as 'edit' | 'create', at }));
+      return e.files.filter((f) => f.action === 'edit' || f.action === 'create').map((f) => ({ type: 'file_planned' as const, path: f.path, action: f.action as 'edit' | 'create', ...(f.why ? { why: f.why } : {}), at }));
+    case 'change_group':
+      return e.files.map((path) => ({ type: 'file_note' as const, path, reason: e.reason, plain: e.plain, confidence: e.confidence, at }));
     case 'file_read':
       return [{ type: 'file_read', path: e.path, at }];
     case 'op_proposed':

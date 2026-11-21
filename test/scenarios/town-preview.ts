@@ -25,7 +25,7 @@ function demoEvents(at0: number): TownEvent[] {
   const t = () => (at += 400);
   return [
     { type: 'run_started', runId: 'demo', request: 'Add a --env-file option', at: t() },
-    { type: 'file_planned', path: 'src/flask/cli.py', action: 'edit', at: t() },
+    { type: 'file_planned', path: 'src/flask/cli.py', action: 'edit', why: 'the run command and its options live here', at: t() },
     { type: 'file_planned', path: 'tests/test_cli.py', action: 'edit', at: t() },
     { type: 'file_planned', path: 'docs/cli.rst', action: 'edit', at: t() },
     { type: 'file_read', path: 'src/flask/cli.py', at: t() },
@@ -33,13 +33,14 @@ function demoEvents(at0: number): TownEvent[] {
     { type: 'provider', status: 'retrying', model: 'google-gemini/primary', detail: 'rate limit', at: t() },
     { type: 'provider', status: 'failed_over', model: 'google-gemini/fallback', detail: 'from primary', at: t() },
     { type: 'file_read', path: 'tests/test_cli.py', at: t() },
-    { type: 'hunk_proposed', path: 'src/flask/cli.py', intent: 'implement', hunks: 3, at: t() },
+    { type: 'hunk_proposed', path: 'src/flask/cli.py', intent: 'implement', hunks: 3, reason: 'add the --env-file option to flask run', at: t() },
     { type: 'hunk_proposed', path: 'tests/test_cli.py', intent: 'add test', hunks: 1, at: t() },
     { type: 'hunk_proposed', path: 'docs/cli.rst', intent: 'docs', hunks: 1, at: t() },
     { type: 'hunk_decided', path: 'src/flask/cli.py', accepted: 3, rejected: 0, at: t() },
     { type: 'hunk_decided', path: 'tests/test_cli.py', accepted: 1, rejected: 0, at: t() },
     { type: 'hunk_decided', path: 'docs/cli.rst', accepted: 0, rejected: 1, at: t() },
     { type: 'file_written', path: 'src/flask/cli.py', opId: 'op1', accepted: 3, rejected: 0, created: false, at: t() },
+    { type: 'file_note', path: 'src/flask/cli.py', reason: 'flask run needs to load a chosen .env file', plain: 'This lets you pick which settings file Flask loads when it starts.', confidence: 'check this', at: t() },
     { type: 'file_written', path: 'tests/test_cli.py', opId: 'op1', accepted: 1, rejected: 0, created: false, at: t() },
     { type: 'test_run', passed: false, failing: ['tests/test_cli.py::test_env_file'], phase: 'after', at: t() },
     { type: 'file_written', path: 'src/flask/cli.py', opId: 'op2', accepted: 1, rejected: 0, created: false, at: t() },
@@ -76,6 +77,8 @@ window.__state = ${JSON.stringify(state)};
 window.__events = ${JSON.stringify(live ? events : [])};
 window.addEventListener('load', () => {
   window.postMessage({ type: 'scene', state: window.__state }, '*');
+  ${arg('mode') ? `setTimeout(() => document.getElementById('mode-${arg('mode')}').click(), 100);` : ''}
+  ${arg('inspect') ? `setTimeout(() => window.postMessage({ type: 'focus', path: ${JSON.stringify(arg('inspect'))} }, '*'), 150);` : ''}
   const evs = window.__events; let i = 0;
   const step = () => { if (i < evs.length) { window.postMessage({ type: 'event', event: evs[i++] }, '*'); setTimeout(step, ${Number(arg('interval', '60'))}); } };
   setTimeout(step, 200);
@@ -106,7 +109,11 @@ window.addEventListener('load', () => {
     const m = /MEASURE (\{[^<]*\})/.exec(dom);
     console.log(m ? m[1] : 'no measurement in the page title');
   }
+  if (fs.existsSync(outFile)) fs.rmSync(outFile);
   cp.execFileSync(browser, [...common, `--virtual-time-budget=${budget}`, `--screenshot=${outFile}`, url], { stdio: 'ignore', timeout: 180_000 });
+  // the browser writes the file after its launcher exits: wait for it (and let it settle) before returning
+  for (let i = 0; i < 120 && !fs.existsSync(outFile); i++) await new Promise((r) => setTimeout(r, 500));
+  await new Promise((r) => setTimeout(r, 1500));
   console.log(`${files.length} files, ${events.length} events -> ${outFile}`);
 }
 main().catch((e) => {

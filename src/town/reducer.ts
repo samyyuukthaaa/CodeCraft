@@ -37,7 +37,7 @@ export function createEmptyStats(): SceneStats {
 }
 
 export function initialSceneState(): SceneState {
-  return { districts: {}, buildings: {}, activeBuildingId: undefined, totalBuildings: 0, stats: createEmptyStats(), power: { status: 'healthy' }, roads: [], aggregated: false, version: 0 };
+  return { districts: {}, buildings: {}, activeBuildingId: undefined, totalBuildings: 0, stats: createEmptyStats(), power: { status: 'healthy' }, roads: [], aggregated: false, journey: [], version: 0 };
 }
 
 function calculateStats(buildings: Record<string, Building>): SceneStats {
@@ -107,7 +107,20 @@ export function testFileOf(id: string): string {
   return normalizePath(id.split('::')[0] ?? id);
 }
 
-type Patch = Partial<Pick<Building, 'state' | 'testStatus'>> & { detail: string };
+type Patch = Partial<Pick<Building, 'state' | 'testStatus' | 'reason' | 'plain' | 'confidence'>> & { detail: string };
+
+/** Events that are a stop on the agent's journey (planning is not a visit). */
+const JOURNEY_TYPES = new Set<TownEvent['type']>(['file_read', 'hunk_proposed', 'hunk_decided', 'file_written', 'file_reverted', 'file_failed']);
+export const MAX_JOURNEY = 500;
+
+function extendJourney(journey: SceneState['journey'], path: string, type: TownEvent['type'], at: number): SceneState['journey'] {
+  if (!JOURNEY_TYPES.has(type)) return journey;
+  const last = journey[journey.length - 1];
+  // consecutive actions on the same building are one stop (its latest action)
+  if (last && last.path === path) return [...journey.slice(0, -1), { path, type, at }];
+  const next = [...journey, { path, type, at }];
+  return next.length > MAX_JOURNEY ? next.slice(next.length - MAX_JOURNEY) : next;
+}
 
 /** Updates one building (added as a placeholder lot when it is not in the index). Exact path match only. */
 function touch(state: SceneState, path: string, ev: Exclude<TownEvent, { type: 'reset' } | { type: 'init' }>, patch: Patch): SceneState {
@@ -124,6 +137,9 @@ function touch(state: SceneState, path: string, ev: Exclude<TownEvent, { type: '
     ...existing,
     state: next,
     testStatus: patch.testStatus ?? existing.testStatus,
+    ...(patch.reason !== undefined ? { reason: patch.reason } : {}),
+    ...(patch.plain !== undefined ? { plain: patch.plain } : {}),
+    ...(patch.confidence !== undefined ? { confidence: patch.confidence } : {}),
     color: visual.color,
     icon: visual.icon,
     label: visual.label,
@@ -131,7 +147,7 @@ function touch(state: SceneState, path: string, ev: Exclude<TownEvent, { type: '
     lastUpdated: ev.at,
   };
   const buildings = { ...state.buildings, [id]: updated };
-  return { ...state, buildings, districts, totalBuildings: Object.keys(buildings).length, stats: calculateStats(buildings), activeBuildingId: id };
+  return { ...state, buildings, districts, totalBuildings: Object.keys(buildings).length, stats: calculateStats(buildings), activeBuildingId: id, journey: extendJourney(state.journey, id, ev.type, ev.at) };
 }
 
 const EARLY: BuildingState[] = ['idle', 'planned'];
@@ -145,10 +161,10 @@ function step(state: SceneState, event: TownEvent): SceneState {
       const idle = STATE_VISUALS.idle;
       const buildings: Record<string, Building> = {};
       for (const [id, b] of Object.entries(state.buildings)) {
-        const { lastAction: _a, lastUpdated: _u, ...rest } = b;
+        const { lastAction: _a, lastUpdated: _u, reason: _r, plain: _p, confidence: _c, ...rest } = b;
         buildings[id] = { ...rest, state: 'idle', testStatus: 'unknown', color: idle.color, icon: idle.icon, label: idle.label };
       }
-      const base = { ...state, buildings, activeBuildingId: undefined, stats: calculateStats(buildings), tests: undefined };
+      const base = { ...state, buildings, activeBuildingId: undefined, stats: calculateStats(buildings), tests: undefined, journey: [] };
       if (event.type === 'reset') return { ...base, power: { status: 'healthy', ...(state.power.model ? { model: state.power.model } : {}) } };
       return { ...base, runId: event.runId, power: { status: 'healthy', ...(state.power.model ? { model: state.power.model } : {}), at: event.at } };
     }
@@ -157,14 +173,14 @@ function step(state: SceneState, event: TownEvent): SceneState {
     case 'file_planned': {
       const b = state.buildings[normalizePath(event.path)];
       const detail = `planned to ${event.action}${event.why ? `: ${event.why}` : ''}`;
-      return touch(state, event.path, event, { detail, ...(!b || EARLY.includes(b.state) ? { state: 'planned' as const } : {}) });
+      return touch(state, event.path, event, { detail, ...(event.why ? { reason: event.why } : {}), ...(!b || EARLY.includes(b.state) ? { state: 'planned' as const } : {}) });
     }
     case 'file_read': {
       const b = state.buildings[normalizePath(event.path)];
       return touch(state, event.path, event, { detail: 'read by the agent', ...(!b || EARLY.includes(b.state) ? { state: 'read' as const } : {}) });
     }
     case 'hunk_proposed':
-      return touch(state, event.path, event, { state: 'proposed', detail: `proposed ${event.hunks} hunk(s) [${event.intent}]${event.reason ? `: ${event.reason}` : ''}` });
+      return touch(state, event.path, event, { state: 'proposed', ...(event.reason ? { reason: event.reason } : {}), detail: `proposed ${event.hunks} hunk(s) [${event.intent}]` });
     case 'hunk_decided':
       return event.accepted === 0
         ? touch(state, event.path, event, { state: 'rejected', detail: `all ${event.rejected} hunk(s) rejected by the user` })
@@ -209,6 +225,13 @@ function step(state: SceneState, event: TownEvent): SceneState {
         }
       }
       return { ...state, buildings, stats: calculateStats(buildings), tests: { passed: event.passed, failing: event.failing, phase: event.phase, at: event.at } };
+    }
+    case 'file_note': {
+      // the change group's reason, plain sentence and confidence (P5): annotations, not an agent action
+      const id = normalizePath(event.path);
+      const b = state.buildings[id];
+      if (!b) return state;
+      return { ...state, buildings: { ...state.buildings, [id]: { ...b, reason: event.reason, plain: event.plain, confidence: event.confidence } } };
     }
     case 'provider':
       // Provider health belongs to the power plant; it never marks a building failed.
