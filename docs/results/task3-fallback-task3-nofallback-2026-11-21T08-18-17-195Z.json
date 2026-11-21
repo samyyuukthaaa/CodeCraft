@@ -1,0 +1,1186 @@
+[
+  {
+    "scenario": "task3-fallback",
+    "run": 1,
+    "startedAt": "2026-11-21T08:05:56.187Z",
+    "durationMs": 737932,
+    "outcome": {
+      "status": "error",
+      "message": "stopped after 25 approval rounds",
+      "rounds": 25
+    },
+    "finalAgent": "codecraft-fallback",
+    "switches": [
+      {
+        "from": "codecraft-test-primary-badkey",
+        "to": "codecraft-fallback",
+        "fromModel": "codecraft-test-badkey/gpt-oss-120b",
+        "toModel": "google-gemini/gemini-3-5-flash-lite",
+        "reason": "[Model Error] Request failed (401): Invalid API Key"
+      }
+    ],
+    "sessions": [
+      {
+        "agent": "codecraft-test-primary-badkey",
+        "id": "01m7yj7z9t4zvy3h1jg9m3y0fe"
+      },
+      {
+        "agent": "codecraft-fallback",
+        "id": "01m7yj7zk1ph2wggm63kvpamge"
+      }
+    ],
+    "tokens": 151355,
+    "approvals": [
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag in src/flask/helpers.py to treat 'off' and 'n' as false case-insensitively and update docstring. 2. Update test_get_debug_flag in tests/test_helpers.py to test 'off', 'n', 'Off', 'N'. groups=[Update get_debug_flag and its tests and docstring: src/flask/helpers.py, tests/test_helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag in src/flask/helpers.py to treat 'off' and 'n' as false case-insensitively and update docstring. 2. Update test_get_debug_flag in tests/test_helpers.py to test 'off', 'n', 'Off', 'N'. groups=[Update get_debug_flag and its tests and docstring: src/flask/helpers.py, tests/test_helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag in src/flask/helpers.py to treat 'off' and 'n' as false case-insensitively and update docstring. 2. Update test_get_debug_flag in tests/test_helpers.py to test 'off', 'n', 'Off', 'N'. groups=[Update get_debug_flag and its tests and docstring: src/flask/helpers.py, tests/test_helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag to exclude off and n. 2. Update test_get_debug_flag to test off and n. groups=[Update get_debug_flag and its tests: src/flask/helpers.py, tests/test_helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag in src/flask/helpers.py. 2. Update test_get_debug_flag in tests/test_helpers.py. groups=[Update get_debug_flag and tests: src/flask/helpers.py, tests/test_helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag in helpers.py groups=[Update get_debug_flag in helpers.py: src/flask/helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag in helpers.py groups=[Update get_debug_flag in helpers.py: src/flask/helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag set of false values. groups=[Update get_debug_flag check: src/flask/helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag function and docstring in src/flask/helpers.py groups=[Update get_debug_flag function and docstring: src/flask/helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Use newContent to update get_debug_flag in src/flask/helpers.py. groups=[Update get_debug_flag in helpers.py: src/flask/helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update test_get_debug_flag params in tests/test_helpers.py. groups=[Update test_get_debug_flag: tests/test_helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Add off and n test cases to test_get_debug_flag. groups=[Add off and n test cases: tests/test_helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update return statement in get_debug_flag in src/flask/helpers.py groups=[Update return statement in get_debug_flag: src/flask/helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Replace get_debug_flag definition using newContent. groups=[Replace get_debug_flag definition: src/flask/helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update start of src/flask/helpers.py with newContent. groups=[Update start of src/flask/helpers.py: src/flask/helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag and tests. groups=[Update get_debug_flag and tests: src/flask/helpers.py, tests/test_helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag in helpers.py groups=[Update get_debug_flag: src/flask/helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update return statement in get_debug_flag groups=[Update return statement in get_debug_flag: src/flask/helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag in helpers.py. groups=[Update get_debug_flag function and docstring: src/flask/helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update return statement in get_debug_flag. groups=[Update return statement: src/flask/helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag with CRLF line endings. groups=[Update get_debug_flag with CRLF: src/flask/helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update return statement in get_debug_flag. groups=[Update return statement: src/flask/helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update return line. groups=[Update return line: src/flask/helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag. groups=[Update get_debug_flag: src/flask/helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag with TYPE_CHECKING context. groups=[Update get_debug_flag with TYPE_CHECKING context: src/flask/helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag with surrounding functions context. groups=[Update get_debug_flag with surrounding functions: src/flask/helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update test_get_debug_flag parameterization in tests/test_helpers.py. groups=[Update test_get_debug_flag parameterization: tests/test_helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update test_get_debug_flag in tests/test_helpers.py. groups=[Update test_get_debug_flag: tests/test_helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Add off and n to parametrize in test_get_debug_flag. groups=[Add off and n to parametrize: tests/test_helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag with CRLF. groups=[Update get_debug_flag with CRLF: src/flask/helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag in helpers.py. groups=[Update get_debug_flag: src/flask/helpers.py]"
+    ],
+    "review": [
+      {
+        "plan": "1. Update get_debug_flag in src/flask/helpers.py to treat 'off' and 'n' as false case-insensitively and update docstring.\n2. Update test_get_debug_flag in tests/test_helpers.py to test 'off', 'n', 'Off', 'N'.",
+        "groups": [
+          "Update get_debug_flag and its tests and docstring: src/flask/helpers.py (2 hunks), tests/test_helpers.py (1 hunk)"
+        ]
+      },
+      {
+        "plan": "1. Update get_debug_flag in src/flask/helpers.py to treat 'off' and 'n' as false case-insensitively and update docstring.\n2. Update test_get_debug_flag in tests/test_helpers.py to test 'off', 'n', 'Off', 'N'.",
+        "groups": [
+          "Update get_debug_flag and its tests and docstring: src/flask/helpers.py (2 hunks), tests/test_helpers.py (1 hunk)"
+        ]
+      },
+      {
+        "plan": "1. Update get_debug_flag in src/flask/helpers.py to treat 'off' and 'n' as false case-insensitively and update docstring.\n2. Update test_get_debug_flag in tests/test_helpers.py to test 'off', 'n', 'Off', 'N'.",
+        "groups": [
+          "Update get_debug_flag and its tests and docstring: src/flask/helpers.py (2 hunks), tests/test_helpers.py (1 hunk)"
+        ]
+      },
+      {
+        "plan": "1. Update get_debug_flag to exclude off and n.\n2. Update test_get_debug_flag to test off and n.",
+        "groups": [
+          "Update get_debug_flag and its tests: src/flask/helpers.py (1 hunk), tests/test_helpers.py (1 hunk)"
+        ]
+      },
+      {
+        "plan": "1. Update get_debug_flag in src/flask/helpers.py.\n2. Update test_get_debug_flag in tests/test_helpers.py.",
+        "groups": [
+          "Update get_debug_flag and tests: src/flask/helpers.py (2 hunks), tests/test_helpers.py (1 hunk)"
+        ]
+      },
+      {
+        "plan": "1. Update get_debug_flag in helpers.py",
+        "groups": [
+          "Update get_debug_flag in helpers.py: src/flask/helpers.py (2 hunks)"
+        ]
+      },
+      {
+        "plan": "1. Update get_debug_flag in helpers.py",
+        "groups": [
+          "Update get_debug_flag in helpers.py: src/flask/helpers.py (2 hunks)"
+        ]
+      },
+      {
+        "plan": "1. Update get_debug_flag set of false values.",
+        "groups": [
+          "Update get_debug_flag check: src/flask/helpers.py (1 hunk)"
+        ]
+      },
+      {
+        "plan": "1. Update get_debug_flag function and docstring in src/flask/helpers.py",
+        "groups": [
+          "Update get_debug_flag function and docstring: src/flask/helpers.py (2 hunks)"
+        ]
+      },
+      {
+        "plan": "1. Use newContent to update get_debug_flag in src/flask/helpers.py.",
+        "groups": [
+          "Update get_debug_flag in helpers.py: src/flask/helpers.py (3 hunks)"
+        ]
+      },
+      {
+        "plan": "1. Update test_get_debug_flag params in tests/test_helpers.py.",
+        "groups": [
+          "Update test_get_debug_flag: tests/test_helpers.py (2 hunks)"
+        ]
+      },
+      {
+        "plan": "1. Add off and n test cases to test_get_debug_flag.",
+        "groups": [
+          "Add off and n test cases: tests/test_helpers.py (1 hunk)"
+        ]
+      },
+      {
+        "plan": "1. Update return statement in get_debug_flag in src/flask/helpers.py",
+        "groups": [
+          "Update return statement in get_debug_flag: src/flask/helpers.py (1 hunk)"
+        ]
+      },
+      {
+        "plan": "1. Replace get_debug_flag definition using newContent.",
+        "groups": [
+          "Replace get_debug_flag definition: src/flask/helpers.py (3 hunks)"
+        ]
+      },
+      {
+        "plan": "1. Update start of src/flask/helpers.py with newContent.",
+        "groups": [
+          "Update start of src/flask/helpers.py: src/flask/helpers.py (3 hunks)"
+        ]
+      },
+      {
+        "plan": "1. Update get_debug_flag and tests.",
+        "groups": [
+          "Update get_debug_flag and tests: src/flask/helpers.py (2 hunks), tests/test_helpers.py (1 hunk)"
+        ]
+      },
+      {
+        "plan": "1. Update get_debug_flag in helpers.py",
+        "groups": [
+          "Update get_debug_flag: src/flask/helpers.py (2 hunks)"
+        ]
+      },
+      {
+        "plan": "1. Update return statement in get_debug_flag",
+        "groups": [
+          "Update return statement in get_debug_flag: src/flask/helpers.py (1 hunk)"
+        ]
+      },
+      {
+        "plan": "1. Update get_debug_flag in helpers.py.",
+        "groups": [
+          "Update get_debug_flag function and docstring: src/flask/helpers.py (2 hunks)"
+        ]
+      },
+      {
+        "plan": "1. Update return statement in get_debug_flag.",
+        "groups": [
+          "Update return statement: src/flask/helpers.py (1 hunk)"
+        ]
+      },
+      {
+        "plan": "1. Update return statement in get_debug_flag.",
+        "groups": [
+          "Update return statement: src/flask/helpers.py (1 hunk)"
+        ]
+      },
+      {
+        "plan": "1. Update return line.",
+        "groups": [
+          "Update return line: src/flask/helpers.py (1 hunk)"
+        ]
+      },
+      {
+        "plan": "1. Update get_debug_flag.",
+        "groups": [
+          "Update get_debug_flag: src/flask/helpers.py (2 hunks)"
+        ]
+      },
+      {
+        "plan": "1. Update get_debug_flag with TYPE_CHECKING context.",
+        "groups": [
+          "Update get_debug_flag with TYPE_CHECKING context: src/flask/helpers.py (2 hunks)"
+        ]
+      },
+      {
+        "plan": "1. Update get_debug_flag with surrounding functions context.",
+        "groups": [
+          "Update get_debug_flag with surrounding functions: src/flask/helpers.py (2 hunks)"
+        ]
+      },
+      {
+        "plan": "1. Update test_get_debug_flag parameterization in tests/test_helpers.py.",
+        "groups": [
+          "Update test_get_debug_flag parameterization: tests/test_helpers.py (1 hunk)"
+        ]
+      },
+      {
+        "plan": "1. Update test_get_debug_flag in tests/test_helpers.py.",
+        "groups": [
+          "Update test_get_debug_flag: tests/test_helpers.py (1 hunk)"
+        ]
+      },
+      {
+        "plan": "1. Add off and n to parametrize in test_get_debug_flag.",
+        "groups": [
+          "Add off and n to parametrize: tests/test_helpers.py (1 hunk)"
+        ]
+      }
+    ],
+    "activity": [
+      "read_file src/flask/helpers.py lines 1-50 of 641",
+      "read_file tests/test_helpers.py lines 330-360 of 383",
+      "submit_plan edit:src/flask/helpers.py, edit:tests/test_helpers.py",
+      "propose_changes Update get_debug_flag and its tests and docstring (src/flask/helpers.py, tests/test_helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "read_file src/flask/helpers.py lines 24-38 of 641",
+      "read_file tests/test_helpers.py lines 330-355 of 383",
+      "propose_changes Update get_debug_flag and its tests and docstring (src/flask/helpers.py, tests/test_helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "read_file src/flask/helpers.py lines 27-32 of 641",
+      "read_file src/flask/helpers.py lines 33-36 of 641",
+      "propose_changes Update get_debug_flag and its tests and docstring (src/flask/helpers.py, tests/test_helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "propose_changes Update get_debug_flag and its tests (src/flask/helpers.py, tests/test_helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "read_file src/flask/helpers.py lines 26-36 of 641",
+      "read_file tests/test_helpers.py lines 333-355 of 383",
+      "propose_changes Update get_debug_flag and tests (src/flask/helpers.py, tests/test_helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "submit_plan edit:src/flask/helpers.py, edit:tests/test_helpers.py",
+      "propose_changes Update get_debug_flag in helpers.py (src/flask/helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "read_file src/flask/helpers.py lines 27-38 of 641",
+      "propose_changes Update get_debug_flag in helpers.py (src/flask/helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "read_file src/flask/helpers.py lines 27-36 of 641",
+      "propose_changes Update get_debug_flag check (src/flask/helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "submit_plan edit:src/flask/helpers.py",
+      "propose_changes Update get_debug_flag function and docstring (src/flask/helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "read_file src/flask/helpers.py lines 1-400 of 641",
+      "read_file src/flask/helpers.py lines 25-424 of 641",
+      "submit_plan edit:src/flask/helpers.py, edit:tests/test_helpers.py",
+      "propose_changes Update get_debug_flag in helpers.py (src/flask/helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "submit_plan edit:tests/test_helpers.py",
+      "propose_changes Update test_get_debug_flag (tests/test_helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "read_file tests/test_helpers.py lines 330-360 of 383",
+      "submit_plan edit:tests/test_helpers.py",
+      "propose_changes Add off and n test cases (tests/test_helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "submit_plan edit:src/flask/helpers.py",
+      "propose_changes Update return statement in get_debug_flag (src/flask/helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "submit_plan edit:src/flask/helpers.py",
+      "propose_changes Replace get_debug_flag definition (src/flask/helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "submit_plan edit:src/flask/helpers.py",
+      "propose_changes Update start of src/flask/helpers.py (src/flask/helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "submit_plan edit:src/flask/helpers.py, edit:tests/test_helpers.py",
+      "propose_changes Update get_debug_flag and tests (src/flask/helpers.py, tests/test_helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "submit_plan edit:src/flask/helpers.py",
+      "propose_changes Update get_debug_flag (src/flask/helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "submit_plan edit:src/flask/helpers.py",
+      "propose_changes Update return statement in get_debug_flag (src/flask/helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "submit_plan context:src/flask/helpers.py",
+      "read_file src/flask/helpers.py lines 26-38 of 641",
+      "submit_plan edit:src/flask/helpers.py",
+      "propose_changes Update get_debug_flag function and docstring (src/flask/helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "submit_plan edit:src/flask/helpers.py",
+      "propose_changes Update return statement (src/flask/helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "submit_plan context:src/flask/helpers.py",
+      "read_file src/flask/helpers.py lines 26-38 of 641",
+      "submit_plan edit:src/flask/helpers.py",
+      "propose_changes Update get_debug_flag with CRLF (src/flask/helpers.py)",
+      "submit_plan edit:src/flask/helpers.py",
+      "propose_changes Update return statement (src/flask/helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "submit_plan edit:src/flask/helpers.py",
+      "propose_changes Update return line (src/flask/helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "submit_plan edit:src/flask/helpers.py",
+      "propose_changes Update get_debug_flag (src/flask/helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "submit_plan edit:src/flask/helpers.py",
+      "propose_changes Update get_debug_flag with TYPE_CHECKING context (src/flask/helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "submit_plan edit:src/flask/helpers.py",
+      "propose_changes Update get_debug_flag with surrounding functions (src/flask/helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "submit_plan edit:tests/test_helpers.py",
+      "propose_changes Update test_get_debug_flag parameterization (tests/test_helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "submit_plan context:tests/test_helpers.py",
+      "read_file tests/test_helpers.py lines 330-360 of 383",
+      "submit_plan edit:tests/test_helpers.py",
+      "propose_changes Update test_get_debug_flag (tests/test_helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "submit_plan edit:tests/test_helpers.py",
+      "propose_changes Add off and n to parametrize (tests/test_helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "submit_plan context:src/flask/helpers.py",
+      "submit_plan edit:src/flask/helpers.py",
+      "propose_changes Update get_debug_flag with CRLF (src/flask/helpers.py)",
+      "submit_plan edit:src/flask/helpers.py"
+    ],
+    "filesRead": [
+      "src/flask/helpers.py",
+      "tests/test_helpers.py"
+    ],
+    "totalFiles": 234,
+    "context": {
+      "budgetTokens": 6000,
+      "usedTokens": 1980,
+      "totalFiles": 234,
+      "items": [
+        {
+          "path": "src/flask/helpers.py",
+          "reason": "selected in the editor (lines 28-35)",
+          "tokens": 98,
+          "included": true
+        },
+        {
+          "path": "tests/test_converters.py",
+          "reason": "test for src/flask/helpers.py",
+          "tokens": 302,
+          "included": true
+        },
+        {
+          "path": "tests/test_helpers.py",
+          "reason": "test for src/flask/helpers.py; outline only (whole file ~2919 tokens is over budget)",
+          "tokens": 734,
+          "included": true
+        },
+        {
+          "path": "src/flask/globals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 459,
+          "included": true
+        },
+        {
+          "path": "src/flask/signals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 209,
+          "included": true
+        },
+        {
+          "path": "src/flask/wrappers.py",
+          "reason": "imported by src/flask/helpers.py; outline only (whole file ~2434 tokens is over budget)",
+          "tokens": 178,
+          "included": true
+        }
+      ],
+      "unresolved": []
+    },
+    "changed": [],
+    "maxEventLoopLagMs": 51,
+    "banners": [
+      "The primary model codecraft-test-badkey/gpt-oss-120b stopped because its API key was rejected (HTTP 401). CodeCraft switched to the fallback model google-gemini/gemini-3-5-flash-lite automatically and is continuing your request."
+    ],
+    "plans": [
+      {
+        "plan": {
+          "summary": "Update get_debug_flag to treat 'off' and 'n' as false (case-insensitively), update docstring, and add tests.",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag to treat 'off' and 'n' as false case-insensitively and update docstring to list every value treated as false."
+            },
+            {
+              "path": "tests/test_helpers.py",
+              "action": "edit",
+              "why": "Add tests for 'off' and 'n' (and case insensitivity) in test_get_debug_flag."
+            }
+          ]
+        },
+        "reviewsBefore": 0
+      },
+      {
+        "plan": {
+          "summary": "Update get_debug_flag and test_get_debug_flag separately or together with newContent if needed.",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag and docstring"
+            },
+            {
+              "path": "tests/test_helpers.py",
+              "action": "edit",
+              "why": "Update test_get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 5
+      },
+      {
+        "plan": {
+          "summary": "Update get_debug_flag in src/flask/helpers.py",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag implementation and docstring"
+            }
+          ]
+        },
+        "reviewsBefore": 8
+      },
+      {
+        "plan": {
+          "summary": "Update get_debug_flag to support 'off' and 'n' (case-insensitively) and update docstring and tests.",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag and docstring"
+            },
+            {
+              "path": "tests/test_helpers.py",
+              "action": "edit",
+              "why": "Update test_get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 9
+      },
+      {
+        "plan": {
+          "summary": "Update test_get_debug_flag in tests/test_helpers.py",
+          "files": [
+            {
+              "path": "tests/test_helpers.py",
+              "action": "edit",
+              "why": "Update test_get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 10
+      },
+      {
+        "plan": {
+          "summary": "Add test cases for off and n in test_get_debug_flag",
+          "files": [
+            {
+              "path": "tests/test_helpers.py",
+              "action": "edit",
+              "why": "Add test cases for off and n in test_get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 11
+      },
+      {
+        "plan": {
+          "summary": "Update get_debug_flag implementation",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 12
+      },
+      {
+        "plan": {
+          "summary": "Update get_debug_flag with newContent",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 13
+      },
+      {
+        "plan": {
+          "summary": "Update get_debug_flag using newContent for entire file or part",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 14
+      },
+      {
+        "plan": {
+          "summary": "Update get_debug_flag and test_get_debug_flag",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag"
+            },
+            {
+              "path": "tests/test_helpers.py",
+              "action": "edit",
+              "why": "Update test_get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 15
+      },
+      {
+        "plan": {
+          "summary": "Update get_debug_flag with exact matching lines",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 16
+      },
+      {
+        "plan": {
+          "summary": "Update get_debug_flag single line find/replace",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 17
+      },
+      {
+        "plan": {
+          "summary": "Check file",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "context",
+              "why": "Check file"
+            }
+          ]
+        },
+        "reviewsBefore": 18
+      },
+      {
+        "plan": {
+          "summary": "Update get_debug_flag",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 18
+      },
+      {
+        "plan": {
+          "summary": "Update get_debug_flag with minimal find/replace",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 19
+      },
+      {
+        "plan": {
+          "summary": "Check file content",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "context",
+              "why": "Check line endings or encoding"
+            }
+          ]
+        },
+        "reviewsBefore": 20
+      },
+      {
+        "plan": {
+          "summary": "Update get_debug_flag with CRLF newlines if needed",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 20
+      },
+      {
+        "plan": {
+          "summary": "Update get_debug_flag with exact string matching",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 20
+      },
+      {
+        "plan": {
+          "summary": "Update get_debug_flag with full block including indentation",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 21
+      },
+      {
+        "plan": {
+          "summary": "Update get_debug_flag using newContent or check write",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 22
+      },
+      {
+        "plan": {
+          "summary": "Update get_debug_flag with unique context lines",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 23
+      },
+      {
+        "plan": {
+          "summary": "Update get_debug_flag with broader context",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 24
+      },
+      {
+        "plan": {
+          "summary": "Add tests for off and n in test_get_debug_flag",
+          "files": [
+            {
+              "path": "tests/test_helpers.py",
+              "action": "edit",
+              "why": "Add tests for off and n in get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 25
+      },
+      {
+        "plan": {
+          "summary": "Read test file context",
+          "files": [
+            {
+              "path": "tests/test_helpers.py",
+              "action": "context",
+              "why": "Read test file around test_get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 26
+      },
+      {
+        "plan": {
+          "summary": "Update test_get_debug_flag with exact matching",
+          "files": [
+            {
+              "path": "tests/test_helpers.py",
+              "action": "edit",
+              "why": "Update test_get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 26
+      },
+      {
+        "plan": {
+          "summary": "Update test_get_debug_flag with simpler find",
+          "files": [
+            {
+              "path": "tests/test_helpers.py",
+              "action": "edit",
+              "why": "Update test_get_debug_flag with simpler find"
+            }
+          ]
+        },
+        "reviewsBefore": 27
+      },
+      {
+        "plan": {
+          "summary": "Check helpers.py line endings",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "context",
+              "why": "Check helpers.py line endings"
+            }
+          ]
+        },
+        "reviewsBefore": 28
+      },
+      {
+        "plan": {
+          "summary": "Update get_debug_flag with CRLF newlines in find/replace",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 28
+      },
+      {
+        "plan": {
+          "summary": "Update get_debug_flag with LF newlines in edits",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 28
+      }
+    ],
+    "retries": [
+      "codecraft-fallback retry 1 after 3 s: [Model Error] Request failed (429): You exceeded your current quota, please check your plan and billing details. For mor"
+    ],
+    "atSwitch": [
+      {
+        "changed": [],
+        "approvalsBefore": 0,
+        "reviewsBefore": 0
+      }
+    ],
+    "failureMessage": "google-gemini/gemini-3-5-flash-lite failed: stopped after 25 approval rounds Nothing was changed in your files.",
+    "checks": [
+      {
+        "name": "exactly one automatic switch, from the invalid-key agent to codecraft-fallback",
+        "pass": true,
+        "detail": "codecraft-test-primary-badkey -> codecraft-fallback"
+      },
+      {
+        "name": "the switch was caused by the rejected key (HTTP 401)",
+        "pass": true,
+        "detail": "[Model Error] Request failed (401): Invalid API Key"
+      },
+      {
+        "name": "no user action before the takeover (0 approvals, 0 reviews) and nothing written at that moment",
+        "pass": true,
+        "detail": "approvals 0, reviews 0, changed none"
+      },
+      {
+        "name": "banner says in plain words that the primary key was rejected and the fallback took over",
+        "pass": true,
+        "detail": "The primary model codecraft-test-badkey/gpt-oss-120b stopped because its API key was rejected (HTTP 401). CodeCraft switched to the fallback model google-gemini/gemini-3-5-flash-lite automatically and is continuing your request."
+      },
+      {
+        "name": "TASKS.md: the second configured model took over (run finished on codecraft-fallback)",
+        "pass": false,
+        "detail": "error on codecraft-fallback"
+      },
+      {
+        "name": "the fallback did the work: it proposed a change to src/flask/helpers.py (rejected by the scripted user)",
+        "pass": true,
+        "detail": "Update get_debug_flag and its tests and docstring: src/flask/helpers.py (2 hunks), tests/test_helpers.py (1 hunk) || Update get_debug_flag and its tests and docstring: src/flask/helpers.py (2 hunks), tests/test_helpers.py (1 hunk) || Update get_debug_flag and its tests and docstring: src/flask/helpers.py (2 hunks), tests/test_helpers.py (1 hunk) || Update get_debug_flag and its tests: src/flask/helpers.py (1 hunk), tests/test_helpers.py (1 hunk) || Update get_debug_flag and tests: src/flask/helpers.py (2 hunks), tests/test_helpers.py (1 hunk) || Update get_debug_flag in helpers.py: src/flask/helpers.py (2 hunks) || Update get_debug_flag in helpers.py: src/flask/helpers.py (2 hunks) || Update get_debug_flag check: src/flask/helpers.py (1 hunk) || Update get_debug_flag function and docstring: src/flask/helpers.py (2 hunks) || Update get_debug_flag in helpers.py: src/flask/helpers.py (3 hunks) || Update test_get_debug_flag: tests/test_helpers.py (2 hunks) || Add off and n test cases: tests/test_helpers.py (1 hunk) || Update return statement in get_debug_flag: src/flask/helpers.py (1 hunk) || Replace get_debug_flag definition: src/flask/helpers.py (3 hunks) || Update start of src/flask/helpers.py: src/flask/helpers.py (3 hunks) || Update get_debug_flag and tests: src/flask/helpers.py (2 hunks), tests/test_helpers.py (1 hunk) || Update get_debug_flag: src/flask/helpers.py (2 hunks) || Update return statement in get_debug_flag: src/flask/helpers.py (1 hunk) || Update get_debug_flag function and docstring: src/flask/helpers.py (2 hunks) || Update return statement: src/flask/helpers.py (1 hunk) || Update return statement: src/flask/helpers.py (1 hunk) || Update return line: src/flask/helpers.py (1 hunk) || Update get_debug_flag: src/flask/helpers.py (2 hunks) || Update get_debug_flag with TYPE_CHECKING context: src/flask/helpers.py (2 hunks) || Update get_debug_flag with surrounding functions: src/flask/helpers.py (2 hunks) || Update test_get_debug_flag parameterization: tests/test_helpers.py (1 hunk) || Update test_get_debug_flag: tests/test_helpers.py (1 hunk) || Add off and n to parametrize: tests/test_helpers.py (1 hunk)"
+      },
+      {
+        "name": "TASKS.md: git status shows no files changed",
+        "pass": true,
+        "detail": "clean"
+      },
+      {
+        "name": "TASKS.md: editor stays responsive (max event-loop lag < 250 ms)",
+        "pass": true,
+        "detail": "51 ms"
+      },
+      {
+        "name": "the dummy key never appears in any message, banner, log or result",
+        "pass": true,
+        "detail": "not present"
+      },
+      {
+        "name": "fixture reset to clean after the run",
+        "pass": true,
+        "detail": "clean"
+      }
+    ],
+    "pass": false
+  },
+  {
+    "scenario": "task3-nofallback",
+    "run": 1,
+    "startedAt": "2026-11-21T08:18:14.120Z",
+    "durationMs": 1105,
+    "outcome": {
+      "status": "error",
+      "message": "[Model Error] Request failed (401): Invalid API Key",
+      "rounds": 1
+    },
+    "finalAgent": "codecraft-test-primary-badkey",
+    "switches": [],
+    "sessions": [
+      {
+        "agent": "codecraft-test-primary-badkey",
+        "id": "01m7yjyg0mb947cj4n0k5vjty3"
+      }
+    ],
+    "tokens": 0,
+    "approvals": [],
+    "review": [],
+    "activity": [],
+    "filesRead": [],
+    "totalFiles": 234,
+    "context": {
+      "budgetTokens": 6000,
+      "usedTokens": 1980,
+      "totalFiles": 234,
+      "items": [
+        {
+          "path": "src/flask/helpers.py",
+          "reason": "selected in the editor (lines 28-35)",
+          "tokens": 98,
+          "included": true
+        },
+        {
+          "path": "tests/test_converters.py",
+          "reason": "test for src/flask/helpers.py",
+          "tokens": 302,
+          "included": true
+        },
+        {
+          "path": "tests/test_helpers.py",
+          "reason": "test for src/flask/helpers.py; outline only (whole file ~2919 tokens is over budget)",
+          "tokens": 734,
+          "included": true
+        },
+        {
+          "path": "src/flask/globals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 459,
+          "included": true
+        },
+        {
+          "path": "src/flask/signals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 209,
+          "included": true
+        },
+        {
+          "path": "src/flask/wrappers.py",
+          "reason": "imported by src/flask/helpers.py; outline only (whole file ~2434 tokens is over budget)",
+          "tokens": 178,
+          "included": true
+        }
+      ],
+      "unresolved": []
+    },
+    "changed": [],
+    "maxEventLoopLagMs": 13,
+    "banners": [],
+    "plans": [],
+    "retries": [],
+    "atSwitch": [],
+    "failureMessage": "Provider key rejected (HTTP 401) for codecraft-test-badkey/gpt-oss-120b: update it in TrueForge Settings. Nothing was changed in your files.",
+    "checks": [
+      {
+        "name": "the run fails (no fallback configured) without asking the user anything",
+        "pass": true,
+        "detail": "error, switches 0, approvals 0, reviews 0"
+      },
+      {
+        "name": "TASKS.md: the user sees a clear message (key rejected, where to fix it, nothing changed)",
+        "pass": true,
+        "detail": "Provider key rejected (HTTP 401) for codecraft-test-badkey/gpt-oss-120b: update it in TrueForge Settings. Nothing was changed in your files."
+      },
+      {
+        "name": "TASKS.md: git status shows no files changed",
+        "pass": true,
+        "detail": "clean"
+      },
+      {
+        "name": "TASKS.md: editor stays responsive (max event-loop lag < 250 ms)",
+        "pass": true,
+        "detail": "13 ms"
+      },
+      {
+        "name": "the dummy key never appears in any message, banner, log or result",
+        "pass": true,
+        "detail": "not present"
+      },
+      {
+        "name": "fixture reset to clean after the run",
+        "pass": true,
+        "detail": "clean"
+      }
+    ],
+    "pass": true
+  },
+  {
+    "scenario": "task3-nofallback",
+    "run": 2,
+    "startedAt": "2026-11-21T08:18:15.226Z",
+    "durationMs": 966,
+    "outcome": {
+      "status": "error",
+      "message": "[Model Error] Request failed (401): Invalid API Key",
+      "rounds": 1
+    },
+    "finalAgent": "codecraft-test-primary-badkey",
+    "switches": [],
+    "sessions": [
+      {
+        "agent": "codecraft-test-primary-badkey",
+        "id": "01m7yjyh2pdtwh0jka92wedbsp"
+      }
+    ],
+    "tokens": 0,
+    "approvals": [],
+    "review": [],
+    "activity": [],
+    "filesRead": [],
+    "totalFiles": 234,
+    "context": {
+      "budgetTokens": 6000,
+      "usedTokens": 1980,
+      "totalFiles": 234,
+      "items": [
+        {
+          "path": "src/flask/helpers.py",
+          "reason": "selected in the editor (lines 28-35)",
+          "tokens": 98,
+          "included": true
+        },
+        {
+          "path": "tests/test_converters.py",
+          "reason": "test for src/flask/helpers.py",
+          "tokens": 302,
+          "included": true
+        },
+        {
+          "path": "tests/test_helpers.py",
+          "reason": "test for src/flask/helpers.py; outline only (whole file ~2919 tokens is over budget)",
+          "tokens": 734,
+          "included": true
+        },
+        {
+          "path": "src/flask/globals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 459,
+          "included": true
+        },
+        {
+          "path": "src/flask/signals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 209,
+          "included": true
+        },
+        {
+          "path": "src/flask/wrappers.py",
+          "reason": "imported by src/flask/helpers.py; outline only (whole file ~2434 tokens is over budget)",
+          "tokens": 178,
+          "included": true
+        }
+      ],
+      "unresolved": []
+    },
+    "changed": [],
+    "maxEventLoopLagMs": 3,
+    "banners": [],
+    "plans": [],
+    "retries": [],
+    "atSwitch": [],
+    "failureMessage": "Provider key rejected (HTTP 401) for codecraft-test-badkey/gpt-oss-120b: update it in TrueForge Settings. Nothing was changed in your files.",
+    "checks": [
+      {
+        "name": "the run fails (no fallback configured) without asking the user anything",
+        "pass": true,
+        "detail": "error, switches 0, approvals 0, reviews 0"
+      },
+      {
+        "name": "TASKS.md: the user sees a clear message (key rejected, where to fix it, nothing changed)",
+        "pass": true,
+        "detail": "Provider key rejected (HTTP 401) for codecraft-test-badkey/gpt-oss-120b: update it in TrueForge Settings. Nothing was changed in your files."
+      },
+      {
+        "name": "TASKS.md: git status shows no files changed",
+        "pass": true,
+        "detail": "clean"
+      },
+      {
+        "name": "TASKS.md: editor stays responsive (max event-loop lag < 250 ms)",
+        "pass": true,
+        "detail": "3 ms"
+      },
+      {
+        "name": "the dummy key never appears in any message, banner, log or result",
+        "pass": true,
+        "detail": "not present"
+      },
+      {
+        "name": "fixture reset to clean after the run",
+        "pass": true,
+        "detail": "clean"
+      }
+    ],
+    "pass": true
+  },
+  {
+    "scenario": "task3-nofallback",
+    "run": 3,
+    "startedAt": "2026-11-21T08:18:16.192Z",
+    "durationMs": 1001,
+    "outcome": {
+      "status": "error",
+      "message": "[Model Error] Request failed (401): Invalid API Key",
+      "rounds": 1
+    },
+    "finalAgent": "codecraft-test-primary-badkey",
+    "switches": [],
+    "sessions": [
+      {
+        "agent": "codecraft-test-primary-badkey",
+        "id": "01m7yjyj1efwmwjar1q6txg92p"
+      }
+    ],
+    "tokens": 0,
+    "approvals": [],
+    "review": [],
+    "activity": [],
+    "filesRead": [],
+    "totalFiles": 234,
+    "context": {
+      "budgetTokens": 6000,
+      "usedTokens": 1980,
+      "totalFiles": 234,
+      "items": [
+        {
+          "path": "src/flask/helpers.py",
+          "reason": "selected in the editor (lines 28-35)",
+          "tokens": 98,
+          "included": true
+        },
+        {
+          "path": "tests/test_converters.py",
+          "reason": "test for src/flask/helpers.py",
+          "tokens": 302,
+          "included": true
+        },
+        {
+          "path": "tests/test_helpers.py",
+          "reason": "test for src/flask/helpers.py; outline only (whole file ~2919 tokens is over budget)",
+          "tokens": 734,
+          "included": true
+        },
+        {
+          "path": "src/flask/globals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 459,
+          "included": true
+        },
+        {
+          "path": "src/flask/signals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 209,
+          "included": true
+        },
+        {
+          "path": "src/flask/wrappers.py",
+          "reason": "imported by src/flask/helpers.py; outline only (whole file ~2434 tokens is over budget)",
+          "tokens": 178,
+          "included": true
+        }
+      ],
+      "unresolved": []
+    },
+    "changed": [],
+    "maxEventLoopLagMs": 13,
+    "banners": [],
+    "plans": [],
+    "retries": [],
+    "atSwitch": [],
+    "failureMessage": "Provider key rejected (HTTP 401) for codecraft-test-badkey/gpt-oss-120b: update it in TrueForge Settings. Nothing was changed in your files.",
+    "checks": [
+      {
+        "name": "the run fails (no fallback configured) without asking the user anything",
+        "pass": true,
+        "detail": "error, switches 0, approvals 0, reviews 0"
+      },
+      {
+        "name": "TASKS.md: the user sees a clear message (key rejected, where to fix it, nothing changed)",
+        "pass": true,
+        "detail": "Provider key rejected (HTTP 401) for codecraft-test-badkey/gpt-oss-120b: update it in TrueForge Settings. Nothing was changed in your files."
+      },
+      {
+        "name": "TASKS.md: git status shows no files changed",
+        "pass": true,
+        "detail": "clean"
+      },
+      {
+        "name": "TASKS.md: editor stays responsive (max event-loop lag < 250 ms)",
+        "pass": true,
+        "detail": "13 ms"
+      },
+      {
+        "name": "the dummy key never appears in any message, banner, log or result",
+        "pass": true,
+        "detail": "not present"
+      },
+      {
+        "name": "fixture reset to clean after the run",
+        "pass": true,
+        "detail": "clean"
+      }
+    ],
+    "pass": true
+  }
+]

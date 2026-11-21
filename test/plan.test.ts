@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { WriteGate } from '../src/mcp/gate';
 import { Plan, PlanStore, createHandlers } from '../src/mcp/tools';
-import { DiskApplier, ScriptedReviewer, acceptAll, readDisk, tempWorkspace } from './helpers';
+import { DiskApplier, ScriptedReviewer, acceptAll, readDisk, rejectAll, tempWorkspace } from './helpers';
 
 const FILES = { 'src/cli.py': 'def run():\n    pass\n', 'tests/test_cli.py': 'def test_run():\n    pass\n', 'docs/cli.rst': 'CLI\n===\n' };
 
@@ -66,6 +66,36 @@ test('plan: files outside the plan (or listed only as context) are refused; resu
     assert.match(r.text, /not in your plan as edit\/create: docs\/cli\.rst/);
     await h.submit_plan({ summary: 's', files: [{ path: 'src/cli.py', action: 'edit', why: 'code' }, { path: 'docs/cli.rst', action: 'edit', why: 'document it' }] });
     assert.equal(JSON.parse((await h.propose_changes(docs)).text).status, 'applied');
+  } finally {
+    await ws.cleanup();
+  }
+});
+
+test('plan: after the user rejects 2 proposals in a row, further proposals are refused with "stop and summarize"', async () => {
+  const ws = await tempWorkspace(FILES);
+  try {
+    let answer: 'accept' | 'reject' = 'reject';
+    const reviewer = new ScriptedReviewer((req) => (answer === 'accept' ? acceptAll(req) : rejectAll(req)));
+    const applier = new DiskApplier(ws.root);
+    const plan = new PlanStore();
+    const h = createHandlers({ fs: ws.fs, gate: new WriteGate(ws.fs, applier, reviewer), tests: { run: async () => ({ ran: false, output: '' }) }, plan });
+    await h.read_file({ path: 'src/cli.py' });
+    await h.submit_plan({ summary: 's', files: [{ path: 'src/cli.py', action: 'edit', why: 'code' }] });
+    assert.equal(JSON.parse((await h.propose_changes(CHANGE)).text).status, 'rejected');
+    answer = 'accept';
+    assert.equal(JSON.parse((await h.propose_changes(CHANGE)).text).status, 'applied', 'an accepted change resets the count');
+    await h.read_file({ path: 'src/cli.py' });
+    answer = 'reject';
+    const other = { plan: 'p', groups: [{ intent: 'implement', files: [{ path: 'src/cli.py', edits: [{ find: 'print("x")', replace: 'print("y")' }] }] }] };
+    assert.equal(JSON.parse((await h.propose_changes(other)).text).status, 'rejected');
+    assert.equal(JSON.parse((await h.propose_changes(other)).text).status, 'rejected');
+    const third = await h.propose_changes(other);
+    assert.equal(third.isError, true);
+    assert.match(third.text, /rejected your last 2 proposals; do not propose again/);
+    assert.equal(reviewer.requests.length, 4, 'the refused proposal never reached the reviewer');
+    assert.match((await h.propose_write({ path: 'src/cli.py', newContent: 'z\n', reason: 'r' })).text, /do not propose again/);
+    plan.reset();
+    assert.match((await h.propose_changes(other)).text, /submit_plan first/, 'a new run starts fresh');
   } finally {
     await ws.cleanup();
   }

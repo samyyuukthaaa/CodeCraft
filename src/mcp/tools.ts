@@ -37,10 +37,24 @@ export interface Plan {
  * The agent's current plan for this run. When a PlanStore is supplied, proposals are refused until a plan
  * exists, and only files the plan lists as "edit" or "create" may be proposed. Reset at the start of a run.
  */
+export const MAX_REJECTED_IN_A_ROW = 2;
+
 export class PlanStore {
   private plan: Plan | undefined;
+  private rejectedInARow = 0;
   reset(): void {
     this.plan = undefined;
+    this.rejectedInARow = 0;
+  }
+  /** Observed live: after the user rejected a change, an agent re-proposed it for 25 rounds. */
+  noteOutcome(status: string): void {
+    this.rejectedInARow = status === 'rejected' ? this.rejectedInARow + 1 : status === 'applied' || status === 'partially_applied' ? 0 : this.rejectedInARow;
+  }
+  /** An error once the user has rejected MAX_REJECTED_IN_A_ROW whole proposals in a row in this run. */
+  rejectionStop(): string | undefined {
+    return this.rejectedInARow >= MAX_REJECTED_IN_A_ROW
+      ? `the user rejected your last ${this.rejectedInARow} proposals; do not propose again. Stop and reply with a short summary of what you proposed and why.`
+      : undefined;
   }
   get(): Plan | undefined {
     return this.plan;
@@ -50,6 +64,8 @@ export class PlanStore {
   }
   /** An error message when `paths` may not be proposed, or undefined when they may. */
   check(paths: string[]): string | undefined {
+    const stop = this.rejectionStop();
+    if (stop) return stop;
     if (!this.plan) return 'call submit_plan first: list the files you chose (edit, create or context) and why, before proposing changes';
     const allowed = new Set(this.plan.files.filter((f) => f.action !== 'context').map((f) => f.path));
     const missing = paths.filter((p) => !allowed.has(p));
@@ -224,6 +240,7 @@ export function createHandlers(deps: ToolDeps) {
       }
       const r = await deps.gate.propose(a.path, matchEol(current, a.newContent), a.reason);
       note(`propose_write ${a.path} -> ${r.status}`);
+      deps.plan?.noteOutcome(r.status);
       // Honest wording: a proposal is not a write. Only "applied"/"partially_applied" mean the file changed.
       return r.status === 'refused' ? err(r.message) : ok(r);
     },
@@ -291,6 +308,7 @@ export function createHandlers(deps: ToolDeps) {
       }
       const r = await deps.gate.proposeSet(a.plan, groups);
       note(`propose_changes -> ${r.status}: ${r.message}`);
+      deps.plan?.noteOutcome(r.status);
       // Honest wording: a proposal is not a write. Only "applied"/"partially_applied" mean files changed.
       return r.status === 'refused' ? err(r.message) : ok(r);
     },

@@ -2,7 +2,7 @@
 
 All runs: 2026-11-20, against pallets/flask 3.1.3 (`22d92470`) in `fixtures/flask`, real TrueForge 0.185.1, real models (primary `google-gemini/gemini-3-1-flash-lite`, fallback `google-gemini/gemini-3-5-flash-lite`, both on the Gemini free tier), the real MCP server, and real verification commands (python, pytest, flask CLI). Only the human is scripted (tool approval and hunk review). Commands: `npm run scenario -- task1|task2|task3-fallback|task3-nofallback`. Full per-run JSON: `docs/results/`.
 
-## Status as of 2026-11-21 07:45 UTC (3-in-a-row goal)
+## Status as of 2026-11-21 08:35 UTC (3-in-a-row goal)
 
 No task is currently at "3 passing runs in a row on the final code". Every run since the first summary, in order (all rows are in the raw table below):
 
@@ -19,6 +19,10 @@ No task is currently at "3 passing runs in a row on the final code". Every run s
 | `1038062` | task3-fallback | 1 | FAIL | fallback already at the daily limit (0 tokens served) |
 | `1038062` | task3-nofallback | 3 | **PASS, PASS, PASS** | |
 | `1038062` | task1 | 1 | FAIL | daily limit, and the machine was asleep (no event-loop tick for 893 s); the 15-min run limit fired |
+| `7d47965` | task1 | 1 | aborted | process exited (code 127) mid-run right after the plan and first proposals, with no error output; cause not yet known; fixture left clean |
+| `7d47965` | task3-fallback | 1 | FAIL | 401 failover worked; the fallback then re-proposed after each rejection by the scripted user until the 25-round limit (fixed: proposals are refused after 2 whole rejections in a row) |
+| `7d47965` | task3-nofallback | 3 | **PASS, PASS, PASS** | |
+| `7d47965` | task2 | 2 | PASS, FAIL | run 2: `Cannot connect to API: certificate has expired` (TLS on this machine). Per the project rule the batch STOPPED and nothing was retried. |
 
 Environment facts, not code: both Gemini models are on the free tier (15 requests/min, 250k input tokens/min, 500 requests/day per model; the daily quota resets at midnight Pacific = 08:00 UTC); one DNS outage; the machine slept during one batch. Code changes made because of these runs: per-minute 429 retries count only consecutive failures without progress; daily-quota 429s are not retried and say so; over-escaped edit text is decoded once as a fallback. No check was weakened.
 
@@ -151,3 +155,19 @@ A stopped 3-run batch of task1 kept running in the background (only its shell wr
 | scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
 |---|---|---|---|---|---|---|---|---|---|---|
 | task1 | 1 | FAIL | codecraft-fallback (failover x1) | (none) | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 0/234 | n/a | 1058 s | 893513 ms | agent run finished; src/flask/helpers.py changed; nothing else except tests; TASKS.md check: FLASK_DEBUG=off prints False; false for off/n/0/false/no (any case), empty and unset; true otherwise; docstring lists every false value (0, false, no, off, n) |
+
+### task3-fallback, task3-nofallback: 3 run(s), 2026-11-21T08:18:17.198Z
+
+| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| task3-fallback | 1 | FAIL | codecraft-fallback (failover x1) | (none) | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 2/234 | 151355 | 738 s | 51 ms | TASKS.md: the second configured model took over (run finished on codecraft-fallback) |
+| task3-nofallback | 1 | PASS | codecraft-test-primary-badkey | (none) | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 0/234 | n/a | 1 s | 13 ms | - |
+| task3-nofallback | 2 | PASS | codecraft-test-primary-badkey | (none) | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 0/234 | n/a | 1 s | 3 ms | - |
+| task3-nofallback | 3 | PASS | codecraft-test-primary-badkey | (none) | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 0/234 | n/a | 1 s | 13 ms | - |
+
+### task2: 3 run(s), 2026-11-21T08:27:06.854Z
+
+| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| task2 | 1 | PASS | codecraft-primary | docs/cli.rst<br>src/flask/cli.py<br>tests/test_cli.py | src/flask/app.py<br>src/flask/cli.py<br>src/flask/config.py<br>docs/cli.rst<br>docs/config.rst<br>tests/test_async.py<br>tests/test_cli.py<br>tests/test_config.py<br>tests/test_testing.py<br>src/flask/__init__.py | 4/234 | 1811339 | 431 s | 120 ms | - |
+| task2 | 2 | FAIL | codecraft-primary | (none) | src/flask/app.py<br>src/flask/cli.py<br>src/flask/config.py<br>docs/cli.rst<br>docs/config.rst<br>tests/test_async.py<br>tests/test_cli.py<br>tests/test_config.py<br>tests/test_testing.py<br>src/flask/__init__.py | 1/234 | 184305 | 95 s | 97 ms | agent run finished; TASKS.md: the diff touches at least three files; TASKS.md: `flask config` prints JSON; TASKS.md: `config` appears in flask --help; covered by a test (added test code invokes "config"); documented in docs/cli.rst with the other built-in commands; plan shown before proposing, listing src/flask/cli.py, a tests/ file and docs/cli.rst to change |
