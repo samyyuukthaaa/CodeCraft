@@ -90,6 +90,8 @@ export async function runWithFailover(
      * undefined when nothing can be trimmed. The retry then runs once in a fresh session.
      */
     trimPrompt?: (prompt: string) => string | undefined | Promise<string | undefined>;
+    /** Checkpoint resume: what this run already completed (from the journal), added to failover/continue prompts. */
+    progressNote?: () => string;
     /** Per-provider circuit breaker: open providers are skipped (unless no other agent is left). */
     breaker?: CircuitBreaker;
     /** Every provider error (event provider_error{class}). */
@@ -117,7 +119,11 @@ export async function runWithFailover(
       continue;
     }
     let outcome: RunOutcome;
-    let prompt = i === 0 ? text : `${text}\n\n${FAILOVER_NOTE}`;
+    const checkpoint = (): string => {
+      const note = opts.progressNote?.() ?? '';
+      return note ? `\n${note}` : '';
+    };
+    let prompt = i === 0 ? text : `${text}\n\n${FAILOVER_NOTE}${checkpoint()}`;
     let driver: TurnDriver | undefined;
     // Retry budgets per class (RETRY_BUDGET in errors.ts). Rate limits count only CONSECUTIVE failures
     // without progress (a long task that hits a per-minute quota several times while advancing keeps
@@ -172,7 +178,7 @@ export async function runWithFailover(
         prompt = freshPrompt;
       } else {
         // A session that could not even be created is created again; otherwise continue in the same session.
-        prompt = driver ? CONTINUE_PROMPT : prompt;
+        prompt = driver ? `${CONTINUE_PROMPT}${checkpoint()}` : prompt;
       }
     }
     last = { outcome, agent: a.agent, switches, retries };

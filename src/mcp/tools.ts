@@ -96,6 +96,8 @@ export interface ToolDeps {
   index?: { get(): Promise<RepoIndex> };
   /** Called with every path the agent actually reads via read_file. */
   onRead?: (path: string) => void;
+  /** Called with every real test result (journal). */
+  onTests?: (passed: boolean, exitCode: number | null) => void;
 }
 
 export const MAX_READ_CHARS = 200_000;
@@ -350,6 +352,7 @@ export function createHandlers(deps: ToolDeps) {
       const r = await deps.tests.run();
       if (!r.ran) return err(r.message ?? 'tests were not run');
       deps.plan?.noteTests(r.exitCode === 0);
+      deps.onTests?.(r.exitCode === 0, r.exitCode ?? null);
       return ok({ exitCode: r.exitCode, passed: r.exitCode === 0, output: redact(r.output) });
     },
   };

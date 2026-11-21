@@ -5,6 +5,7 @@
 import { createHash } from 'node:crypto';
 import { Hunk, applyHunks, computeHunks } from './diff';
 import { normalizeRelPath } from './paths';
+import type { Journal } from '../journal/journal';
 
 export type Decision = 'accept' | 'reject';
 
@@ -86,6 +87,7 @@ interface StoredDecision {
 }
 
 interface UndoEntry {
+  opId: string;
   files: Array<{ path: string; before: string | undefined; after: string }>;
 }
 
@@ -106,6 +108,8 @@ export class WriteGate {
     private readonly fs: ReadFs,
     private readonly applier: Applier,
     private readonly reviewer: Reviewer,
+    /** Optional append-only journal: operation IDs, checkpoint resume, edit history. */
+    private readonly journal?: Journal,
   ) {}
 
   /** Called by read_file so a later write can be checked against what the agent actually saw. */
@@ -232,10 +236,29 @@ export class WriteGate {
       if (accepted.size) changes.push({ path: f.path, text: applyHunks(currents.get(f.path) ?? '', f.hunks, accepted) });
     }
     if (changes.length === 0) {
+      await this.journal?.append({ t: 'op_rejected', files: stored.files.map((f) => f.path) });
       return { status: 'rejected', message: 'all hunks were rejected; nothing was written', acceptedHunks: 0, rejectedHunks: rej, files };
     }
+    // Operation ID: the exact change (each file's path, content hash before and after). Journaled BEFORE the
+    // write; an operation that is already applied (and not undone) is never applied again, e.g. by a retry.
+    const opId = operationId(changes.map((c) => ({ path: c.path, before: currents.get(c.path), after: c.text })));
+    if (this.journal?.appliedOps().has(opId)) {
+      await this.journal.append({ t: 'op_refused', reason: `operation ${opId} was already applied` });
+      return refuse(`this exact change was already applied (operation ${opId}); nothing was written`);
+    }
+    const intentOf = new Map(stored.files.map((f) => [f.path, f.intent]));
+    await this.journal?.append({ t: 'op_started', opId, files: changes.map((c) => ({ path: c.path, intent: intentOf.get(c.path) ?? 'edit' })) });
     await this.applier.applyAll(changes);
-    this.undoStack.push({ files: changes.map((c) => ({ path: c.path, before: currents.get(c.path), after: c.text })) });
+    await this.journal?.append({
+      t: 'op_applied',
+      opId,
+      files: changes.map((c) => {
+        const fr = files.find((x) => x.path === c.path);
+        const before = currents.get(c.path);
+        return { path: c.path, intent: intentOf.get(c.path) ?? 'edit', before: before === undefined ? null : hash(before), after: hash(c.text), accepted: fr?.acceptedHunks ?? 0, rejected: fr?.rejectedHunks ?? 0 };
+      }),
+    });
+    this.undoStack.push({ opId, files: changes.map((c) => ({ path: c.path, before: currents.get(c.path), after: c.text })) });
     for (const c of changes) this.readHashes.set(c.path, hash(c.text));
     return {
       status: rej === 0 ? 'applied' : 'partially_applied',
@@ -255,6 +278,7 @@ export class WriteGate {
     }
     await this.applier.applyAll(last.files.map((f) => ({ path: f.path, text: f.before })));
     this.undoStack.pop();
+    await this.journal?.append({ t: 'op_undone', opId: last.opId, files: last.files.map((f) => f.path) });
     for (const f of last.files) this.readHashes.delete(f.path);
     return { status: 'applied', message: `reverted ${last.files.map((f) => f.path).join(', ')}` };
   }
@@ -275,6 +299,12 @@ function setKey(groups: ChangeInput[]): string {
 }
 
 const STOPPED: ProposeResult = { status: 'refused', message: 'stopped by the user (Stop Run); nothing was written' };
+
+/** Deterministic ID of an applied change: each file's path and content hash before and after. */
+export function operationId(files: Array<{ path: string; before: string | undefined; after: string }>): string {
+  const parts = files.map((f) => [f.path, f.before === undefined ? '-' : hash(f.before), hash(f.after)].join('|')).sort();
+  return hash(parts.join(';')).slice(0, 16);
+}
 
 function refuse(message: string): ProposeResult {
   return { status: 'refused', message };

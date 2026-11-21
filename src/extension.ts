@@ -3,6 +3,8 @@ import * as vscode from 'vscode';
 import * as path from 'node:path';
 import { EditorSelection, composePrompt, selectContext } from './index/context';
 import { IndexService } from './index/service';
+import { FileSink } from './journal/fileSink';
+import { Journal } from './journal/journal';
 import { WriteGate } from './mcp/gate';
 import { NodeReadFs } from './mcp/nodeFs';
 import { RunningServer, startMcpServer } from './mcp/server';
@@ -81,7 +83,11 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
   const host = folder
     ? (() => {
         const fs = new NodeReadFs(folder.uri.fsPath);
-        const gate = new WriteGate(fs, new VsCodeApplier(folder.uri), new VsCodeReviewer(folder.uri, provider));
+        // Append-only journal (operation IDs, checkpoint resume, edit history), in workspace storage.
+        const journalFile = vscode.Uri.joinPath(context.storageUri ?? context.globalStorageUri, 'codecraft-journal.jsonl').fsPath;
+        const journal = new Journal(new FileSink(journalFile));
+        void journal.load();
+        const gate = new WriteGate(fs, new VsCodeApplier(folder.uri), new VsCodeReviewer(folder.uri, provider), journal);
         const tests = new VsCodeTestRunner(folder.uri.fsPath, () => vscode.workspace.getConfiguration('codecraft').get<string>('testCommand', 'npm test'));
         const storeFile = context.storageUri ? vscode.Uri.joinPath(context.storageUri, 'codecraft-index.json').fsPath : undefined;
         const index = new IndexService(folder.uri.fsPath, storeFile);
@@ -111,7 +117,9 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
             }
           },
           plan: planStore,
+          onTests: (passed, exitCode) => void journal.append({ t: 'tests', passed, exitCode }),
           onPlan: (pl) => {
+            void journal.append({ t: 'plan', summary: pl.summary, files: pl.files.map((f) => ({ path: f.path, action: f.action })) });
             out.appendLine(`[plan] ${pl.summary} | ${pl.files.map((f) => `${f.action} ${f.path}: ${f.why}`).join(' | ')}`);
             postPlan?.(pl);
           },
@@ -121,7 +129,7 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
             CodeTownPanel.currentPanel()?.dispatchEvent({ type: 'file_read', path: p });
           },
         });
-        return { fs, gate, index, handlers, tests };
+        return { fs, gate, index, handlers, tests, journal };
       })()
     : undefined;
 
@@ -204,6 +212,9 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
           return composePrompt(small.contextText, text);
         };
         readThisRun.clear();
+        host.journal.runId = randomBytes(8).toString('hex');
+        await host.journal.load();
+        await host.journal.append({ t: 'run_started', request: text.slice(0, 300) });
         planStore.reset();
         postPlan = (pl) => post({ type: 'plan', plan: pl });
         postReads = () => post({ type: 'reads', read: readThisRun.size, total: index.stats.totalFiles, paths: [...readThisRun] });
@@ -217,15 +228,19 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
         signal: abort.signal,
         trimPrompt: trimPrompt ? () => trimPrompt?.() : undefined,
         breaker,
+        progressNote: () => host?.journal.completedSteps() ?? '',
         onProviderError: (e) => {
+          void host?.journal.append({ t: 'provider_error', model: e.model, cls: e.cls });
           out.appendLine(`[provider_error] ${e.model}: ${e.cls}`);
           post({ type: 'event', event: { type: 'provider_error', summary: `${e.model}: ${e.cls.replace(/_/g, ' ')}`, failed: true } });
         },
         onProviderRecovered: (_a, model) => {
+          void host?.journal.append({ t: 'provider_recovered', model });
           out.appendLine(`[provider_recovered] ${model}`);
           post({ type: 'event', event: { type: 'provider_recovered', summary: `${model} is working again` } });
         },
         onSwitch: (s) => {
+          void host?.journal.append({ t: 'model_switched', from: s.fromModel, to: s.toModel, reason: s.circuitOpen ? 'circuit open' : classifyError(s.reason).cls });
           const banner = s.circuitOpen
             ? circuitOpenBanner(s.fromModel, s.toModel, breaker.snapshot().find((h) => h.provider === providerOf(s.fromModel)))
             : failoverBanner(s.fromModel, s.toModel, s.reason);
@@ -258,6 +273,7 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
         },
       });
       const outcome = result.outcome;
+      await host?.journal.append({ t: 'run_finished', status: outcome.status });
       out.appendLine(`Run ${outcome.status} on ${result.agent} after ${outcome.rounds} round(s)`);
       if (outcome.status === 'error') {
         CodeTownPanel.currentPanel()?.dispatchEvent({ type: 'model_failed', error: outcome.message });
