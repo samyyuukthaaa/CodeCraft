@@ -67,7 +67,9 @@ Tests that already failed in the baseline are never blamed on the change. If the
 TrueForge's `ask_user_question` tool is enabled on both agents, and the instructions say to ask ONE short question when the request is unclear instead of editing. The question appears in the panel with its options and a free-text box. The answer goes back as `user.tool_response` and the same turn continues (VERIFIED-RUN, see `docs/TRUEFORGE_NOTES.md`). Stop Run answers for the user ("no answer"). Any other client-side tool gets an error result instead of ending the run. Journaled as `question`.
 
 ### Rollback to any checkpoint
-**CodeCraft: Roll Back to Checkpoint** (or **Roll back…** in the panel) lists the checkpoints of the last run that changed files: "before the first change of this run" and "after change N" for every applied change set. A change set is applied as one step; its intent groups are listed in the label.
+**CodeCraft: Roll Back to Checkpoint** (or **Roll back…** in the panel) lists the checkpoints of the last run that changed files: "before the first change of this run" and "after group N" for every applied change group, including between two groups of one change set.
+- Groups come from the journal's `change_group` entries.
+- Rolling back part of a change set reverts only the later groups' files (journaled as `files_undone`). The rest of that change set stays applied, and **Undo Last Change** then reverts only what is still applied.
 - The rollback is planned from the journal: the operations applied after the checkpoint and not yet undone.
 - File contents come from a content-addressed store in VS Code workspace storage, never in the repository. Each copy is verified by its sha256 when read.
 - It applies as ONE step, and only if every affected file is still exactly what CodeCraft wrote. Otherwise nothing changes.

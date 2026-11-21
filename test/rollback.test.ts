@@ -34,9 +34,9 @@ test('rollback: checkpoints are "before the first change" and "after each applie
     const cps = checkpoints(journal.all(), 'run-1');
     assert.deepEqual(cps.map((c) => [c.index, c.label, c.revert.length]), [
       [0, 'Before the first change of this run', 3],
-      [1, 'After change 1: a.py [implement]', 2],
-      [2, 'After change 2: c.py [add file], b.py [add file]', 1],
-      [3, 'After change 3: a.py [tweak]', 0],
+      [1, 'After group 1: [implement] a.py', 2],
+      [2, 'After group 2: [add file] c.py, b.py', 1],
+      [3, 'After group 3: [tweak] a.py', 0],
     ]);
   } finally {
     await ws.cleanup();
@@ -106,6 +106,42 @@ test('rollback: after a rollback, Undo Last Change no longer reverts the rolled-
     assert.equal((await gate.undoLast()).status, 'applied'); // undoes change 2
     assert.equal(await readDisk(ws.root, 'b.py'), 'b = 1\n');
     assert.equal(await readDisk(ws.root, 'a.py'), 'a = 2\n');
+  } finally {
+    await ws.cleanup();
+  }
+});
+
+test('rollback: a checkpoint after EACH applied group, also between two groups of one change set', async () => {
+  const ws = await tempWorkspace({ 'src/app.py': 'x = 1\n' });
+  try {
+    const journal = new Journal(new MemorySink());
+    journal.runId = 'run-g';
+    const gate = new WriteGate(ws.fs, new DiskApplier(ws.root), new ScriptedReviewer(acceptAll), journal, new MemorySnapshots());
+    // as the trust session does: one change_group entry per applied group, with the operation ID
+    gate.setHooks({ onApplied: (i) => void Promise.all(i.groups.map((g) => journal.append({ t: 'change_group', opId: i.opId, intent: g.intent, files: g.files, reason: 'r', plain: 'p', confidence: 'sure', why: [], tests: 'not run yet' }))) });
+    gate.recordRead('src/app.py', 'x = 1\n');
+    const r = await gate.proposeSet('p', [
+      { intent: 'implement', files: [{ path: 'src/app.py', newContent: 'x = 2\n' }] },
+      { intent: 'add test', files: [{ path: 'tests/test_app.py', newContent: 'def test_x():\n    pass\n' }] },
+    ]);
+    assert.equal(r.status, 'applied');
+    await new Promise((res) => setTimeout(res, 10));
+    const cps = checkpoints(journal.all(), 'run-g');
+    assert.deepEqual(cps.map((c) => c.label), ['Before the first change of this run', 'After group 1: [implement] src/app.py', 'After group 2: [add test] tests/test_app.py']);
+
+    const plan = planRollback(journal.all(), 'run-g', 1)!;
+    assert.deepEqual(plan.opIds, [], 'the change set is only partly reverted');
+    assert.deepEqual(plan.partial?.map((p) => p.files), [['tests/test_app.py']]);
+    assert.equal((await gate.rollback(plan)).status, 'applied');
+    await assert.rejects(readDisk(ws.root, 'tests/test_app.py'), 'the test file did not exist after group 1');
+    assert.equal(await readDisk(ws.root, 'src/app.py'), 'x = 2\n', 'group 1 stays applied');
+    assert.ok(journal.all().some((e) => e.t === 'files_undone'));
+    assert.deepEqual(checkpoints(journal.all(), 'run-g').map((c) => c.index), [0, 1], 'only group 1 is left');
+
+    // Undo Last Change now reverts only what is still applied of that change set
+    assert.equal((await gate.undoLast()).status, 'applied');
+    assert.equal(await readDisk(ws.root, 'src/app.py'), 'x = 1\n');
+    assert.equal(latestRunWithChanges(journal.all()), undefined);
   } finally {
     await ws.cleanup();
   }

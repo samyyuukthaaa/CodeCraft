@@ -449,6 +449,7 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
     const doc = await vscode.workspace.openTextDocument({ language: 'markdown', content: renderRunReport(host.journal.all(), runId) });
     await vscode.window.showTextDocument(doc, { preview: false });
     out.appendLine(`[report] exported run ${runId}`);
+    await host.journal.append({ t: 'report_exported', reportRunId: runId });
   }
 
   // Provider/key health: the configured models, the breaker state, last error class and time. No key values.

@@ -82,7 +82,10 @@ export interface ContentStore {
 /** A rollback planned from the journal (src/trust/rollback.ts). */
 export interface RollbackRequest {
   label: string;
+  /** Operations reverted completely. */
   opIds: string[];
+  /** Operations of which only some groups (these files) are reverted; their other files stay applied. */
+  partial?: Array<{ opId: string; files: string[] }>;
   files: Array<{ path: string; expectHash: string; restoreHash: string | null }>;
 }
 
@@ -386,7 +389,13 @@ export class WriteGate {
       if (i >= 0) this.undoStack.splice(i, 1);
       await this.journal?.append({ t: 'op_undone', opId, files });
     }
-    await this.journal?.append({ t: 'rollback', checkpoint: req.label, opIds: req.opIds, files: req.files.map((f) => f.path) });
+    for (const p of req.partial ?? []) {
+      // Undo Last Change now only reverts the files of this operation that are still applied.
+      const entry = this.undoStack.find((e) => e.opId === p.opId);
+      if (entry) entry.files = entry.files.filter((f) => !p.files.includes(f.path));
+      await this.journal?.append({ t: 'files_undone', opId: p.opId, files: p.files });
+    }
+    await this.journal?.append({ t: 'rollback', checkpoint: req.label, opIds: [...req.opIds, ...(req.partial ?? []).map((p) => p.opId)], files: req.files.map((f) => f.path) });
     for (const c of changes) this.readHashes.delete(c.path);
     return { status: 'applied', message: `rolled back ${changes.length} file(s) to "${req.label}"` };
   }

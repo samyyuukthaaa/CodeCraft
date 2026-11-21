@@ -27,6 +27,9 @@ export type JournalEntry =
   | { t: 'autofix'; runId: string; at: number; status: 'started' | 'fixed' | 'still_failing' | 'not_applied' | 'skipped'; detail?: string }
   | { t: 'question'; runId: string; at: number; question: string; answer: string }
   | { t: 'rollback'; runId: string; at: number; checkpoint: string; opIds: string[]; files: string[] }
+  /** Some groups of an applied change set were rolled back; the operation's other files stay applied. */
+  | { t: 'files_undone'; runId: string; at: number; opId: string; files: string[] }
+  | { t: 'report_exported'; runId: string; at: number; reportRunId: string }
   | { t: 'metrics'; runId: string; at: number; model: string; inputTokens?: number; outputTokens?: number; costUsd?: number; elapsedMs: number; filesRead: number; filesTotal: number };
 
 /** Which test run a `tests` entry is: the agent's run_tests, or CodeCraft's own runs around a change (P5). */
