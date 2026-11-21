@@ -1,0 +1,531 @@
+[
+  {
+    "scenario": "task1",
+    "run": 1,
+    "startedAt": "2026-11-21T12:28:19.501Z",
+    "durationMs": 54002,
+    "outcome": {
+      "status": "done",
+      "text": "I have successfully updated `get_debug_flag` in `src/flask/helpers.py` to treat `'off'` and `'n'` case-insensitively as false (along with `'0'`, `'false'`, and `'no'`), updated its docstring to list all values treated as false, added test cases covering `'off'` and `'n'` in `tests/test_helpers.py`, and verified that all 492 tests passed successfully.",
+      "rounds": 3
+    },
+    "finalAgent": "codecraft-fallback",
+    "switches": [
+      {
+        "from": "codecraft-primary",
+        "to": "codecraft-fallback",
+        "fromModel": "google-gemini/gemini-3-5-flash",
+        "toModel": "google-gemini/gemini-3-5-flash-lite",
+        "reason": "[Model Error] Request failed (429): You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://aistudio.google.com/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash, description: Generate content requests per day limit exceeded on Free Tier. See https://aistudio.google.com/docs/rate-limits.\nPlease retry in 19h31m30.589969109s."
+      }
+    ],
+    "sessions": [
+      {
+        "agent": "codecraft-primary",
+        "id": "01m7z18deer7pj1m8nzy5qv5kp"
+      },
+      {
+        "agent": "codecraft-fallback",
+        "id": "01m7z18nrqme88866kjw87saq1"
+      }
+    ],
+    "tokens": 64763,
+    "approvals": [
+      "codecraft-editor/propose_changes: plan=1. Update src/flask/helpers.py to treat 'off' and 'n' as false and update docstring. 2. Update tests/test_helpers.py to test 'off' and 'n'. groups=[Update get_debug_flag, docstring, and tests: src/flask/helpers.py, tests/test_helpers.py]",
+      "codecraft-editor/run_tests: run the project test command"
+    ],
+    "review": [
+      {
+        "plan": "1. Update src/flask/helpers.py to treat 'off' and 'n' as false and update docstring.\n2. Update tests/test_helpers.py to test 'off' and 'n'.",
+        "groups": [
+          "Update get_debug_flag, docstring, and tests: src/flask/helpers.py (2 hunks), tests/test_helpers.py (2 hunks)"
+        ]
+      }
+    ],
+    "activity": [
+      "read_file src/flask/helpers.py lines 20-45 of 641",
+      "read_file tests/test_helpers.py lines 330-360 of 383",
+      "submit_plan edit:src/flask/helpers.py, edit:tests/test_helpers.py",
+      "propose_changes Update get_debug_flag, docstring, and tests (src/flask/helpers.py, tests/test_helpers.py)",
+      "propose_changes -> applied: applied 4 of 4 hunk(s) in 2 file(s)",
+      "run_tests requested",
+      "run_tests: 492 passed in 1.16s"
+    ],
+    "filesRead": [
+      "src/flask/helpers.py",
+      "tests/test_helpers.py"
+    ],
+    "totalFiles": 234,
+    "context": {
+      "budgetTokens": 6000,
+      "usedTokens": 1980,
+      "totalFiles": 234,
+      "items": [
+        {
+          "path": "src/flask/helpers.py",
+          "reason": "selected in the editor (lines 28-35)",
+          "tokens": 98,
+          "included": true
+        },
+        {
+          "path": "tests/test_converters.py",
+          "reason": "test for src/flask/helpers.py",
+          "tokens": 302,
+          "included": true
+        },
+        {
+          "path": "tests/test_helpers.py",
+          "reason": "test for src/flask/helpers.py; outline only (whole file ~2919 tokens is over budget)",
+          "tokens": 734,
+          "included": true
+        },
+        {
+          "path": "src/flask/globals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 459,
+          "included": true
+        },
+        {
+          "path": "src/flask/signals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 209,
+          "included": true
+        },
+        {
+          "path": "src/flask/wrappers.py",
+          "reason": "imported by src/flask/helpers.py; outline only (whole file ~2434 tokens is over budget)",
+          "tokens": 178,
+          "included": true
+        }
+      ],
+      "unresolved": []
+    },
+    "changed": [
+      "src/flask/helpers.py",
+      "tests/test_helpers.py"
+    ],
+    "maxEventLoopLagMs": 15,
+    "banners": [
+      "The primary model google-gemini/gemini-3-5-flash stopped because it used up its daily quota (HTTP 429). CodeCraft switched to the fallback model google-gemini/gemini-3-5-flash-lite automatically and is continuing your request."
+    ],
+    "plans": [
+      {
+        "plan": {
+          "summary": "Update get_debug_flag to treat 'off' and 'n' as false case-insensitively and update docstring, along with updating tests.",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag to treat 'off' and 'n' as false case-insensitively and update docstring to list every value treated as false"
+            },
+            {
+              "path": "tests/test_helpers.py",
+              "action": "edit",
+              "why": "Add test cases for 'off' and 'n' in test_get_debug_flag"
+            }
+          ]
+        },
+        "reviewsBefore": 0
+      }
+    ],
+    "retries": [],
+    "atSwitch": [
+      {
+        "changed": [],
+        "approvalsBefore": 0,
+        "reviewsBefore": 0
+      }
+    ],
+    "checks": [
+      {
+        "name": "agent run finished",
+        "pass": true,
+        "detail": "done"
+      },
+      {
+        "name": "src/flask/helpers.py changed; nothing else except tests",
+        "pass": true,
+        "detail": "src/flask/helpers.py, tests/test_helpers.py"
+      },
+      {
+        "name": "TASKS.md check: FLASK_DEBUG=off prints False",
+        "pass": true,
+        "detail": "exit 0, stdout \"False\""
+      },
+      {
+        "name": "false for off/n/0/false/no (any case), empty and unset; true otherwise",
+        "pass": true,
+        "detail": "all 18 values correct"
+      },
+      {
+        "name": "docstring lists every false value (0, false, no, off, n)",
+        "pass": true,
+        "detail": "\"Get whether debug mode should be enabled for the app, indicated by the :envvar:`FLASK_DEBUG` environment variable. The default is ``False``. The values ``0``, ``false``, ``off``, ``no``, and ``n`` are treated as false. \""
+      },
+      {
+        "name": "full Flask test suite passes (>= 490 passed, 0 failed)",
+        "pass": true,
+        "detail": "492 passed in 1.10s"
+      },
+      {
+        "name": "fixture reset to clean after the run",
+        "pass": true,
+        "detail": "clean"
+      }
+    ],
+    "pass": true
+  },
+  {
+    "scenario": "task1",
+    "run": 2,
+    "startedAt": "2026-11-21T12:29:13.503Z",
+    "durationMs": 34660,
+    "outcome": {
+      "status": "done",
+      "text": "I have successfully updated `get_debug_flag` to treat `'off'` and `'n'` (along with `'0'`, `'false'`, and `'no'`) as false case-insensitively, updated its docstring to list all these falsy values, updated the tests in `tests/test_helpers.py`, and verified that all tests passed successfully.",
+      "rounds": 3
+    },
+    "finalAgent": "codecraft-fallback",
+    "switches": [
+      {
+        "from": "codecraft-primary",
+        "to": "codecraft-fallback",
+        "fromModel": "google-gemini/gemini-3-5-flash",
+        "toModel": "google-gemini/gemini-3-5-flash-lite",
+        "reason": "[Model Error] Request failed (429): You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://aistudio.google.com/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash, description: Generate content requests per day limit exceeded on Free Tier. See https://aistudio.google.com/docs/rate-limits.\nPlease retry in 19h30m41.245632734s."
+      }
+    ],
+    "sessions": [
+      {
+        "agent": "codecraft-primary",
+        "id": "01m7z1a26nefrkqe7ft7rzvdcm"
+      },
+      {
+        "agent": "codecraft-fallback",
+        "id": "01m7z1a5ynt7vq13y9c3wyegrp"
+      }
+    ],
+    "tokens": 58897,
+    "approvals": [
+      "codecraft-editor/propose_changes: plan=1. Update src/flask/helpers.py to treat 'off' and 'n' as false case-insensitively and update docstring. 2. Update tests/test_helpers.py to test 'off', 'n', and mixed-case variants. groups=[Update get_debug_flag and tests for 'off' and 'n' falsy values: src/flask/helpers.py, tests/test_helpers.py]",
+      "codecraft-editor/run_tests: run the project test command"
+    ],
+    "review": [
+      {
+        "plan": "1. Update src/flask/helpers.py to treat 'off' and 'n' as false case-insensitively and update docstring.\n2. Update tests/test_helpers.py to test 'off', 'n', and mixed-case variants.",
+        "groups": [
+          "Update get_debug_flag and tests for 'off' and 'n' falsy values: src/flask/helpers.py (2 hunks), tests/test_helpers.py (3 hunks)"
+        ]
+      }
+    ],
+    "activity": [
+      "read_file src/flask/helpers.py lines 20-45 of 641",
+      "read_file tests/test_helpers.py lines 330-360 of 383",
+      "submit_plan edit:src/flask/helpers.py, edit:tests/test_helpers.py",
+      "propose_changes Update get_debug_flag and tests for 'off' and 'n' falsy values (src/flask/helpers.py, tests/test_helpers.py)",
+      "propose_changes -> applied: applied 5 of 5 hunk(s) in 2 file(s)",
+      "run_tests requested",
+      "run_tests: 497 passed in 1.13s"
+    ],
+    "filesRead": [
+      "src/flask/helpers.py",
+      "tests/test_helpers.py"
+    ],
+    "totalFiles": 234,
+    "context": {
+      "budgetTokens": 6000,
+      "usedTokens": 1980,
+      "totalFiles": 234,
+      "items": [
+        {
+          "path": "src/flask/helpers.py",
+          "reason": "selected in the editor (lines 28-35)",
+          "tokens": 98,
+          "included": true
+        },
+        {
+          "path": "tests/test_converters.py",
+          "reason": "test for src/flask/helpers.py",
+          "tokens": 302,
+          "included": true
+        },
+        {
+          "path": "tests/test_helpers.py",
+          "reason": "test for src/flask/helpers.py; outline only (whole file ~2919 tokens is over budget)",
+          "tokens": 734,
+          "included": true
+        },
+        {
+          "path": "src/flask/globals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 459,
+          "included": true
+        },
+        {
+          "path": "src/flask/signals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 209,
+          "included": true
+        },
+        {
+          "path": "src/flask/wrappers.py",
+          "reason": "imported by src/flask/helpers.py; outline only (whole file ~2434 tokens is over budget)",
+          "tokens": 178,
+          "included": true
+        }
+      ],
+      "unresolved": []
+    },
+    "changed": [
+      "src/flask/helpers.py",
+      "tests/test_helpers.py"
+    ],
+    "maxEventLoopLagMs": 15,
+    "banners": [
+      "The primary model google-gemini/gemini-3-5-flash stopped because it used up its daily quota (HTTP 429). CodeCraft switched to the fallback model google-gemini/gemini-3-5-flash-lite automatically and is continuing your request."
+    ],
+    "plans": [
+      {
+        "plan": {
+          "summary": "Update get_debug_flag to treat 'off' and 'n' as false case-insensitively and update its docstring, and update corresponding tests.",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag to treat 'off' and 'n' as false case-insensitively and update docstring to list every value treated as false."
+            },
+            {
+              "path": "tests/test_helpers.py",
+              "action": "edit",
+              "why": "Add 'off' and 'n' (and uppercase/mixed case variants) to test_get_debug_flag parametrization."
+            }
+          ]
+        },
+        "reviewsBefore": 0
+      }
+    ],
+    "retries": [],
+    "atSwitch": [
+      {
+        "changed": [],
+        "approvalsBefore": 0,
+        "reviewsBefore": 0
+      }
+    ],
+    "checks": [
+      {
+        "name": "agent run finished",
+        "pass": true,
+        "detail": "done"
+      },
+      {
+        "name": "src/flask/helpers.py changed; nothing else except tests",
+        "pass": true,
+        "detail": "src/flask/helpers.py, tests/test_helpers.py"
+      },
+      {
+        "name": "TASKS.md check: FLASK_DEBUG=off prints False",
+        "pass": true,
+        "detail": "exit 0, stdout \"False\""
+      },
+      {
+        "name": "false for off/n/0/false/no (any case), empty and unset; true otherwise",
+        "pass": true,
+        "detail": "all 18 values correct"
+      },
+      {
+        "name": "docstring lists every false value (0, false, no, off, n)",
+        "pass": true,
+        "detail": "\"Get whether debug mode should be enabled for the app, indicated by the :envvar:`FLASK_DEBUG` environment variable. The default is ``False``. Treat the values ``\\\"0\\\"``, ``\\\"false\\\"``, ``\\\"off\\\"``, ``\\\"no\\\"``, and ``\\\"n\\\"`` as false, case-insensitively. \""
+      },
+      {
+        "name": "full Flask test suite passes (>= 490 passed, 0 failed)",
+        "pass": true,
+        "detail": "497 passed in 1.10s"
+      },
+      {
+        "name": "fixture reset to clean after the run",
+        "pass": true,
+        "detail": "clean"
+      }
+    ],
+    "pass": true
+  },
+  {
+    "scenario": "task1",
+    "run": 3,
+    "startedAt": "2026-11-21T12:29:48.163Z",
+    "durationMs": 27788,
+    "outcome": {
+      "status": "done",
+      "text": "I have successfully updated `get_debug_flag` in `src/flask/helpers.py` to treat `\"off\"` and `\"n\"` (along with `\"0\"`, `\"false\"`, and `\"no\"`) as false case-insensitively, documented all false values in the docstring, updated the test suite in `tests/test_helpers.py`, and verified that all tests pass successfully.",
+      "rounds": 4
+    },
+    "finalAgent": "codecraft-fallback",
+    "switches": [
+      {
+        "from": "codecraft-primary",
+        "to": "codecraft-fallback",
+        "fromModel": "google-gemini/gemini-3-5-flash",
+        "toModel": "google-gemini/gemini-3-5-flash-lite",
+        "reason": "[Model Error] Request failed (429): You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://aistudio.google.com/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.6-flash, description: Generate content requests per day limit exceeded on Free Tier. See https://aistudio.google.com/docs/rate-limits.\nPlease retry in 19h30m6.72482702s."
+      }
+    ],
+    "sessions": [
+      {
+        "agent": "codecraft-primary",
+        "id": "01m7z1b3zdnscjsev4mhx00zea"
+      },
+      {
+        "agent": "codecraft-fallback",
+        "id": "01m7z1b7rx1egn0nkg3wd9ej7s"
+      }
+    ],
+    "tokens": 67757,
+    "approvals": [
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag in src/flask/helpers.py and its docstring. 2. Update unit tests in tests/test_helpers.py. groups=[Update get_debug_flag to treat 'off' and 'n' (and case-insensitive variants) as false, update docstring, and update tests.: src/flask/helpers.py, tests/test_helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag in src/flask/helpers.py and its docstring. 2. Update unit tests in tests/test_helpers.py. groups=[Update get_debug_flag and tests for 'off' and 'n': src/flask/helpers.py, tests/test_helpers.py]",
+      "codecraft-editor/run_tests: run the project test command"
+    ],
+    "review": [
+      {
+        "plan": "1. Update get_debug_flag in src/flask/helpers.py and its docstring.\n2. Update unit tests in tests/test_helpers.py.",
+        "groups": [
+          "Update get_debug_flag and tests for 'off' and 'n': src/flask/helpers.py (2 hunks), tests/test_helpers.py (3 hunks)"
+        ]
+      }
+    ],
+    "activity": [
+      "read_file src/flask/helpers.py lines 20-45 of 641",
+      "read_file tests/test_helpers.py lines 330-360 of 383",
+      "submit_plan edit:src/flask/helpers.py, edit:tests/test_helpers.py",
+      "propose_changes Update get_debug_flag and tests for 'off' and 'n' (src/flask/helpers.py, tests/test_helpers.py)",
+      "propose_changes -> applied: applied 5 of 5 hunk(s) in 2 file(s)",
+      "run_tests requested",
+      "run_tests: 497 passed in 1.13s"
+    ],
+    "filesRead": [
+      "src/flask/helpers.py",
+      "tests/test_helpers.py"
+    ],
+    "totalFiles": 234,
+    "context": {
+      "budgetTokens": 6000,
+      "usedTokens": 1980,
+      "totalFiles": 234,
+      "items": [
+        {
+          "path": "src/flask/helpers.py",
+          "reason": "selected in the editor (lines 28-35)",
+          "tokens": 98,
+          "included": true
+        },
+        {
+          "path": "tests/test_converters.py",
+          "reason": "test for src/flask/helpers.py",
+          "tokens": 302,
+          "included": true
+        },
+        {
+          "path": "tests/test_helpers.py",
+          "reason": "test for src/flask/helpers.py; outline only (whole file ~2919 tokens is over budget)",
+          "tokens": 734,
+          "included": true
+        },
+        {
+          "path": "src/flask/globals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 459,
+          "included": true
+        },
+        {
+          "path": "src/flask/signals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 209,
+          "included": true
+        },
+        {
+          "path": "src/flask/wrappers.py",
+          "reason": "imported by src/flask/helpers.py; outline only (whole file ~2434 tokens is over budget)",
+          "tokens": 178,
+          "included": true
+        }
+      ],
+      "unresolved": []
+    },
+    "changed": [
+      "src/flask/helpers.py",
+      "tests/test_helpers.py"
+    ],
+    "maxEventLoopLagMs": 17,
+    "banners": [
+      "The primary model google-gemini/gemini-3-5-flash stopped because it used up its daily quota (HTTP 429). CodeCraft switched to the fallback model google-gemini/gemini-3-5-flash-lite automatically and is continuing your request."
+    ],
+    "plans": [
+      {
+        "plan": {
+          "summary": "Update get_debug_flag in src/flask/helpers.py to treat 'off' and 'n' as false case-insensitively, update docstring, and update tests.",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag to treat 'off' and 'n' as false case-insensitively and update docstring to list every value treated as false."
+            },
+            {
+              "path": "tests/test_helpers.py",
+              "action": "edit",
+              "why": "Add test cases for 'off' and 'n' (and case-insensitivity) in test_get_debug_flag."
+            }
+          ]
+        },
+        "reviewsBefore": 0
+      }
+    ],
+    "retries": [],
+    "atSwitch": [
+      {
+        "changed": [],
+        "approvalsBefore": 0,
+        "reviewsBefore": 0
+      }
+    ],
+    "checks": [
+      {
+        "name": "agent run finished",
+        "pass": true,
+        "detail": "done"
+      },
+      {
+        "name": "src/flask/helpers.py changed; nothing else except tests",
+        "pass": true,
+        "detail": "src/flask/helpers.py, tests/test_helpers.py"
+      },
+      {
+        "name": "TASKS.md check: FLASK_DEBUG=off prints False",
+        "pass": true,
+        "detail": "exit 0, stdout \"False\""
+      },
+      {
+        "name": "false for off/n/0/false/no (any case), empty and unset; true otherwise",
+        "pass": true,
+        "detail": "all 18 values correct"
+      },
+      {
+        "name": "docstring lists every false value (0, false, no, off, n)",
+        "pass": true,
+        "detail": "\"Get whether debug mode should be enabled for the app, indicated by the :envvar:`FLASK_DEBUG` environment variable. The default is ``False``. Treat the values ``\\\"0\\\"``, ``\\\"false\\\"``, ``\\\"off\\\"``, ``\\\"no\\\"``, and ``\\\"n\\\"`` as false, case-insensitively. \""
+      },
+      {
+        "name": "full Flask test suite passes (>= 490 passed, 0 failed)",
+        "pass": true,
+        "detail": "497 passed in 1.10s"
+      },
+      {
+        "name": "fixture reset to clean after the run",
+        "pass": true,
+        "detail": "clean"
+      }
+    ],
+    "pass": true
+  }
+]

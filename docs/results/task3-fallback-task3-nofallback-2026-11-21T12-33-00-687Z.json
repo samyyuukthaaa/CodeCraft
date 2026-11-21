@@ -1,0 +1,936 @@
+[
+  {
+    "scenario": "task3-fallback",
+    "run": 1,
+    "startedAt": "2026-11-21T12:30:17.107Z",
+    "durationMs": 52421,
+    "outcome": {
+      "status": "done",
+      "text": "I have proposed the changes to update `get_debug_flag` to treat `'off'` and `'n'` as false (case-insensitively) and updated the docstring and unit tests accordingly. However, the proposal was rejected by the user/system. As per instructions, I am ending my turn with a short summary of what was proposed and why.",
+      "rounds": 3
+    },
+    "finalAgent": "codecraft-fallback",
+    "switches": [
+      {
+        "from": "codecraft-test-primary-badkey",
+        "to": "codecraft-fallback",
+        "fromModel": "codecraft-test-badkey/gpt-oss-120b",
+        "toModel": "google-gemini/gemini-3-5-flash-lite",
+        "reason": "[Model Error] Request failed (401): Invalid API Key"
+      }
+    ],
+    "sessions": [
+      {
+        "agent": "codecraft-test-primary-badkey",
+        "id": "01m7z1c0artrfw3wa3q0tzcmt3"
+      },
+      {
+        "agent": "codecraft-fallback",
+        "id": "01m7z1c0j6xjabpccdfkw0r50n"
+      }
+    ],
+    "tokens": 63831,
+    "approvals": [
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag in src/flask/helpers.py to treat 'off' and 'n' as false case-insensitively and update docstring. 2. Update test_get_debug_flag in tests/test_helpers.py to test 'off' and 'n'. groups=[Treat 'off' and 'n' as false in get_debug_flag and add unit tests: src/flask/helpers.py, tests/test_helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag in src/flask/helpers.py to treat 'off' and 'n' as false case-insensitively and update docstring. 2. Update test_get_debug_flag in tests/test_helpers.py to test 'off' and 'n'. groups=[Treat 'off' and 'n' as false in get_debug_flag and add unit tests: src/flask/helpers.py, tests/test_helpers.py]"
+    ],
+    "review": [
+      {
+        "plan": "1. Update get_debug_flag in src/flask/helpers.py to treat 'off' and 'n' as false case-insensitively and update docstring.\n2. Update test_get_debug_flag in tests/test_helpers.py to test 'off' and 'n'.",
+        "groups": [
+          "Treat 'off' and 'n' as false in get_debug_flag and add unit tests: src/flask/helpers.py (2 hunks), tests/test_helpers.py (1 hunk)"
+        ]
+      },
+      {
+        "plan": "1. Update get_debug_flag in src/flask/helpers.py to treat 'off' and 'n' as false case-insensitively and update docstring.\n2. Update test_get_debug_flag in tests/test_helpers.py to test 'off' and 'n'.",
+        "groups": [
+          "Treat 'off' and 'n' as false in get_debug_flag and add unit tests: src/flask/helpers.py (2 hunks), tests/test_helpers.py (1 hunk)"
+        ]
+      }
+    ],
+    "activity": [
+      "read_file src/flask/helpers.py lines 1-50 of 641",
+      "read_file tests/test_helpers.py lines 330-360 of 383",
+      "submit_plan edit:src/flask/helpers.py, edit:tests/test_helpers.py",
+      "read_file src/flask/helpers.py lines 25-45 of 641",
+      "read_file tests/test_helpers.py lines 330-355 of 383",
+      "propose_changes Treat 'off' and 'n' as false in get_debug_flag and add unit tests (src/flask/helpers.py, tests/test_helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "read_file src/flask/helpers.py lines 27-36 of 641",
+      "read_file tests/test_helpers.py lines 333-355 of 383",
+      "propose_changes Treat 'off' and 'n' as false in get_debug_flag and add unit tests (src/flask/helpers.py, tests/test_helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written"
+    ],
+    "filesRead": [
+      "src/flask/helpers.py",
+      "tests/test_helpers.py"
+    ],
+    "totalFiles": 234,
+    "context": {
+      "budgetTokens": 6000,
+      "usedTokens": 1980,
+      "totalFiles": 234,
+      "items": [
+        {
+          "path": "src/flask/helpers.py",
+          "reason": "selected in the editor (lines 28-35)",
+          "tokens": 98,
+          "included": true
+        },
+        {
+          "path": "tests/test_converters.py",
+          "reason": "test for src/flask/helpers.py",
+          "tokens": 302,
+          "included": true
+        },
+        {
+          "path": "tests/test_helpers.py",
+          "reason": "test for src/flask/helpers.py; outline only (whole file ~2919 tokens is over budget)",
+          "tokens": 734,
+          "included": true
+        },
+        {
+          "path": "src/flask/globals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 459,
+          "included": true
+        },
+        {
+          "path": "src/flask/signals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 209,
+          "included": true
+        },
+        {
+          "path": "src/flask/wrappers.py",
+          "reason": "imported by src/flask/helpers.py; outline only (whole file ~2434 tokens is over budget)",
+          "tokens": 178,
+          "included": true
+        }
+      ],
+      "unresolved": []
+    },
+    "changed": [],
+    "maxEventLoopLagMs": 19,
+    "banners": [
+      "The primary model codecraft-test-badkey/gpt-oss-120b stopped because its API key was rejected (HTTP 401). CodeCraft switched to the fallback model google-gemini/gemini-3-5-flash-lite automatically and is continuing your request."
+    ],
+    "plans": [
+      {
+        "plan": {
+          "summary": "Update get_debug_flag in src/flask/helpers.py to treat 'off' and 'n' as false case-insensitively, update docstring, and update unit tests.",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag to treat 'off' and 'n' as false case-insensitively and update docstring."
+            },
+            {
+              "path": "tests/test_helpers.py",
+              "action": "edit",
+              "why": "Add test cases for 'off' and 'n' in test_get_debug_flag."
+            }
+          ]
+        },
+        "reviewsBefore": 0
+      }
+    ],
+    "retries": [
+      "codecraft-fallback retry 1 after 31 s: [Model Error] Request failed (429): You exceeded your current quota, please check your plan and billing details. For mor"
+    ],
+    "atSwitch": [
+      {
+        "changed": [],
+        "approvalsBefore": 0,
+        "reviewsBefore": 0
+      }
+    ],
+    "checks": [
+      {
+        "name": "exactly one automatic switch, from the invalid-key agent to codecraft-fallback",
+        "pass": true,
+        "detail": "codecraft-test-primary-badkey -> codecraft-fallback"
+      },
+      {
+        "name": "the switch was caused by the rejected key (HTTP 401)",
+        "pass": true,
+        "detail": "[Model Error] Request failed (401): Invalid API Key"
+      },
+      {
+        "name": "no user action before the takeover (0 approvals, 0 reviews) and nothing written at that moment",
+        "pass": true,
+        "detail": "approvals 0, reviews 0, changed none"
+      },
+      {
+        "name": "banner says in plain words that the primary key was rejected and the fallback took over",
+        "pass": true,
+        "detail": "The primary model codecraft-test-badkey/gpt-oss-120b stopped because its API key was rejected (HTTP 401). CodeCraft switched to the fallback model google-gemini/gemini-3-5-flash-lite automatically and is continuing your request."
+      },
+      {
+        "name": "TASKS.md: the second configured model took over (run finished on codecraft-fallback)",
+        "pass": true,
+        "detail": "done on codecraft-fallback"
+      },
+      {
+        "name": "the fallback did the work: it proposed a change to src/flask/helpers.py (rejected by the scripted user)",
+        "pass": true,
+        "detail": "Treat 'off' and 'n' as false in get_debug_flag and add unit tests: src/flask/helpers.py (2 hunks), tests/test_helpers.py (1 hunk) || Treat 'off' and 'n' as false in get_debug_flag and add unit tests: src/flask/helpers.py (2 hunks), tests/test_helpers.py (1 hunk)"
+      },
+      {
+        "name": "TASKS.md: git status shows no files changed",
+        "pass": true,
+        "detail": "clean"
+      },
+      {
+        "name": "TASKS.md: editor stays responsive (max event-loop lag < 250 ms)",
+        "pass": true,
+        "detail": "19 ms"
+      },
+      {
+        "name": "the dummy key never appears in any message, banner, log or result",
+        "pass": true,
+        "detail": "not present"
+      },
+      {
+        "name": "fixture reset to clean after the run",
+        "pass": true,
+        "detail": "clean"
+      }
+    ],
+    "pass": true
+  },
+  {
+    "scenario": "task3-fallback",
+    "run": 2,
+    "startedAt": "2026-11-21T12:31:09.528Z",
+    "durationMs": 75253,
+    "outcome": {
+      "status": "done",
+      "text": "I proposed updating `get_debug_flag()` in `src/flask/helpers.py` and its corresponding tests in `tests/test_helpers.py` to treat `'off'` and `'n'` (case-insensitively) as false values alongside `'0'`, `'false'`, and `'no'`, and updated the function docstring to explicitly list every value treated as false.",
+      "rounds": 6
+    },
+    "finalAgent": "codecraft-fallback",
+    "switches": [
+      {
+        "from": "codecraft-test-primary-badkey",
+        "to": "codecraft-fallback",
+        "fromModel": "codecraft-test-badkey/gpt-oss-120b",
+        "toModel": "google-gemini/gemini-3-5-flash-lite",
+        "reason": "[Model Error] Request failed (401): Invalid API Key"
+      }
+    ],
+    "sessions": [
+      {
+        "agent": "codecraft-test-primary-badkey",
+        "id": "01m7z1dkeafexp3ekg7ygpgae5"
+      },
+      {
+        "agent": "codecraft-fallback",
+        "id": "01m7z1dkq92wk4698fgvjw1pa0"
+      }
+    ],
+    "tokens": 273699,
+    "approvals": [
+      "codecraft-editor/propose_changes: plan= groups=[]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag in src/flask/helpers.py to exclude 'off' and 'n' and document all false values in the docstring. 2. Update test_get_debug_flag in tests/test_helpers.py to cover 'Off' and 'n'. groups=[Update get_debug_flag to treat off and n as false and update docstring: src/flask/helpers.py | Add test cases for off and n in test_get_debug_flag: tests/test_helpers.py]",
+      "codecraft-editor/propose_changes: plan= groups=[Update get_debug_flag implementation, docstring, and tests: ?, ?]",
+      "codecraft-editor/propose_changes: plan=Update get_debug_flag in src/flask/helpers.py to treat 'off' and 'n' as false, document all false values in docstring, and update test_get_debug_flag in tests/test_helpers.py. groups=[Update get_debug_flag implementation, docstring, and tests: src/flask/helpers.py, tests/test_helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag in src/flask/helpers.py. 2. Update test_get_debug_flag in tests/test_helpers.py. groups=[Update get_debug_flag in helpers.py: src/flask/helpers.py | Update test_get_debug_flag in test_helpers.py: tests/test_helpers.py]"
+    ],
+    "review": [
+      {
+        "plan": "1. Update get_debug_flag in src/flask/helpers.py to exclude 'off' and 'n' and document all false values in the docstring. 2. Update test_get_debug_flag in tests/test_helpers.py to cover 'Off' and 'n'.",
+        "groups": [
+          "Update get_debug_flag to treat off and n as false and update docstring: src/flask/helpers.py (2 hunks)",
+          "Add test cases for off and n in test_get_debug_flag: tests/test_helpers.py (2 hunks)"
+        ]
+      },
+      {
+        "plan": "Update get_debug_flag in src/flask/helpers.py to treat 'off' and 'n' as false, document all false values in docstring, and update test_get_debug_flag in tests/test_helpers.py.",
+        "groups": [
+          "Update get_debug_flag implementation, docstring, and tests: src/flask/helpers.py (2 hunks), tests/test_helpers.py (1 hunk)"
+        ]
+      }
+    ],
+    "activity": [
+      "read_file src/flask/helpers.py lines 1-400 of 641",
+      "read_file src/flask/wrappers.py lines 1-257 of 257",
+      "list_files . (2587)",
+      "search_text \"get_debug_flag\" (0 match(es))",
+      "list_files . (2587)",
+      "search_text \"FLASK_DEBUG\" (0 match(es))",
+      "read_file tests/test_helpers.py lines 330-365 of 383",
+      "submit_plan edit:src/flask/helpers.py, edit:tests/test_helpers.py",
+      "propose_changes Update get_debug_flag to treat off and n as false and update docstring (src/flask/helpers.py); Add test cases for off and n in test_get_debug_flag (tests/test_helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "read_file src/flask/helpers.py lines 27-36 of 641",
+      "read_file tests/test_helpers.py lines 333-360 of 383",
+      "propose_changes Update get_debug_flag implementation, docstring, and tests (src/flask/helpers.py, tests/test_helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written"
+    ],
+    "filesRead": [
+      "src/flask/helpers.py",
+      "src/flask/wrappers.py",
+      "tests/test_helpers.py"
+    ],
+    "totalFiles": 234,
+    "context": {
+      "budgetTokens": 6000,
+      "usedTokens": 1980,
+      "totalFiles": 234,
+      "items": [
+        {
+          "path": "src/flask/helpers.py",
+          "reason": "selected in the editor (lines 28-35)",
+          "tokens": 98,
+          "included": true
+        },
+        {
+          "path": "tests/test_converters.py",
+          "reason": "test for src/flask/helpers.py",
+          "tokens": 302,
+          "included": true
+        },
+        {
+          "path": "tests/test_helpers.py",
+          "reason": "test for src/flask/helpers.py; outline only (whole file ~2919 tokens is over budget)",
+          "tokens": 734,
+          "included": true
+        },
+        {
+          "path": "src/flask/globals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 459,
+          "included": true
+        },
+        {
+          "path": "src/flask/signals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 209,
+          "included": true
+        },
+        {
+          "path": "src/flask/wrappers.py",
+          "reason": "imported by src/flask/helpers.py; outline only (whole file ~2434 tokens is over budget)",
+          "tokens": 178,
+          "included": true
+        }
+      ],
+      "unresolved": []
+    },
+    "changed": [],
+    "maxEventLoopLagMs": 18,
+    "banners": [
+      "The primary model codecraft-test-badkey/gpt-oss-120b stopped because its API key was rejected (HTTP 401). CodeCraft switched to the fallback model google-gemini/gemini-3-5-flash-lite automatically and is continuing your request."
+    ],
+    "plans": [
+      {
+        "plan": {
+          "summary": "Update get_debug_flag to treat 'off' and 'n' as false case-insensitively and update docstring and test cases.",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag implementation and docstring to treat 'off' and 'n' as false."
+            },
+            {
+              "path": "tests/test_helpers.py",
+              "action": "edit",
+              "why": "Add tests for 'off' and 'n' in test_get_debug_flag."
+            }
+          ]
+        },
+        "reviewsBefore": 0
+      }
+    ],
+    "retries": [
+      "codecraft-fallback retry 1 after 26 s: [Model Error] Request failed (429): You exceeded your current quota, please check your plan and billing details. For mor"
+    ],
+    "atSwitch": [
+      {
+        "changed": [],
+        "approvalsBefore": 0,
+        "reviewsBefore": 0
+      }
+    ],
+    "checks": [
+      {
+        "name": "exactly one automatic switch, from the invalid-key agent to codecraft-fallback",
+        "pass": true,
+        "detail": "codecraft-test-primary-badkey -> codecraft-fallback"
+      },
+      {
+        "name": "the switch was caused by the rejected key (HTTP 401)",
+        "pass": true,
+        "detail": "[Model Error] Request failed (401): Invalid API Key"
+      },
+      {
+        "name": "no user action before the takeover (0 approvals, 0 reviews) and nothing written at that moment",
+        "pass": true,
+        "detail": "approvals 0, reviews 0, changed none"
+      },
+      {
+        "name": "banner says in plain words that the primary key was rejected and the fallback took over",
+        "pass": true,
+        "detail": "The primary model codecraft-test-badkey/gpt-oss-120b stopped because its API key was rejected (HTTP 401). CodeCraft switched to the fallback model google-gemini/gemini-3-5-flash-lite automatically and is continuing your request."
+      },
+      {
+        "name": "TASKS.md: the second configured model took over (run finished on codecraft-fallback)",
+        "pass": true,
+        "detail": "done on codecraft-fallback"
+      },
+      {
+        "name": "the fallback did the work: it proposed a change to src/flask/helpers.py (rejected by the scripted user)",
+        "pass": true,
+        "detail": "Update get_debug_flag to treat off and n as false and update docstring: src/flask/helpers.py (2 hunks) | Add test cases for off and n in test_get_debug_flag: tests/test_helpers.py (2 hunks) || Update get_debug_flag implementation, docstring, and tests: src/flask/helpers.py (2 hunks), tests/test_helpers.py (1 hunk)"
+      },
+      {
+        "name": "TASKS.md: git status shows no files changed",
+        "pass": true,
+        "detail": "clean"
+      },
+      {
+        "name": "TASKS.md: editor stays responsive (max event-loop lag < 250 ms)",
+        "pass": true,
+        "detail": "18 ms"
+      },
+      {
+        "name": "the dummy key never appears in any message, banner, log or result",
+        "pass": true,
+        "detail": "not present"
+      },
+      {
+        "name": "fixture reset to clean after the run",
+        "pass": true,
+        "detail": "clean"
+      }
+    ],
+    "pass": true
+  },
+  {
+    "scenario": "task3-fallback",
+    "run": 3,
+    "startedAt": "2026-11-21T12:32:24.781Z",
+    "durationMs": 34035,
+    "outcome": {
+      "status": "done",
+      "text": "I proposed updating `get_debug_flag` in `src/flask/helpers.py` and its corresponding tests in `tests/test_helpers.py` to treat `'off'` and `'n'` (case-insensitively) as false values alongside `0`, `false`, and `no`, and updating the docstring to list every value treated as false. However, the user rejected the proposals, so no changes were applied.",
+      "rounds": 5
+    },
+    "finalAgent": "codecraft-fallback",
+    "switches": [
+      {
+        "from": "codecraft-test-primary-badkey",
+        "to": "codecraft-fallback",
+        "fromModel": "codecraft-test-badkey/gpt-oss-120b",
+        "toModel": "google-gemini/gemini-3-5-flash-lite",
+        "reason": "[Model Error] Request failed (401): Invalid API Key"
+      }
+    ],
+    "sessions": [
+      {
+        "agent": "codecraft-test-primary-badkey",
+        "id": "01m7z1fwxmfyyeswpzvyngwhm1"
+      },
+      {
+        "agent": "codecraft-fallback",
+        "id": "01m7z1fx4nb5ygs8w1hp06137k"
+      }
+    ],
+    "tokens": 102709,
+    "approvals": [
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag in src/flask/helpers.py and its docstring. 2. Update tests in tests/test_helpers.py to cover 'off', 'n', and case variations. groups=[Update get_debug_flag to treat 'off' and 'n' as false case-insensitively and update docstring and tests: src/flask/helpers.py, tests/test_helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag in src/flask/helpers.py and its docstring. 2. Update tests in tests/test_helpers.py to cover 'off', 'n', and case variations. groups=[Update get_debug_flag and tests: src/flask/helpers.py, tests/test_helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag in src/flask/helpers.py and its docstring. 2. Update tests in tests/test_helpers.py to cover 'off', 'n', and case variations. groups=[Update get_debug_flag helper: src/flask/helpers.py | Update tests for get_debug_flag: tests/test_helpers.py]",
+      "codecraft-editor/propose_changes: plan=1. Update get_debug_flag in src/flask/helpers.py and its docstring. 2. Update tests in tests/test_helpers.py to cover 'off', 'n', and case variations. groups=[Update get_debug_flag helper: src/flask/helpers.py]"
+    ],
+    "review": [
+      {
+        "plan": "1. Update get_debug_flag in src/flask/helpers.py and its docstring.\n2. Update tests in tests/test_helpers.py to cover 'off', 'n', and case variations.",
+        "groups": [
+          "Update get_debug_flag and tests: src/flask/helpers.py (2 hunks), tests/test_helpers.py (1 hunk)"
+        ]
+      },
+      {
+        "plan": "1. Update get_debug_flag in src/flask/helpers.py and its docstring.\n2. Update tests in tests/test_helpers.py to cover 'off', 'n', and case variations.",
+        "groups": [
+          "Update get_debug_flag helper: src/flask/helpers.py (2 hunks)",
+          "Update tests for get_debug_flag: tests/test_helpers.py (1 hunk)"
+        ]
+      }
+    ],
+    "activity": [
+      "read_file src/flask/helpers.py lines 20-45 of 641",
+      "read_file tests/test_helpers.py lines 330-360 of 383",
+      "submit_plan edit:src/flask/helpers.py, edit:tests/test_helpers.py",
+      "propose_changes Update get_debug_flag and tests (src/flask/helpers.py, tests/test_helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "read_file src/flask/helpers.py lines 25-38 of 641",
+      "propose_changes Update get_debug_flag helper (src/flask/helpers.py); Update tests for get_debug_flag (tests/test_helpers.py)",
+      "propose_changes -> rejected: all hunks were rejected; nothing was written",
+      "read_file src/flask/helpers.py lines 27-36 of 641"
+    ],
+    "filesRead": [
+      "src/flask/helpers.py",
+      "tests/test_helpers.py"
+    ],
+    "totalFiles": 234,
+    "context": {
+      "budgetTokens": 6000,
+      "usedTokens": 1980,
+      "totalFiles": 234,
+      "items": [
+        {
+          "path": "src/flask/helpers.py",
+          "reason": "selected in the editor (lines 28-35)",
+          "tokens": 98,
+          "included": true
+        },
+        {
+          "path": "tests/test_converters.py",
+          "reason": "test for src/flask/helpers.py",
+          "tokens": 302,
+          "included": true
+        },
+        {
+          "path": "tests/test_helpers.py",
+          "reason": "test for src/flask/helpers.py; outline only (whole file ~2919 tokens is over budget)",
+          "tokens": 734,
+          "included": true
+        },
+        {
+          "path": "src/flask/globals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 459,
+          "included": true
+        },
+        {
+          "path": "src/flask/signals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 209,
+          "included": true
+        },
+        {
+          "path": "src/flask/wrappers.py",
+          "reason": "imported by src/flask/helpers.py; outline only (whole file ~2434 tokens is over budget)",
+          "tokens": 178,
+          "included": true
+        }
+      ],
+      "unresolved": []
+    },
+    "changed": [],
+    "maxEventLoopLagMs": 17,
+    "banners": [
+      "The primary model codecraft-test-badkey/gpt-oss-120b stopped because its API key was rejected (HTTP 401). CodeCraft switched to the fallback model google-gemini/gemini-3-5-flash-lite automatically and is continuing your request."
+    ],
+    "plans": [
+      {
+        "plan": {
+          "summary": "Update get_debug_flag to treat 'off' and 'n' as false case-insensitively and update docstrings and tests.",
+          "files": [
+            {
+              "path": "src/flask/helpers.py",
+              "action": "edit",
+              "why": "Update get_debug_flag to treat 'off' and 'n' as false case-insensitively and update docstring to list every value treated as false."
+            },
+            {
+              "path": "tests/test_helpers.py",
+              "action": "edit",
+              "why": "Add tests for 'off' and 'n' (and case variations) in test_get_debug_flag."
+            }
+          ]
+        },
+        "reviewsBefore": 0
+      }
+    ],
+    "retries": [],
+    "atSwitch": [
+      {
+        "changed": [],
+        "approvalsBefore": 0,
+        "reviewsBefore": 0
+      }
+    ],
+    "checks": [
+      {
+        "name": "exactly one automatic switch, from the invalid-key agent to codecraft-fallback",
+        "pass": true,
+        "detail": "codecraft-test-primary-badkey -> codecraft-fallback"
+      },
+      {
+        "name": "the switch was caused by the rejected key (HTTP 401)",
+        "pass": true,
+        "detail": "[Model Error] Request failed (401): Invalid API Key"
+      },
+      {
+        "name": "no user action before the takeover (0 approvals, 0 reviews) and nothing written at that moment",
+        "pass": true,
+        "detail": "approvals 0, reviews 0, changed none"
+      },
+      {
+        "name": "banner says in plain words that the primary key was rejected and the fallback took over",
+        "pass": true,
+        "detail": "The primary model codecraft-test-badkey/gpt-oss-120b stopped because its API key was rejected (HTTP 401). CodeCraft switched to the fallback model google-gemini/gemini-3-5-flash-lite automatically and is continuing your request."
+      },
+      {
+        "name": "TASKS.md: the second configured model took over (run finished on codecraft-fallback)",
+        "pass": true,
+        "detail": "done on codecraft-fallback"
+      },
+      {
+        "name": "the fallback did the work: it proposed a change to src/flask/helpers.py (rejected by the scripted user)",
+        "pass": true,
+        "detail": "Update get_debug_flag and tests: src/flask/helpers.py (2 hunks), tests/test_helpers.py (1 hunk) || Update get_debug_flag helper: src/flask/helpers.py (2 hunks) | Update tests for get_debug_flag: tests/test_helpers.py (1 hunk)"
+      },
+      {
+        "name": "TASKS.md: git status shows no files changed",
+        "pass": true,
+        "detail": "clean"
+      },
+      {
+        "name": "TASKS.md: editor stays responsive (max event-loop lag < 250 ms)",
+        "pass": true,
+        "detail": "17 ms"
+      },
+      {
+        "name": "the dummy key never appears in any message, banner, log or result",
+        "pass": true,
+        "detail": "not present"
+      },
+      {
+        "name": "fixture reset to clean after the run",
+        "pass": true,
+        "detail": "clean"
+      }
+    ],
+    "pass": true
+  },
+  {
+    "scenario": "task3-nofallback",
+    "run": 1,
+    "startedAt": "2026-11-21T12:32:58.816Z",
+    "durationMs": 821,
+    "outcome": {
+      "status": "error",
+      "message": "[Model Error] Request failed (401): Invalid API Key",
+      "rounds": 1
+    },
+    "finalAgent": "codecraft-test-primary-badkey",
+    "switches": [],
+    "sessions": [
+      {
+        "agent": "codecraft-test-primary-badkey",
+        "id": "01m7z1gy5a1swhtw91a4vv1n5t"
+      }
+    ],
+    "tokens": 0,
+    "approvals": [],
+    "review": [],
+    "activity": [],
+    "filesRead": [],
+    "totalFiles": 234,
+    "context": {
+      "budgetTokens": 6000,
+      "usedTokens": 1980,
+      "totalFiles": 234,
+      "items": [
+        {
+          "path": "src/flask/helpers.py",
+          "reason": "selected in the editor (lines 28-35)",
+          "tokens": 98,
+          "included": true
+        },
+        {
+          "path": "tests/test_converters.py",
+          "reason": "test for src/flask/helpers.py",
+          "tokens": 302,
+          "included": true
+        },
+        {
+          "path": "tests/test_helpers.py",
+          "reason": "test for src/flask/helpers.py; outline only (whole file ~2919 tokens is over budget)",
+          "tokens": 734,
+          "included": true
+        },
+        {
+          "path": "src/flask/globals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 459,
+          "included": true
+        },
+        {
+          "path": "src/flask/signals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 209,
+          "included": true
+        },
+        {
+          "path": "src/flask/wrappers.py",
+          "reason": "imported by src/flask/helpers.py; outline only (whole file ~2434 tokens is over budget)",
+          "tokens": 178,
+          "included": true
+        }
+      ],
+      "unresolved": []
+    },
+    "changed": [],
+    "maxEventLoopLagMs": 14,
+    "banners": [],
+    "plans": [],
+    "retries": [],
+    "atSwitch": [],
+    "failureMessage": "Provider key rejected (HTTP 401) for codecraft-test-badkey/gpt-oss-120b: update it in TrueForge Settings. Nothing was changed in your files.",
+    "checks": [
+      {
+        "name": "the run fails (no fallback configured) without asking the user anything",
+        "pass": true,
+        "detail": "error, switches 0, approvals 0, reviews 0"
+      },
+      {
+        "name": "TASKS.md: the user sees a clear message (key rejected, where to fix it, nothing changed)",
+        "pass": true,
+        "detail": "Provider key rejected (HTTP 401) for codecraft-test-badkey/gpt-oss-120b: update it in TrueForge Settings. Nothing was changed in your files."
+      },
+      {
+        "name": "TASKS.md: git status shows no files changed",
+        "pass": true,
+        "detail": "clean"
+      },
+      {
+        "name": "TASKS.md: editor stays responsive (max event-loop lag < 250 ms)",
+        "pass": true,
+        "detail": "14 ms"
+      },
+      {
+        "name": "the dummy key never appears in any message, banner, log or result",
+        "pass": true,
+        "detail": "not present"
+      },
+      {
+        "name": "fixture reset to clean after the run",
+        "pass": true,
+        "detail": "clean"
+      }
+    ],
+    "pass": true
+  },
+  {
+    "scenario": "task3-nofallback",
+    "run": 2,
+    "startedAt": "2026-11-21T12:32:59.637Z",
+    "durationMs": 544,
+    "outcome": {
+      "status": "error",
+      "message": "[Model Error] Request failed (401): Invalid API Key",
+      "rounds": 1
+    },
+    "finalAgent": "codecraft-test-primary-badkey",
+    "switches": [],
+    "sessions": [
+      {
+        "agent": "codecraft-test-primary-badkey",
+        "id": "01m7z1gyzhfe03tsff23ag536v"
+      }
+    ],
+    "tokens": 0,
+    "approvals": [],
+    "review": [],
+    "activity": [],
+    "filesRead": [],
+    "totalFiles": 234,
+    "context": {
+      "budgetTokens": 6000,
+      "usedTokens": 1980,
+      "totalFiles": 234,
+      "items": [
+        {
+          "path": "src/flask/helpers.py",
+          "reason": "selected in the editor (lines 28-35)",
+          "tokens": 98,
+          "included": true
+        },
+        {
+          "path": "tests/test_converters.py",
+          "reason": "test for src/flask/helpers.py",
+          "tokens": 302,
+          "included": true
+        },
+        {
+          "path": "tests/test_helpers.py",
+          "reason": "test for src/flask/helpers.py; outline only (whole file ~2919 tokens is over budget)",
+          "tokens": 734,
+          "included": true
+        },
+        {
+          "path": "src/flask/globals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 459,
+          "included": true
+        },
+        {
+          "path": "src/flask/signals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 209,
+          "included": true
+        },
+        {
+          "path": "src/flask/wrappers.py",
+          "reason": "imported by src/flask/helpers.py; outline only (whole file ~2434 tokens is over budget)",
+          "tokens": 178,
+          "included": true
+        }
+      ],
+      "unresolved": []
+    },
+    "changed": [],
+    "maxEventLoopLagMs": 12,
+    "banners": [],
+    "plans": [],
+    "retries": [],
+    "atSwitch": [],
+    "failureMessage": "Provider key rejected (HTTP 401) for codecraft-test-badkey/gpt-oss-120b: update it in TrueForge Settings. Nothing was changed in your files.",
+    "checks": [
+      {
+        "name": "the run fails (no fallback configured) without asking the user anything",
+        "pass": true,
+        "detail": "error, switches 0, approvals 0, reviews 0"
+      },
+      {
+        "name": "TASKS.md: the user sees a clear message (key rejected, where to fix it, nothing changed)",
+        "pass": true,
+        "detail": "Provider key rejected (HTTP 401) for codecraft-test-badkey/gpt-oss-120b: update it in TrueForge Settings. Nothing was changed in your files."
+      },
+      {
+        "name": "TASKS.md: git status shows no files changed",
+        "pass": true,
+        "detail": "clean"
+      },
+      {
+        "name": "TASKS.md: editor stays responsive (max event-loop lag < 250 ms)",
+        "pass": true,
+        "detail": "12 ms"
+      },
+      {
+        "name": "the dummy key never appears in any message, banner, log or result",
+        "pass": true,
+        "detail": "not present"
+      },
+      {
+        "name": "fixture reset to clean after the run",
+        "pass": true,
+        "detail": "clean"
+      }
+    ],
+    "pass": true
+  },
+  {
+    "scenario": "task3-nofallback",
+    "run": 3,
+    "startedAt": "2026-11-21T12:33:00.181Z",
+    "durationMs": 505,
+    "outcome": {
+      "status": "error",
+      "message": "[Model Error] Request failed (401): Invalid API Key",
+      "rounds": 1
+    },
+    "finalAgent": "codecraft-test-primary-badkey",
+    "switches": [],
+    "sessions": [
+      {
+        "agent": "codecraft-test-primary-badkey",
+        "id": "01m7z1gzh0yfaey32kft712g66"
+      }
+    ],
+    "tokens": 0,
+    "approvals": [],
+    "review": [],
+    "activity": [],
+    "filesRead": [],
+    "totalFiles": 234,
+    "context": {
+      "budgetTokens": 6000,
+      "usedTokens": 1980,
+      "totalFiles": 234,
+      "items": [
+        {
+          "path": "src/flask/helpers.py",
+          "reason": "selected in the editor (lines 28-35)",
+          "tokens": 98,
+          "included": true
+        },
+        {
+          "path": "tests/test_converters.py",
+          "reason": "test for src/flask/helpers.py",
+          "tokens": 302,
+          "included": true
+        },
+        {
+          "path": "tests/test_helpers.py",
+          "reason": "test for src/flask/helpers.py; outline only (whole file ~2919 tokens is over budget)",
+          "tokens": 734,
+          "included": true
+        },
+        {
+          "path": "src/flask/globals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 459,
+          "included": true
+        },
+        {
+          "path": "src/flask/signals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 209,
+          "included": true
+        },
+        {
+          "path": "src/flask/wrappers.py",
+          "reason": "imported by src/flask/helpers.py; outline only (whole file ~2434 tokens is over budget)",
+          "tokens": 178,
+          "included": true
+        }
+      ],
+      "unresolved": []
+    },
+    "changed": [],
+    "maxEventLoopLagMs": 15,
+    "banners": [],
+    "plans": [],
+    "retries": [],
+    "atSwitch": [],
+    "failureMessage": "Provider key rejected (HTTP 401) for codecraft-test-badkey/gpt-oss-120b: update it in TrueForge Settings. Nothing was changed in your files.",
+    "checks": [
+      {
+        "name": "the run fails (no fallback configured) without asking the user anything",
+        "pass": true,
+        "detail": "error, switches 0, approvals 0, reviews 0"
+      },
+      {
+        "name": "TASKS.md: the user sees a clear message (key rejected, where to fix it, nothing changed)",
+        "pass": true,
+        "detail": "Provider key rejected (HTTP 401) for codecraft-test-badkey/gpt-oss-120b: update it in TrueForge Settings. Nothing was changed in your files."
+      },
+      {
+        "name": "TASKS.md: git status shows no files changed",
+        "pass": true,
+        "detail": "clean"
+      },
+      {
+        "name": "TASKS.md: editor stays responsive (max event-loop lag < 250 ms)",
+        "pass": true,
+        "detail": "15 ms"
+      },
+      {
+        "name": "the dummy key never appears in any message, banner, log or result",
+        "pass": true,
+        "detail": "not present"
+      },
+      {
+        "name": "fixture reset to clean after the run",
+        "pass": true,
+        "detail": "clean"
+      }
+    ],
+    "pass": true
+  }
+]

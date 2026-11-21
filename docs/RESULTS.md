@@ -2,9 +2,9 @@
 
 All runs: 2026-11-20, against pallets/flask 3.1.3 (`22d92470`) in `fixtures/flask`, real TrueForge 0.185.1, real models (primary `google-gemini/gemini-3-1-flash-lite`, fallback `google-gemini/gemini-3-5-flash-lite`, both on the Gemini free tier), the real MCP server, and real verification commands (python, pytest, flask CLI). Only the human is scripted (tool approval and hunk review). Commands: `npm run scenario -- task1|task2|task3-fallback|task3-nofallback`. Full per-run JSON: `docs/results/`.
 
-## Status as of 2026-11-21 12:10 UTC (3-in-a-row goal)
+## Status as of 2026-11-21 12:40 UTC (3-in-a-row goal)
 
-No task is currently at "3 passing runs in a row on the final code". Every run since the first summary, in order (all rows are in the raw table below):
+On the final code `53fdb7a`: task1, task3-fallback and task3-nofallback pass 3 in a row; task2 does not. Every run since the first summary, in order (all rows are in the raw table below):
 
 | Code | Scenario | Runs | Result | Cause of each failure |
 |---|---|---|---|---|
@@ -29,6 +29,10 @@ No task is currently at "3 passing runs in a row on the final code". Every run s
 | `7176115` | task2 | 1 | FAIL | Gemini free-tier per-minute input-token quota: the primary waited out 10 per-minute 429s while progressing, failed over, the fallback hit the same limit, and the harness's own 15-minute run limit cancelled the run mid-change (raised to 25 minutes; no task check changed) |
 | `ec18181` | task2 | 1 | FAIL | every TASKS.md check passed (3 files, test_cli 59 passed, masked JSON, `config` in --help, test, docs, suite 491 passed), but the plan before the first review listed cli.py and a new test only; docs were planned after the code was proposed (instructions changed in `64a515a`) |
 | `64a515a` | task2 | 1 | FAIL | the first plan listed cli.py, docs/cli.rst and tests/test_cli.py (fixed), but the fallback model's `flask config` failed to JSON-encode some config values; it then spent 15 debug cycles (4.2M tokens) until the free-tier quota stopped it with 1 failing test in test_cli.py |
+| `53fdb7a` | task2 | 1 | FAIL | the new primary `gemini-3-5-flash` returned 429 at once: Google's free tier allows it only **20 requests per day** (quota text names `gemini-3.6-flash`, limit 20); the lite fallback did the work, left 1 failing test in test_cli.py and stopped as instructed instead of looping (done in 542 s, 0.87M tokens) |
+| `53fdb7a` | task1 | 3 | **PASS, PASS, PASS** | all three finished on the lite fallback after the primary's daily 429 (28-54 s, ~60k tokens each) |
+| `53fdb7a` | task3-fallback | 3 | **PASS, PASS, PASS** | |
+| `53fdb7a` | task3-nofallback | 3 | **PASS, PASS, PASS** | |
 
 **Primary model changed (2026-11-21, approved by the project owner):** from `google-gemini/gemini-3-1-flash-lite` to `google-gemini/gemini-3-5-flash`; `google-gemini/gemini-3-5-flash-lite` stays the fallback. Reason: in Task B the free-tier "lite" models repeatedly wrote a `flask config` command that could not JSON-encode some config values, then looped on debugging (up to 4.2M tokens in one run) until the free-tier quota stopped them. At the same time the agent instructions now require verifying a new command through a test and run_tests before declaring done, and CodeCraft refuses further proposals after 2 failed test runs in a run (the agent must stop and report). Task wording and checks are unchanged. All three tasks are re-run 3 times on this configuration before any tag.
 
@@ -222,3 +226,28 @@ A stopped 3-run batch of task1 kept running in the background (only its shell wr
 | scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
 |---|---|---|---|---|---|---|---|---|---|---|
 | task2 | 1 | FAIL | codecraft-fallback (failover x1) | docs/cli.rst<br>src/flask/cli.py<br>tests/test_cli.py | src/flask/app.py<br>src/flask/cli.py<br>src/flask/config.py<br>docs/cli.rst<br>docs/config.rst<br>tests/test_async.py<br>tests/test_cli.py<br>tests/test_config.py<br>tests/test_testing.py<br>src/flask/__init__.py | 8/234 | 4228534 | 1279 s | 35 ms | agent run finished; TASKS.md: pytest tests/test_cli.py -q passes; TASKS.md: `flask config` prints JSON; full Flask test suite passes (0 failed) |
+
+### task2: 3 run(s), 2026-11-21T12:28:18.246Z
+
+| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| task2 | 1 | FAIL | codecraft-fallback (failover x1) | docs/cli.rst<br>src/flask/cli.py<br>tests/test_cli.py | src/flask/app.py<br>src/flask/cli.py<br>src/flask/config.py<br>docs/cli.rst<br>docs/config.rst<br>tests/test_async.py<br>tests/test_cli.py<br>tests/test_config.py<br>tests/test_testing.py<br>src/flask/__init__.py | 3/234 | 865544 | 542 s | 18 ms | TASKS.md: pytest tests/test_cli.py -q passes; full Flask test suite passes (0 failed) |
+
+### task1: 3 run(s), 2026-11-21T12:30:15.954Z
+
+| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| task1 | 1 | PASS | codecraft-fallback (failover x1) | src/flask/helpers.py<br>tests/test_helpers.py | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 2/234 | 64763 | 54 s | 15 ms | - |
+| task1 | 2 | PASS | codecraft-fallback (failover x1) | src/flask/helpers.py<br>tests/test_helpers.py | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 2/234 | 58897 | 35 s | 15 ms | - |
+| task1 | 3 | PASS | codecraft-fallback (failover x1) | src/flask/helpers.py<br>tests/test_helpers.py | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 2/234 | 67757 | 28 s | 17 ms | - |
+
+### task3-fallback, task3-nofallback: 3 run(s), 2026-11-21T12:33:00.687Z
+
+| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| task3-fallback | 1 | PASS | codecraft-fallback (failover x1) | (none) | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 2/234 | 63831 | 52 s | 19 ms | - |
+| task3-fallback | 2 | PASS | codecraft-fallback (failover x1) | (none) | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 3/234 | 273699 | 75 s | 18 ms | - |
+| task3-fallback | 3 | PASS | codecraft-fallback (failover x1) | (none) | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 2/234 | 102709 | 34 s | 17 ms | - |
+| task3-nofallback | 1 | PASS | codecraft-test-primary-badkey | (none) | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 0/234 | n/a | 1 s | 14 ms | - |
+| task3-nofallback | 2 | PASS | codecraft-test-primary-badkey | (none) | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 0/234 | n/a | 1 s | 12 ms | - |
+| task3-nofallback | 3 | PASS | codecraft-test-primary-badkey | (none) | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 0/234 | n/a | 1 s | 15 ms | - |
