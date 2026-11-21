@@ -93,3 +93,17 @@ Consequence: primary and fallback now share the `google-gemini` provider, so fai
 - The webview and extension host were not run inside VS Code in this session (no GUI); see the P0 report.
 - A new session is created per extension-host session and per settings change; sessions are not deleted.
 - TrueForge standalone is documented as localhost-only; `codecraft.baseUrl` is rejected unless it is loopback.
+
+## Context engineering for the Task B agent (P4)
+**Chosen feature: history compaction with an input-token trigger** (`AgentSpec.config.contextManagement.compaction = { enabled: true, trigger: { type: "input_tokens", value: 48000 } }`, plus `largeToolResponse: { enabled: true }`). Both CodeCraft agents carry it (`AGENT_RUNTIME_CONFIG` in `src/trueforge/client.ts`).
+
+Why this one (evidence from live runs, 2026-11-20/21):
+- Every agent step resends the whole conversation. Per-request input grew from about 7k to 13k+ tokens within one run; Task B runs used 0.9 to 4.2M tokens in total.
+- The Gemini free tier allows 250k input tokens per minute per model. Long Task B runs repeatedly hit that per-minute limit (and later the daily request limit), which caused most Task B failures.
+- Compaction caps the per-request input: once a request would exceed 48k input tokens, TrueForge compacts the earlier history. 48k leaves room for about 5 requests per minute within 250k TPM while keeping enough working context (plan, current file pages, last tool results).
+
+How it is visible: TrueForge emits `thread.context_compaction_started` (with the trigger) and `thread.context_compaction_finished` (with `durationMs` and usage); the agent panel shows them in its event stream, e.g. "compacting the conversation (trigger: input tokens > 48000)" and "conversation compacted in 1234 ms".
+
+Status: VERIFIED-DOCS (SDK types `ContextManagementConfig`, `CompactionConfig`, `InputTokensCompactionTrigger`, `ThreadContextCompaction*Event`) and unit-tested (manifest, change detection, panel display). NOT yet verified live: live scenario runs were paused when this was added.
+
+Considered and not chosen now: `McpServer.preloadTools` (load selected tool schemas up front instead of `list_tools`/`get_tool_info` discovery, which costs 3-5 requests per run). It would change how the model calls the editor tools (the live-verified `call_tool` wrapping), which cannot be verified without live model calls; it is the next candidate.

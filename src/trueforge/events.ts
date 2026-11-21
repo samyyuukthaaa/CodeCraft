@@ -35,6 +35,12 @@ export function toDisplay(ev: TurnEvent): DisplayEvent {
       if (s.status === 'error') return { type: ev.type, summary: `error: ${clip(s.message)}`, failed: true };
       return { type: ev.type, summary: `status ${s.status}` };
     }
+    case 'thread.context_compaction_started': {
+      const t = ev.trigger as { type?: string; value?: number } | undefined;
+      return { type: ev.type, summary: `compacting the conversation (trigger: ${t?.type === 'input_tokens' ? `input tokens > ${t.value}` : (t?.type ?? 'automatic')})` };
+    }
+    case 'thread.context_compaction_finished':
+      return { type: ev.type, summary: `conversation compacted in ${ev.durationMs} ms` };
     case 'tool.approval_required':
     case 'tool.response_required':
       return { type: ev.type, summary: `${ev.toolCalls.length} tool call(s)` };

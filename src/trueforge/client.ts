@@ -40,11 +40,22 @@ export function manifestFor(model: string): TrueForgeApi.AgentSpec {
  * (dynamic sub-agents on, 512 iterations) one single-function task ran 34 tool calls plus a sub-agent,
  * ~299k input tokens, and hit the provider quota (HTTP 429). These bound the cost of a runaway turn.
  */
+/** Input tokens per request above which TrueForge compacts the conversation (about 5 requests/min fit in 250k TPM). */
+export const COMPACTION_TRIGGER_TOKENS = 48_000;
+
 export const AGENT_RUNTIME_CONFIG: TrueForgeApi.RuntimeConfig = {
   dynamicSubAgents: { enabled: false },
   iterationLimit: 60,
   // CodeCraft has no UI for TrueForge's ask_user_question tool; a run that used it ended as "unsupported".
   askUserQuestions: { enabled: false },
+  // Context engineering (TrueForge contextManagement): compact the conversation once a request's input passes
+  // COMPACTION_TRIGGER_TOKENS, and let TrueForge handle oversized tool responses. Observed live: every step
+  // resends the growing history (7k -> 13k+ input tokens per request within one run; Task B runs used 1-4M
+  // tokens) against Gemini's free-tier 250k input tokens per minute. See docs/TRUEFORGE_NOTES.md.
+  contextManagement: {
+    compaction: { enabled: true, trigger: { type: 'input_tokens', value: COMPACTION_TRIGGER_TOKENS } },
+    largeToolResponse: { enabled: true },
+  },
 };
 
 /** Registers (or updates) the local editor MCP server in TrueForge. The bearer token is never logged. */
@@ -72,6 +83,8 @@ export function manifestMatches(stored: TrueForgeApi.AgentSpec, wanted: TrueForg
   if ((stored.config?.dynamicSubAgents?.enabled ?? true) !== (wanted.config?.dynamicSubAgents?.enabled ?? true)) return false;
   if ((stored.config?.iterationLimit ?? 512) !== (wanted.config?.iterationLimit ?? 512)) return false;
   if ((stored.config?.askUserQuestions?.enabled ?? true) !== (wanted.config?.askUserQuestions?.enabled ?? true)) return false;
+  const trig = (s: TrueForgeApi.AgentSpec) => JSON.stringify(s.config?.contextManagement?.compaction?.trigger ?? null);
+  if ((stored.config?.contextManagement?.compaction?.enabled ?? true) !== (wanted.config?.contextManagement?.compaction?.enabled ?? true) || trig(stored) !== trig(wanted)) return false;
   const pick = (s: TrueForgeApi.AgentSpec) =>
     (s.mcpServers ?? []).map((x) => ({ name: x.name, approvals: [...(x.requireApprovalForTools ?? [])].sort() })).sort((a, b) => a.name.localeCompare(b.name));
   return JSON.stringify(pick(stored)) === JSON.stringify(pick(wanted));

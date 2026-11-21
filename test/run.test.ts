@@ -182,7 +182,14 @@ test('manifestMatches: a stored manifest with server-filled defaults (observed l
   const stored = {
     ...wanted,
     mcpServers: [{ name: EDITOR_SERVER_NAME, enableTools: ['@all'], disableTools: [], preloadTools: [], requireApprovalForTools: ['propose_write', 'propose_changes', 'run_tests'], preload: false }],
-    config: { iterationLimit: 60, dynamicSubAgents: { enabled: false }, askUserQuestions: { enabled: false }, sandbox: { enabled: false, fileDownloads: true }, memory: { enabled: false } },
+    config: {
+      iterationLimit: 60,
+      dynamicSubAgents: { enabled: false },
+      askUserQuestions: { enabled: false },
+      contextManagement: { compaction: { enabled: true, trigger: { type: 'input_tokens', value: 48000 } }, largeToolResponse: { enabled: true } },
+      sandbox: { enabled: false, fileDownloads: true },
+      memory: { enabled: false },
+    },
   };
   assert.equal(manifestMatches(stored as typeof wanted, wanted), true);
   // the server's own defaults (512 iterations, sub-agents on) are NOT what CodeCraft wants
