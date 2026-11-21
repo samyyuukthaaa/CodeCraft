@@ -30,6 +30,24 @@ export interface Approver {
   approve(call: PendingToolCall): Promise<ApprovalDecision>;
 }
 
+/** A client-side tool call TrueForge wants CodeCraft to answer (tool.response_required). */
+export interface ClientToolCall {
+  toolCallId: string;
+  threadId: string;
+  /** Tool name, e.g. "ask_user_question". */
+  name: string;
+  /** For ask_user_question: the question and its options (redacted). */
+  question?: string;
+  options?: string[];
+}
+
+/** Answers client-side tool calls; for ask_user_question, the user's answer. */
+export interface Responder {
+  answer(call: ClientToolCall): Promise<string>;
+}
+
+export const ASK_USER_TOOL = 'ask_user_question';
+
 export interface TurnDriver {
   /** Starts a new turn with a user message. */
   start(text: string, signal: AbortSignal): AsyncIterable<TurnEvent>;
@@ -69,6 +87,8 @@ export interface RunOptions {
   maxRounds?: number;
   /** Persist session/turn/last event (journal) so a cut stream can be resumed. */
   onPosition?: (p: StreamPosition) => void;
+  /** Answers tool.response_required (ask_user_question). Without it such a turn ends as "unsupported". */
+  responder?: Responder;
 }
 
 interface CallInfo {
@@ -134,6 +154,7 @@ export async function runWithApprovals(text: string, opts: RunOptions): Promise<
     opts.signal?.addEventListener('abort', onAbort, { once: true });
 
     const pending = new Map<string, { threadId: string }>();
+    const toAnswer = new Map<string, { threadId: string }>();
     let paused = false;
     let unsupported = false;
     let done: Extract<TurnEvent, { type: 'turn.done' }>['state'] | undefined;
@@ -162,7 +183,8 @@ export async function runWithApprovals(text: string, opts: RunOptions): Promise<
         } else if (ev.type === 'tool.approval_required') {
           for (const tc of ev.toolCalls) pending.set(tc.id, { threadId: ev.threadId });
         } else if (ev.type === 'tool.response_required') {
-          unsupported = true; // CodeCraft registers no client-side tools
+          if (opts.responder) for (const tc of ev.toolCalls) toAnswer.set(tc.id, { threadId: ev.threadId });
+          else unsupported = true;
         } else if (ev.type === 'turn.update' && ev.state.status === 'paused') {
           paused = true;
           break; // the server keeps the stream open while paused
@@ -202,12 +224,15 @@ export async function runWithApprovals(text: string, opts: RunOptions): Promise<
     if (done?.status === 'done') {
       for (const action of done.requiredActions) {
         if (action.type === 'tool.approval_required') for (const tc of action.toolCalls) pending.set(tc.id, { threadId: action.threadId });
-        if (action.type === 'tool.response_required') unsupported = true;
+        if (action.type === 'tool.response_required') {
+          if (opts.responder) for (const tc of action.toolCalls) toAnswer.set(tc.id, { threadId: action.threadId });
+          else unsupported = true;
+        }
       }
     }
     if (unsupported) return { status: 'unsupported', message: 'the agent asked for a client-side tool response, which CodeCraft does not provide', rounds: round };
     if (!paused && !done) return { status: 'error', message: 'the stream ended without a turn.done or pause event', rounds: round };
-    if (pending.size === 0) {
+    if (pending.size === 0 && toAnswer.size === 0) {
       if (paused) return { status: 'error', message: 'the turn paused without a pending approval', rounds: round };
       const c = done?.status === 'done' ? done.output?.content : undefined;
       return { status: 'done', text: typeof c === 'string' ? redact(c) : '', rounds: round };
@@ -226,6 +251,23 @@ export async function runWithApprovals(text: string, opts: RunOptions): Promise<
         toolCallId,
         approval: decision.allow ? { status: 'allow' } : { status: 'deny', reason: decision.reason ?? 'denied by the user' },
       });
+    }
+    // Client-side tool calls: ask_user_question is answered by the user; anything else gets an error result so
+    // the agent can continue (CodeCraft provides no other client-side tools).
+    for (const [toolCallId, { threadId }] of toAnswer) {
+      const c = calls.get(toolCallId);
+      const name = resolveCall(c?.name ?? '', c?.args ?? '').tool || 'unknown_tool';
+      let content: string;
+      if (name === ASK_USER_TOOL && opts.responder) {
+        const input = resolveCall(c?.name ?? '', c?.args ?? '').input ?? {};
+        const question = typeof input.question === 'string' ? redact(input.question).slice(0, 500) : '(the agent asked a question without text)';
+        const options = Array.isArray(input.options) ? input.options.filter((o): o is string => typeof o === 'string').slice(0, 5).map((o) => redact(o).slice(0, 200)) : [];
+        content = await opts.responder.answer({ toolCallId, threadId, name, question, options });
+      } else {
+        content = JSON.stringify({ error: `CodeCraft does not provide the client-side tool ${name}` });
+      }
+      if (opts.signal?.aborted) return { status: 'cancelled', rounds: round };
+      approvals.push({ type: 'user.tool_response', threadId, toolCallId, content });
     }
     if (paused) {
       if (!turnId) return { status: 'error', message: 'paused turn has no turn id', rounds: round };

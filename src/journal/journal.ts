@@ -11,14 +11,26 @@ export type JournalEntry =
   | { t: 'op_rejected'; runId: string; at: number; files: string[] }
   | { t: 'op_refused'; runId: string; at: number; reason: string }
   | { t: 'op_undone'; runId: string; at: number; opId: string; files: string[] }
-  | { t: 'tests'; runId: string; at: number; passed: boolean; exitCode: number | null }
+  | { t: 'tests'; runId: string; at: number; passed: boolean; exitCode: number | null; phase?: TestPhase; failing?: string[] }
   | { t: 'provider_error'; runId: string; at: number; model: string; cls: string }
   | { t: 'provider_recovered'; runId: string; at: number; model: string }
   | { t: 'model_switched'; runId: string; at: number; from: string; to: string; reason: string }
   | { t: 'run_finished'; runId: string; at: number; status: string }
   | { t: 'tool_call'; runId: string; at: number; opId: string; tool: string; args: string }
   | { t: 'turn_position'; runId: string; at: number; sessionId?: string; turnId: string; lastEventId?: string; reason: string }
-  | { t: 'fault_injected'; runId: string; at: number; fault: string };
+  | { t: 'fault_injected'; runId: string; at: number; fault: string }
+  // P5
+  | { t: 'run_models'; runId: string; at: number; primary: string; fallback: string }
+  | { t: 'warn_list'; runId: string; at: number; files: string[]; tests: string[] }
+  | { t: 'change_group'; runId: string; at: number; intent: string; reason: string; plain: string; confidence: string; why: string[]; files: string[]; tests: string; opId?: string }
+  | { t: 'regression'; runId: string; at: number; tests: string[] }
+  | { t: 'autofix'; runId: string; at: number; status: 'started' | 'fixed' | 'still_failing' | 'not_applied' | 'skipped'; detail?: string }
+  | { t: 'question'; runId: string; at: number; question: string; answer: string }
+  | { t: 'rollback'; runId: string; at: number; checkpoint: string; opIds: string[]; files: string[] }
+  | { t: 'metrics'; runId: string; at: number; model: string; inputTokens?: number; outputTokens?: number; costUsd?: number; elapsedMs: number; filesRead: number; filesTotal: number };
+
+/** Which test run a `tests` entry is: the agent's run_tests, or CodeCraft's own runs around a change (P5). */
+export type TestPhase = 'agent' | 'baseline' | 'after' | 'after_fix';
 
 /** Every stored entry also carries a per-run sequence number. */
 export type StoredEntry = JournalEntry & { seq?: number };
@@ -122,6 +134,7 @@ export class Journal {
       if (e.t === 'op_applied') done.push(...e.files.map((f) => `${f.path} (${f.intent}: ${f.accepted} hunk(s) applied after review)`));
       if (e.t === 'op_undone') done.push(`undone: ${e.files.join(', ')}`);
       if (e.t === 'tests') done.push(`tests ${e.passed ? 'passed' : `failed (exit ${e.exitCode})`}`);
+      if (e.t === 'rollback') done.push(`rolled back to "${e.checkpoint}" (${e.files.join(', ')})`);
     }
     return done.length ? `Already done in this run (do not redo; read files again before changing them): ${done.join('; ')}.` : '';
   }

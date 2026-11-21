@@ -12,7 +12,7 @@ if (vscodeTests) {
   await build({ ...common, entryPoints: ['test/vscode/suite.ts'], outfile: 'out/vscode/suite.js', platform: 'node', format: 'cjs', external: ['vscode'] });
   await build({ ...common, entryPoints: ['test/vscode/run.ts'], outfile: 'out/vscode/run.js', platform: 'node', format: 'cjs', external: ['vscode', '@vscode/test-electron'] });
 } else if (scenarios) {
-  for (const name of ['run', 'failure-table', 'capture-errors']) {
+  for (const name of ['run', 'failure-table', 'capture-errors', 'ask-user']) {
     await build({ ...common, entryPoints: [`test/scenarios/${name}.ts`], outfile: `out/scenarios/${name}.js`, platform: 'node', format: 'cjs', external: ['vscode'] });
   }
 } else if (tests) {

@@ -21,7 +21,7 @@ function line(e: JournalEntry): string | undefined {
     case 'op_undone':
       return `- ${time(e.at)} **undone** operation \`${e.opId}\`: ${e.files.join(', ')}`;
     case 'tests':
-      return `- ${time(e.at)} tests ${e.passed ? 'passed' : `failed (exit ${e.exitCode})`}`;
+      return `- ${time(e.at)} tests${e.phase && e.phase !== 'agent' ? ` (${e.phase.replace('_', ' ')})` : ''} ${e.passed ? 'passed' : `failed (exit ${e.exitCode})`}${e.failing?.length ? `: ${e.failing.slice(0, 10).join(', ')}` : ''}`;
     case 'provider_error':
       return `- ${time(e.at)} provider error: ${e.model} (${e.cls.replace(/_/g, ' ')})`;
     case 'provider_recovered':
@@ -36,6 +36,22 @@ function line(e: JournalEntry): string | undefined {
       return e.reason === 'cut' ? `- ${time(e.at)} stream cut; resuming turn ${e.turnId} after event ${e.lastEventId ?? '(start)'}` : undefined;
     case 'fault_injected':
       return `- ${time(e.at)} **fault injected (test)**: ${e.fault}`;
+    case 'run_models':
+      return `- ${time(e.at)} models: primary ${e.primary}, fallback ${e.fallback}`;
+    case 'warn_list':
+      return `- ${time(e.at)} before editing: will change ${e.files.join(', ') || '(nothing)'}; tests that might break: ${e.tests.join(', ') || '(none found)'}`;
+    case 'change_group':
+      return `- ${time(e.at)} change group [${e.intent}] **${e.confidence}** (${e.why.join('; ')}): ${e.plain} Reason: ${e.reason} Tests: ${e.tests}. Files: ${e.files.join(', ')}`;
+    case 'regression':
+      return `- ${time(e.at)} **tests that passed before now fail**: ${e.tests.join(', ')}`;
+    case 'autofix':
+      return `- ${time(e.at)} automatic fix: ${e.status.replace('_', ' ')}${e.detail ? ` (${e.detail})` : ''}`;
+    case 'question':
+      return `- ${time(e.at)} agent asked: "${e.question}" answer: "${e.answer}"`;
+    case 'rollback':
+      return `- ${time(e.at)} **rolled back** to "${e.checkpoint}": ${e.files.join(', ')} (operations ${e.opIds.join(', ')})`;
+    case 'metrics':
+      return `- ${time(e.at)} cost and speed: ${e.model}, ${e.inputTokens ?? '?'} input / ${e.outputTokens ?? '?'} output tokens, ${(e.elapsedMs / 1000).toFixed(1)} s, read ${e.filesRead} of ${e.filesTotal} files`;
   }
 }
 

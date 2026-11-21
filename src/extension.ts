@@ -36,6 +36,10 @@ import { AgentAttempt, runWithFailover } from './trueforge/failover';
 import { FAULT_MODES, FaultInjector, FaultMode } from './trueforge/faults';
 import type { TurnDriver } from './trueforge/run';
 import { toolArgsSummary } from './journal/toolArgs';
+import { FileContentStore } from './journal/contentStore';
+import { latestRunId, renderRunReport } from './journal/report';
+import { checkpoints, latestRunWithChanges, planRollback } from './trust/rollback';
+import { NO_ANSWER, TrustSession } from './trust/session';
 import { redact } from './util/redact';
 
 /** The codecraft.faultInjection setting, validated ('none' for anything unexpected). */
@@ -93,6 +97,9 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
   const breaker = new CircuitBreaker();
   // Fault injection for testing failover (setting codecraft.faultInjection, or the panel's "Inject fault…").
   const faults = new FaultInjector(faultSetting);
+  // P5 per-run trust features (change-group notes, warn-before-edit, tests around changes, question, metrics).
+  let trust: TrustSession | undefined;
+  let lastTrust: TrustSession | undefined;
 
   // Editor-tool host (created only when a folder is open). The index is persisted in VS Code's
   // workspace storage, never inside the repository.
@@ -103,7 +110,15 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
         const journalFile = vscode.Uri.joinPath(context.storageUri ?? context.globalStorageUri, 'codecraft-journal.jsonl').fsPath;
         const journal = new Journal(new FileSink(journalFile));
         void journal.load();
-        const gate = new WriteGate(fs, new VsCodeApplier(folder.uri), new VsCodeReviewer(folder.uri, provider), journal);
+        // Exact file contents before/after each applied change (for rollback), in workspace storage, never in the repo.
+        const contents = new FileContentStore(vscode.Uri.joinPath(context.storageUri ?? context.globalStorageUri, 'codecraft-contents').fsPath);
+        const gate = new WriteGate(fs, new VsCodeApplier(folder.uri), new VsCodeReviewer(folder.uri, provider), journal, contents);
+        gate.setHooks({
+          annotate: async (groups) => (trust ? trust.annotate(groups) : []),
+          warning: () => trust?.warning(),
+          beforeApply: async () => trust?.beforeApply(),
+          onApplied: (info) => void trust?.onApplied(info),
+        });
         const tests = new VsCodeTestRunner(folder.uri.fsPath, () => vscode.workspace.getConfiguration('codecraft').get<string>('testCommand', 'npm test'));
         const storeFile = context.storageUri ? vscode.Uri.joinPath(context.storageUri, 'codecraft-index.json').fsPath : undefined;
         const index = new IndexService(folder.uri.fsPath, storeFile);
@@ -114,6 +129,8 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
           index,
           onActivity: (l) => {
             out.appendLine(`[tool] ${l}`);
+            const outcome = /^propose_(?:changes|write)\b.* -> (\w+)/.exec(l);
+            if (outcome) trust?.onProposalOutcome(outcome[1]!);
             const p = CodeTownPanel.currentPanel();
             if (!p) return;
             if (l.startsWith('propose_write ')) {
@@ -133,13 +150,15 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
             }
           },
           plan: planStore,
-          onTests: (passed, exitCode) => void journal.append({ t: 'tests', passed, exitCode }),
+          onTests: (passed, exitCode, output) => void (trust ? trust.onAgentTests(passed, exitCode, output) : journal.append({ t: 'tests', phase: 'agent', passed, exitCode })),
           // An operation ID is journaled (and written) before every tool call runs.
           beforeTool: (tool, args) => journal.append({ t: 'tool_call', opId: randomBytes(6).toString('hex'), tool, args: toolArgsSummary(tool, args) }),
           onPlan: (pl) => {
             void journal.append({ t: 'plan', summary: pl.summary, files: pl.files.map((f) => ({ path: f.path, action: f.action })) });
             out.appendLine(`[plan] ${pl.summary} | ${pl.files.map((f) => `${f.action} ${f.path}: ${f.why}`).join(' | ')}`);
             postPlan?.(pl);
+            // Warn-before-edit list, and the test baseline on the unchanged files (writes wait for it).
+            void trust?.onPlan(pl);
           },
           onRead: (p) => {
             readThisRun.add(p);
@@ -147,7 +166,7 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
             CodeTownPanel.currentPanel()?.dispatchEvent({ type: 'file_read', path: p });
           },
         });
-        return { fs, gate, index, handlers, tests, journal };
+        return { fs, gate, index, handlers, tests, journal, contents };
       })()
     : undefined;
 
@@ -245,9 +264,26 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
         host.journal.runId = randomBytes(8).toString('hex');
         await host.journal.load();
         await host.journal.append({ t: 'run_started', request: text.slice(0, 300) });
+        await host.journal.append({ t: 'run_models', primary: cfg.primaryModel, fallback: cfg.fallbackModel });
         planStore.reset();
+        host.tests.startRun();
+        const h = host;
+        trust = new TrustSession(
+          {
+            journal: h.journal,
+            post,
+            runTests: (why) => h.tests.run(why),
+            index: async () => h.index.get(),
+            plan: () => planStore.get(),
+            log: (l) => out.appendLine(l),
+          },
+          cfg.primaryModel,
+        );
         postPlan = (pl) => post({ type: 'plan', plan: pl });
-        postReads = () => post({ type: 'reads', read: readThisRun.size, total: index.stats.totalFiles, paths: [...readThisRun] });
+        postReads = () => {
+          post({ type: 'reads', read: readThisRun.size, total: index.stats.totalFiles, paths: [...readThisRun] });
+          trust?.setReads(readThisRun.size, index.stats.totalFiles);
+        };
         postReads();
         CodeTownPanel.currentPanel()?.dispatchEvent({ type: 'run_started' });
       }
@@ -264,8 +300,10 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
         attemptFor(client, PRIMARY_AGENT_NAME, cfg.primaryModel, fault ? (d) => faults.wrap(d, fault, onInjected) : undefined),
         attemptFor(client, FALLBACK_AGENT_NAME, cfg.fallbackModel),
       ];
-      const result = await runWithFailover(prompt, attempts, {
+      const options: Parameters<typeof runWithFailover>[2] = {
         signal: abort.signal,
+        // The agent's question (TrueForge ask_user_question) is answered in the panel.
+        responder: { answer: async (q) => (trust ? trust.ask(q) : NO_ANSWER) },
         // Persist where the run is in TrueForge (session, turn, last event) so a cut stream can be resumed.
         onPosition: (p) => {
           void host?.journal.append({ t: 'turn_position', ...(p.sessionId ? { sessionId: p.sessionId } : {}), turnId: p.turnId, ...(p.lastEventId ? { lastEventId: p.lastEventId } : {}), reason: p.at });
@@ -292,6 +330,7 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
           const banner = s.circuitOpen
             ? circuitOpenBanner(s.fromModel, s.toModel, breaker.snapshot().find((h) => h.provider === providerOf(s.fromModel)))
             : failoverBanner(s.fromModel, s.toModel, s.reason);
+          trust?.setModel(s.toModel);
           out.appendLine(`[failover] ${banner} (detail: ${redact(s.reason).slice(0, 300)})`);
           post({ type: 'event', event: { type: 'model.switched', summary: banner, failed: false } });
           void vscode.window.showInformationMessage(`CodeCraft: ${banner}`);
@@ -303,6 +342,7 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
           post({ type: 'event', event: { type: 'model.retry', summary: msg } });
         },
         onEvent: (ev) => {
+          trust?.onEvent(ev);
           const d = toDisplay(ev);
           if (d.summary || !d.delta) out.appendLine(`${d.type} ${d.summary}`.trimEnd());
           post({ type: 'event', event: d });
@@ -319,8 +359,25 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
             return choice === 'Approve' ? { allow: true } : { allow: false, reason: 'denied by the user' };
           },
         },
-      });
+      };
+      trust?.postMetrics();
+      const result = await runWithFailover(prompt, attempts, options);
       const outcome = result.outcome;
+      // After changes were applied: run the tests; if a test that passed before now fails, exactly ONE automatic
+      // fix (through the same review gate), then the tests again. Skipped when the user stopped the run.
+      if (trust && host && outcome.status !== 'cancelled' && !abort.signal.aborted) {
+        const h = host;
+        await trust.afterRun(async (fixText) => {
+          planStore.startFix(1);
+          const depth = h.gate.undoDepth;
+          post({ type: 'status', state: 'running', note: 'automatic fix (one attempt)' });
+          const fixAttempts = [attemptFor(client, PRIMARY_AGENT_NAME, cfg.primaryModel), attemptFor(client, FALLBACK_AGENT_NAME, cfg.fallbackModel)];
+          const r = await runWithFailover(fixText, fixAttempts, options);
+          out.appendLine(`[autofix] run ${r.outcome.status} on ${r.agent}`);
+          return { applied: h.gate.undoDepth > depth };
+        });
+      }
+      await trust?.finish();
       await host?.journal.append({ t: 'run_finished', status: outcome.status });
       out.appendLine(`Run ${outcome.status} on ${result.agent} after ${outcome.rounds} round(s)`);
       if (outcome.status === 'error') {
@@ -347,7 +404,51 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
       abort = undefined;
       postReads = undefined;
       postPlan = undefined;
+      if (trust) lastTrust = trust;
+      trust = undefined;
     }
+  }
+
+  // Rollback to any checkpoint of the last run that changed files (before its first apply, or after any applied
+  // change set), planned from the journal and restored from the content store as one step.
+  async function rollbackToCheckpoint(post?: (m: HostToWebview) => void): Promise<void> {
+    if (!host) return void vscode.window.showWarningMessage('CodeCraft: open a folder first.');
+    await host.journal.load();
+    const entries = host.journal.all();
+    const runId = latestRunWithChanges(entries);
+    const cps = runId ? checkpoints(entries, runId).filter((c) => c.revert.length > 0) : [];
+    if (!runId || !cps.length) return void vscode.window.showInformationMessage('CodeCraft: there is nothing to roll back (no applied changes in the journal).');
+    const pick = await vscode.window.showQuickPick(
+      cps.map((c) => ({ label: c.label, description: new Date(c.at).toLocaleTimeString(), detail: `Reverts ${c.revert.length} change set(s): ${c.revert.join(', ')}`, cp: c })),
+      { title: 'CodeCraft: roll back to a checkpoint', placeHolder: 'Files go back to exactly how they were at that point; later CodeCraft changes are reverted' },
+    );
+    if (!pick) return;
+    const plan = planRollback(entries, runId, pick.cp.index);
+    if (!plan) return;
+    const ok = await vscode.window.showWarningMessage(
+      `Roll back to "${plan.label}"?`,
+      { modal: true, detail: `These files return to their content at that checkpoint: ${plan.files.map((f) => `${f.path}${f.restoreHash === null ? ' (deleted: it did not exist then)' : ''}`).join(', ')}. Only works if they are still exactly what CodeCraft wrote.` },
+      'Roll back',
+    );
+    if (ok !== 'Roll back') return;
+    const r = await host.gate.rollback(plan);
+    out.appendLine(`[rollback] ${r.status}: ${r.message}`);
+    if (r.status === 'applied') {
+      lastTrust?.markRolledBack(plan.files.map((f) => f.path));
+      post?.({ type: 'event', event: { type: 'rollback', summary: r.message } });
+      void vscode.window.showInformationMessage(`CodeCraft: ${r.message}`);
+    } else void vscode.window.showWarningMessage(`CodeCraft: ${r.message}`);
+  }
+
+  // One-click report of the last run (what changed, why, what failed, how it recovered, models), from the journal.
+  async function exportReport(): Promise<void> {
+    if (!host) return void vscode.window.showWarningMessage('CodeCraft: open a folder first.');
+    await host.journal.load();
+    const runId = latestRunId(host.journal.all());
+    if (!runId) return void vscode.window.showInformationMessage('CodeCraft: no run in the journal yet.');
+    const doc = await vscode.workspace.openTextDocument({ language: 'markdown', content: renderRunReport(host.journal.all(), runId) });
+    await vscode.window.showTextDocument(doc, { preview: false });
+    out.appendLine(`[report] exported run ${runId}`);
   }
 
   // Provider/key health: the configured models, the breaker state, last error class and time. No key values.
@@ -393,8 +494,18 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
   context.subscriptions.push(
     vscode.commands.registerCommand('codecraft.openAgentPanel', () => {
       out.show(true);
-      AgentPanel.show(context, { onPrompt: runPrompt, onTestProviders: testProviders, onInjectFault: injectFault, onReady: (post) => postHealth(post) });
+      AgentPanel.show(context, {
+        onPrompt: runPrompt,
+        onTestProviders: testProviders,
+        onInjectFault: injectFault,
+        onAnswer: (t) => void trust?.answer(t),
+        onRollback: rollbackToCheckpoint,
+        onExportReport: exportReport,
+        onReady: (post) => postHealth(post),
+      });
     }),
+    vscode.commands.registerCommand('codecraft.rollbackToCheckpoint', () => rollbackToCheckpoint(AgentPanel.currentPanel()?.post)),
+    vscode.commands.registerCommand('codecraft.exportReport', () => exportReport()),
     vscode.commands.registerCommand('codecraft.openCodeTown', () => {
       out.show(true);
       CodeTownPanel.show(
@@ -449,6 +560,7 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
       // stream is aborted, the test command is killed, and the TrueForge session is cancelled.
       host?.gate.stop();
       host?.tests.cancel();
+      trust?.cancelQuestion();
       abort.abort();
       if (activeClient && activeSessionId) {
         try {

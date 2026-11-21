@@ -90,6 +90,14 @@ Findings:
 - Exercised end to end in `docs/FAILURE_TABLE.md` (row "Stream to CodeCraft cut"). A turn is resumed at most twice per run (`MAX_STREAM_RESUMES`).
 - The sessions list endpoint caps `limit` at 25 (`Too big: expected number to be <=25`).
 
+### P5: ask_user_question round trip (VERIFIED-RUN, 2026-11-21)
+- The tool is built in (`trueforge-core` `AskUserQuestion.js`): name `ask_user_question`, input `{question: string, options?: string[] (0-5)}`; enabled by `config.askUserQuestions.enabled` (server default true; CodeCraft had turned it off before P5 and now turns it on).
+- Observed with `npm run ask-user` (`test/scenarios/ask-user.ts`: a test-only mock model calls the tool; TrueForge and CodeCraft's run loop are real): `turn.created > model.message > model.message.delta x3 > tool.response_required > turn.update(paused) > user.tool_response > turn.update(running) > model.message > model.message.delta x2 > turn.done`.
+- The model calls the tool DIRECTLY (function name `ask_user_question`, not through `call_tool`). The pause looks like an approval pause: the stream stays open after `turn.update paused`.
+- Answer: `createTurnEvents(sessionId, turnId, { events: [{ type: 'user.tool_response', threadId, toolCallId, content: '<answer text>' }] })`, then `subscribeToTurn(afterEventId)`. The SAME turn resumes, and the model receives the answer as the tool result.
+- UNVERIFIED: how a real Gemini model decides to ask (only the mock was used; live model runs are paused).
+- UNVERIFIED: token metrics (`state.metrics.totalInputTokens` etc. on `turn.done` and paused states) for a real Gemini model. The types are VERIFIED-DOCS; the mock reports no usage.
+
 ## Fallback model history (why candidates were dropped)
 | Candidate | Status | Evidence |
 |---|---|---|

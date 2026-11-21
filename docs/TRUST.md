@@ -38,3 +38,46 @@ TrueForge history compaction with an input-token trigger (48k) on both agents, v
 - **Edit journal**: append-only, redacted JSONL in VS Code workspace storage (never in the repository). **CodeCraft: Show Edit Journal** renders runs, plans, applied operations (IDs, files, hunks accepted/rejected), rejections, undos, tests, provider errors and recoveries, model switches, and operations that started but were never confirmed.
 - **Safe run_tests**: the configured command is validated (no shell operators or newlines, at most 300 characters) and run as program plus arguments; secret-looking environment variables are removed from the test process; confirmation shows exactly what runs; time limit, output cap, redaction and Stop Run kill remain.
 - **Workspace secret scan**: **CodeCraft: Scan Workspace for Secrets** checks every indexed text file with the same rules as redaction and lists `.env*` files; the report has file, line and rule only, never values. Lines marked `secret-scan:allow` are skipped.
+
+### Every change group: reason, plain sentence, confidence, real test status
+Shown in the review (quick pick title, placeholder and details) and in the panel's **Changes** section, and journaled (`change_group`) with the operation ID. The reason and the beginner sentence come from the agent (`reason`, `plain` in `propose_changes`); when it gives none, CodeCraft writes the sentence from the facts ("This changes cli.py to add the --env-file option."). The test status is the REAL result: *not run yet*, *passed*, *failed*, *a test that passed before now fails*, or *could not be run*.
+
+**Confidence rule** (`src/trust/confidence.ts`; the first level with a matching rule wins, and every matching rule of that level is shown as the reason):
+
+| Tag | Any of these |
+|---|---|
+| **risky** | a test that passed before now fails, or the tests fail after the change; touches a file that is not in the submitted plan; deletes a file; changes more than 150 lines or more than 4 files; changes a source file that 10 or more files import |
+| **check this** | changes more than 40 lines; changes an existing source file that no test is related to; changes a source file that 3 or more files import; the tests could not be run |
+| **sure** | none of the above: a small, planned change to files covered by tests |
+
+Facts come from the proposal (hunks: added plus removed lines), the plan, and the repository index (importers; related tests by import or name). The test status can only lower a tag, never raise it: once real tests run, applied groups are re-rated. Unit tests: `test/confidence.test.ts`.
+
+### Warn before edit
+When the agent submits its plan, before any write, the panel shows the files planned for change and the tests that might break (the related tests of those files, from the index, as `list_related` reports them); the first review of the run repeats it. Journaled as `warn_list`.
+
+### Tests around the change, and exactly one automatic fix
+1. At plan time CodeCraft runs the project's test command once on the unchanged files (the baseline). The first write waits until it has finished.
+2. After the agent finishes, if anything was written in the run, CodeCraft runs the tests again.
+3. If a test that passed in the baseline now fails, CodeCraft sends the real error output to the agent and asks for exactly ONE minimal fix. The fix goes through the same plan check and per-hunk review; the plan store allows exactly one reviewed proposal.
+4. CodeCraft runs the tests again and shows the outcome either way: fixed, still failing, or no fix applied. There is never a second automatic fix.
+
+Tests that already failed in the baseline are never blamed on the change. If the baseline could not run, no test counts as newly broken. Failing tests are recognised in pytest, node:test/TAP and Jest output; otherwise the whole command counts as one test. Every test run asks for confirmation as before; **Allow for this run** also covers CodeCraft's own runs in that run. Journaled: `tests` (phase baseline, after, after_fix or agent, with the failing test IDs), `regression`, `autofix`.
+
+### Ask instead of guessing
+TrueForge's `ask_user_question` tool is enabled on both agents, and the instructions say to ask ONE short question when the request is unclear instead of editing. The question appears in the panel with its options and a free-text box. The answer goes back as `user.tool_response` and the same turn continues (VERIFIED-RUN, see `docs/TRUEFORGE_NOTES.md`). Stop Run answers for the user ("no answer"). Any other client-side tool gets an error result instead of ending the run. Journaled as `question`.
+
+### Rollback to any checkpoint
+**CodeCraft: Roll Back to Checkpoint** (or **Roll back…** in the panel) lists the checkpoints of the last run that changed files: "before the first change of this run" and "after change N" for every applied change set. A change set is applied as one step; its intent groups are listed in the label.
+- The rollback is planned from the journal: the operations applied after the checkpoint and not yet undone.
+- File contents come from a content-addressed store in VS Code workspace storage, never in the repository. Each copy is verified by its sha256 when read.
+- It applies as ONE step, and only if every affected file is still exactly what CodeCraft wrote. Otherwise nothing changes.
+- A file created after the checkpoint is deleted.
+- It is journaled as `op_undone` for each operation plus a `rollback` entry, so a later retry never treats those operations as still applied.
+
+Unit tests: `test/rollback.test.ts`.
+
+### Cost and speed
+The panel shows the active model (updated on failover), tokens in and out, and the estimated cost when TrueForge reports it. Elapsed time ticks while the run is going, alongside files read versus files indexed. Tokens are TrueForge's per-turn totals (`turn.done` / paused `metrics`), added up over the run's turns. Journaled as `metrics` at the end of the run.
+
+### Task buttons and the run report
+**Fix this bug**, **Rename across files** and **Add tests** fill the prompt box with a template; the user edits it and presses Send. **Export report** (or **CodeCraft: Export Run Report**) opens a Markdown report of the last run, built only from the journal. It covers what changed (operations, per-group confidence and tests), why (the plan and per-group reasons, the warn list, questions asked), what failed, how it recovered (switches, recoveries, stream resumes, the automatic fix, rollbacks) and the models used, with cost and speed.

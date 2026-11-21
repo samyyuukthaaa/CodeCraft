@@ -185,13 +185,15 @@ test('manifestMatches: a stored manifest with server-filled defaults (observed l
     config: {
       iterationLimit: 60,
       dynamicSubAgents: { enabled: false },
-      askUserQuestions: { enabled: false },
+      askUserQuestions: { enabled: true },
       contextManagement: { compaction: { enabled: true, trigger: { type: 'input_tokens', value: 48000 } }, largeToolResponse: { enabled: true } },
       sandbox: { enabled: false, fileDownloads: true },
       memory: { enabled: false },
     },
   };
   assert.equal(manifestMatches(stored as typeof wanted, wanted), true);
+  // P5 enables ask_user_question: an agent stored with it disabled (before P5) is updated
+  assert.equal(manifestMatches({ ...stored, config: { ...stored.config, askUserQuestions: { enabled: false } } } as typeof wanted, wanted), false);
   // the server's own defaults (512 iterations, sub-agents on) are NOT what CodeCraft wants
   assert.equal(manifestMatches({ ...stored, config: { iterationLimit: 512, dynamicSubAgents: { enabled: true } } } as typeof wanted, wanted), false);
   assert.equal(manifestMatches({ ...stored, config: undefined } as typeof wanted, wanted), false);

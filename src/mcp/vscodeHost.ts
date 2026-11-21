@@ -70,11 +70,15 @@ export class VsCodeReviewer implements Reviewer {
     const fileCount = req.groups.reduce((n, g) => n + g.files.length, 0);
     const first = req.groups[0]?.files[0];
     if (first) await this.showDiff(first, req.groups[0]!.intent);
+    // Warn before the first write of a run: planned files and tests that might break (non-blocking).
+    if (req.warning) void vscode.window.showInformationMessage(`CodeCraft: ${req.warning}`);
+    const noteOf = (i: number) => req.notes?.[i];
+    const tags = req.groups.map((g, i) => `${g.intent}: ${noteOf(i)?.confidence ?? 'not rated'}`).join(' · ');
 
     const top = await pick(
       token,
       [
-        { label: '$(check-all) Accept all', detail: `${req.groups.length} group(s), ${fileCount} file(s), ${hunkCount} hunk(s)`, value: 'all' as const },
+        { label: '$(check-all) Accept all', description: tags, detail: `${req.groups.length} group(s), ${fileCount} file(s), ${hunkCount} hunk(s). ${req.notes ? req.notes.map((n) => n.plain).join(' ') : ''}`.trim(), value: 'all' as const },
         { label: '$(close-all) Reject all', detail: 'Nothing is written', value: 'none' as const },
         { label: '$(list-tree) Review by group…', detail: req.groups.map((g) => `${g.intent} (${g.files.length})`).join(' · '), value: 'groups' as const },
       ],
@@ -94,17 +98,18 @@ export class VsCodeReviewer implements Reviewer {
       const g = req.groups[gi]!;
       for (const f of g.files) await this.showDiff(f, g.intent);
       const hunks = g.files.reduce((n, f) => n + f.hunks.length, 0);
+      const note = noteOf(gi);
       const choice = await pick(
       token,
         [
-          { label: '$(check) Accept this group', value: 'accept' as const },
+          { label: '$(check) Accept this group', ...(note ? { detail: `Why: ${note.reason} | Confidence rule: ${note.why.join('; ')} | Tests: ${note.tests}` } : {}), value: 'accept' as const },
           { label: '$(close) Reject this group', value: 'reject' as const },
           { label: '$(list-selection) Review hunks in this group…', value: 'hunks' as const },
           { label: '$(check-all) Accept this and all remaining groups', value: 'accept-rest' as const },
           { label: '$(close-all) Reject this and all remaining groups', value: 'reject-rest' as const },
         ],
-        `Group ${gi + 1} of ${req.groups.length}: ${g.intent}`,
-        `${g.files.map((f) => f.path).join(', ')} (${hunks} hunk(s))`,
+        `Group ${gi + 1} of ${req.groups.length}: ${g.intent}${note ? ` [${note.confidence}]` : ''}`,
+        note ? `${note.plain} (${g.files.map((f) => f.path).join(', ')}, ${hunks} hunk(s))` : `${g.files.map((f) => f.path).join(', ')} (${hunks} hunk(s))`,
       );
       if (!choice || choice === 'reject-rest') {
         setGroups(gi, 'reject');
@@ -198,6 +203,13 @@ const OUTPUT_TAIL = 8000;
 /** Runs the configured test command in the workspace, only after an explicit modal confirmation. */
 export class VsCodeTestRunner implements TestRunner {
   private child: cp.ChildProcess | undefined;
+  /** Set when the user chose "Allow for this run"; cleared at the start of every run. */
+  private allowedForRun = false;
+
+  /** Called at the start of every run: the next test run asks again. */
+  startRun(): void {
+    this.allowedForRun = false;
+  }
 
   /** Stop Run: kills a running test command. */
   cancel(): void {
@@ -209,22 +221,28 @@ export class VsCodeTestRunner implements TestRunner {
     private readonly command: () => string,
   ) {}
 
-  async run(): Promise<TestResult> {
+  /** `why` says who asks: the agent, or CodeCraft before/after a change (P5). */
+  async run(why = 'The agent asked to run the tests.'): Promise<TestResult> {
     const parsed = parseTestCommand(this.command());
     if (!parsed.ok) return { ran: false, output: '', message: parsed.error };
     const { command } = parsed;
     const { env, removed } = scrubEnv(process.env);
-    const choice = await vscode.window.showWarningMessage(
-      `CodeCraft wants to run your test command in the workspace:\n\n${command.display}`,
-      {
-        modal: true,
-        detail:
-          'TrueForge has no sandbox on Windows, so this runs directly on your machine, without shell operators, with a time limit' +
-          (removed.length ? ` and without these environment variables: ${removed.join(', ')}.` : '.'),
-      },
-      'Run tests',
-    );
-    if (choice !== 'Run tests') return { ran: false, output: '', message: 'the user declined to run the tests' };
+    if (!this.allowedForRun) {
+      const choice = await vscode.window.showWarningMessage(
+        `CodeCraft wants to run your test command in the workspace:\n\n${command.display}`,
+        {
+          modal: true,
+          detail:
+            `${why} TrueForge has no sandbox on Windows, so this runs directly on your machine, without shell operators, with a time limit` +
+            (removed.length ? ` and without these environment variables: ${removed.join(', ')}.` : '.') +
+            ' "Allow for this run" also covers CodeCraft\'s own test runs before and after changes in this run.',
+        },
+        'Run tests',
+        'Allow for this run',
+      );
+      if (choice === 'Allow for this run') this.allowedForRun = true;
+      else if (choice !== 'Run tests') return { ran: false, output: '', message: 'the user declined to run the tests' };
+    }
     return new Promise<TestResult>((resolve) => {
       // No shell on POSIX. On Windows a shell is needed to find .cmd launchers (npm.cmd); the arguments were
       // validated to contain no shell operators, so nothing can be chained or redirected.

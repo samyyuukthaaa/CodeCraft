@@ -52,7 +52,7 @@ Open the folder in VS Code and press **F5** ("Run CodeCraft Extension (opens fix
 
 The agents are **registered for you**: on the first request CodeCraft starts its local MCP server, registers it with TrueForge as `codecraft-editor`, and creates or updates two TrueForge agents, `codecraft-primary` and `codecraft-fallback` (identical instructions, the models from your settings). Nothing needs to be created by hand in TrueForge besides the provider key.
 
-Commands: **CodeCraft: Open Agent Panel** (prompt, plan, context used, provider health with **Test providers**), **CodeCraft: Undo Last Change** (reverts the last applied change set if the files are still exactly what CodeCraft wrote), **CodeCraft: Stop Run**, **CodeCraft: Show Edit Journal**, **CodeCraft: Scan Workspace for Secrets**. Self-healing and trust features: [docs/TRUST.md](docs/TRUST.md).
+Commands: **CodeCraft: Open Agent Panel** (prompt with task buttons *Fix this bug* / *Rename across files* / *Add tests*, the agent's question if a request is unclear, plan, warn-before-edit list, change groups with a beginner sentence, confidence tag (sure / check this / risky) and real test status, cost and speed, context used, provider health with **Test providers**, **Roll back…** and **Export report**), **CodeCraft: Roll Back to Checkpoint**, **CodeCraft: Export Run Report**, **CodeCraft: Undo Last Change** (reverts the last applied change set if the files are still exactly what CodeCraft wrote), **CodeCraft: Stop Run**, **CodeCraft: Show Edit Journal**, **CodeCraft: Scan Workspace for Secrets**. Self-healing and trust features: [docs/TRUST.md](docs/TRUST.md).
 
 ### Settings (example)
 Copy into your VS Code `settings.json` to change the defaults (also in [config.example.json](config.example.json)). No keys here:
@@ -88,6 +88,7 @@ npm run test:vscode            # runs the extension inside a separately download
 npm run secret-scan            # staged files; -- --all for every tracked file (npm test also scans every tracked file)
 npm run capture-errors         # records real TrueForge error shapes into test/fixtures/trueforge-errors.json
 npm run failure-table          # every fault x3 end to end through TrueForge -> docs/FAILURE_TABLE.md (~20 min)
+npm run ask-user               # live check: the agent's question round trip through TrueForge (test-only mock model)
 ```
 The capture and failure-table scripts use only test-only providers: a local mock provider on 127.0.0.1:8799 that fails on purpose (`codecraft-test-mock`, `codecraft-test-mock-fallback`), a port with nothing listening (`codecraft-test-unreachable`) and the dummy-key provider below. To try failover by hand in the editor, use the panel's **Inject fault…** button (next run only) or the `codecraft.faultInjection` setting (every run; keep `none` normally).
 The three tasks are quoted word for word in [docs/TASKS.md](docs/TASKS.md); real run results are in [docs/RESULTS.md](docs/RESULTS.md). Task C's scenario creates a TrueForge provider named `codecraft-test-badkey` with the obvious dummy key `DUMMY-INVALID-KEY-FOR-CODECRAFT-TESTS` and an agent `codecraft-test-primary-badkey`; both are test-only and never defaults.

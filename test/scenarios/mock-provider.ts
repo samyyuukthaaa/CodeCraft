@@ -3,10 +3,11 @@
 import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
 
-export type MockMode = 'ok' | 'rate_limit' | 'server_error' | 'unavailable' | 'context_too_large' | 'malformed_tool_call' | 'bad_json' | 'cut_stream' | 'hang';
+export type MockMode = 'ok' | 'ask_user' | 'rate_limit' | 'server_error' | 'unavailable' | 'context_too_large' | 'malformed_tool_call' | 'bad_json' | 'cut_stream' | 'hang';
 /** TrueForge model names allow lowercase letters, digits and hyphens only. */
 export const mockModelName = (m: MockMode): string => `mock-${m.replace(/_/g, '-')}`;
-export const MOCK_MODES: MockMode[] =['ok', 'rate_limit', 'server_error', 'unavailable', 'context_too_large', 'malformed_tool_call', 'bad_json', 'cut_stream', 'hang'];
+/** Error/ok modes (the capture and failure-table scripts register these). 'ask_user' is separate (ask-user.ts). */
+export const MOCK_MODES: MockMode[] = ['ok', 'rate_limit', 'server_error', 'unavailable', 'context_too_large', 'malformed_tool_call', 'bad_json', 'cut_stream', 'hang'];
 
 function sse(res: http.ServerResponse, chunks: unknown[], end = true): void {
   res.writeHead(200, { 'content-type': 'text/event-stream' });
@@ -25,18 +26,28 @@ export async function startMockProvider(port = 8799): Promise<{ url: string; clo
     let body = '';
     for await (const c of req) body += String(c);
     let model = '';
+    let messages: Array<{ role?: string; content?: unknown }> = [];
     try {
-      model = (JSON.parse(body) as { model?: string }).model ?? '';
+      const parsed = JSON.parse(body) as { model?: string; messages?: Array<{ role?: string; content?: unknown }> };
+      model = parsed.model ?? '';
+      messages = parsed.messages ?? [];
     } catch {
       /* ignore */
     }
-    const mode = (MOCK_MODES.find((m) => model.endsWith(mockModelName(m))) ?? 'ok') as MockMode;
+    const mode = (model.endsWith(mockModelName('ask_user')) ? 'ask_user' : (MOCK_MODES.find((m) => model.endsWith(mockModelName(m))) ?? 'ok')) as MockMode;
     hits.push(mode);
     const json = (status: number, obj: unknown, headers: Record<string, string> = {}) => {
       res.writeHead(status, { 'content-type': 'application/json', ...headers });
       res.end(JSON.stringify(obj));
     };
     switch (mode) {
+      case 'ask_user': {
+        // Asks once with TrueForge's ask_user_question tool; after the tool result arrives, answers with it.
+        const toolMsg = messages.find((m) => m.role === 'tool');
+        if (toolMsg) return sse(res, [chunk({ role: 'assistant', content: `You answered: ${typeof toolMsg.content === 'string' ? toolMsg.content : JSON.stringify(toolMsg.content)}` }), chunk({}, 'stop')]);
+        const args = JSON.stringify({ question: 'Which function should I rename?', options: ['add', 'subtract'] });
+        return sse(res, [chunk({ role: 'assistant', tool_calls: [{ index: 0, id: 'call_ask', type: 'function', function: { name: 'ask_user_question', arguments: args } }] }), chunk({}, 'tool_calls')]);
+      }
       case 'rate_limit':
         return json(429, { error: { message: 'Rate limit reached for requests. Please try again in 7s.', type: 'requests', code: 'rate_limit_exceeded' } }, { 'retry-after': '7' });
       case 'server_error':

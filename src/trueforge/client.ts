@@ -46,8 +46,9 @@ export const COMPACTION_TRIGGER_TOKENS = 48_000;
 export const AGENT_RUNTIME_CONFIG: TrueForgeApi.RuntimeConfig = {
   dynamicSubAgents: { enabled: false },
   iterationLimit: 60,
-  // CodeCraft has no UI for TrueForge's ask_user_question tool; a run that used it ended as "unsupported".
-  askUserQuestions: { enabled: false },
+  // P5: an unclear request gets ONE short question (TrueForge's ask_user_question tool, answered in the panel)
+  // instead of edits. The tool pauses the turn with tool.response_required; CodeCraft answers with user.tool_response.
+  askUserQuestions: { enabled: true },
   // Context engineering (TrueForge contextManagement): compact the conversation once a request's input passes
   // COMPACTION_TRIGGER_TOKENS, and let TrueForge handle oversized tool responses. Observed live: every step
   // resends the growing history (7k -> 13k+ input tokens per request within one run; Task B runs used 1-4M
@@ -132,7 +133,8 @@ export async function createSession(client: TrueForge, agentName: string): Promi
   return res.data.id;
 }
 
-export type ApprovalInput = TrueForgeApi.UserToolApprovalInputEvent;
+/** What resumes a paused turn: approval decisions and/or client-side tool responses (ask_user_question answers). */
+export type ApprovalInput = TrueForgeApi.UserToolApprovalInputEvent | TrueForgeApi.UserToolResponseInputEvent;
 // The SDK types stream input as user messages only; approval items on a NEW turn are used only for a turn
 // that ended (turn.done) with required actions. A PAUSED turn is resumed with createTurnEvents instead.
 export type TurnInput = TrueForgeApi.UserMessage | ApprovalInput;

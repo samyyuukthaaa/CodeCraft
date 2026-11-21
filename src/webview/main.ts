@@ -26,6 +26,54 @@ testProviders.addEventListener('click', () => {
 const injectFault = document.getElementById('inject-fault') as HTMLButtonElement;
 injectFault.addEventListener('click', () => vscode.postMessage({ type: 'injectFault' }));
 
+// Task templates: fill the prompt box only (the user edits and sends; nothing runs on click).
+const TEMPLATES: Record<string, string> = {
+  fix: 'Fix the bug in the selected code (select it in the editor first). What goes wrong: <describe it>. What should happen instead: <describe it>.',
+  rename: 'Rename <OldName> to <NewName> across all files: update the definition, every import, call and test that uses it, and nothing else.',
+  tests: "Add tests for the selected code (or name the function or file here: <name>), following the style of the project's existing tests, then run the tests.",
+};
+for (const b of Array.from(document.querySelectorAll<HTMLButtonElement>('#tasks button'))) {
+  b.addEventListener('click', () => {
+    const t = TEMPLATES[b.dataset.task ?? ''];
+    if (!t) return;
+    prompt.value = t;
+    prompt.focus();
+    const i = t.indexOf('<');
+    if (i >= 0) prompt.setSelectionRange(i, t.indexOf('>', i) + 1);
+  });
+}
+
+// The agent's question (TrueForge ask_user_question): answer with an option or free text.
+const qBox = document.getElementById('question') as HTMLElement;
+const qText = document.getElementById('question-text') as HTMLElement;
+const qOptions = document.getElementById('question-options') as HTMLElement;
+const qInput = document.getElementById('question-input') as HTMLInputElement;
+const qSend = document.getElementById('question-send') as HTMLButtonElement;
+const sendAnswer = (text: string): void => {
+  const t = text.trim();
+  if (!t) return;
+  vscode.postMessage({ type: 'answer', text: t.slice(0, 2000) });
+  qBox.hidden = true;
+};
+qSend.addEventListener('click', () => sendAnswer(qInput.value));
+qInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendAnswer(qInput.value);
+});
+
+const warn = document.getElementById('warn') as HTMLElement;
+const groupsList = document.getElementById('groups') as HTMLElement;
+const rollback = document.getElementById('rollback') as HTMLButtonElement;
+rollback.addEventListener('click', () => vscode.postMessage({ type: 'rollback' }));
+const exportReport = document.getElementById('export-report') as HTMLButtonElement;
+exportReport.addEventListener('click', () => vscode.postMessage({ type: 'exportReport' }));
+
+const mModel = document.getElementById('m-model') as HTMLElement;
+const mTokens = document.getElementById('m-tokens') as HTMLElement;
+const mElapsed = document.getElementById('m-elapsed') as HTMLElement;
+const mFiles = document.getElementById('m-files') as HTMLElement;
+let tick: ReturnType<typeof setInterval> | undefined;
+const secs = (ms: number): string => `${(ms / 1000).toFixed(0)} s`;
+
 function cell(row: HTMLElement, text: string, cls?: string): void {
   const td = document.createElement('td');
   td.textContent = text;
@@ -37,6 +85,9 @@ send.addEventListener('click', () => {
   answer.textContent = '';
   planSummary.textContent = 'Waiting for the agent to submit its plan...';
   planRows.textContent = '';
+  warn.hidden = true;
+  groupsList.textContent = '';
+  qBox.hidden = true;
   vscode.postMessage({ type: 'prompt', text: prompt.value });
 });
 
@@ -46,7 +97,72 @@ window.addEventListener('message', (e: MessageEvent<HostToWebview>) => {
     send.disabled = m.state === 'running';
     testProviders.disabled = m.state === 'running';
     injectFault.disabled = m.state === 'running';
+    rollback.disabled = m.state === 'running';
+    exportReport.disabled = m.state === 'running';
     status.textContent = m.note ? `${m.state}: ${m.note}` : m.state;
+    if (m.state === 'idle') qBox.hidden = true;
+    return;
+  }
+  if (m.type === 'question') {
+    qText.textContent = m.question;
+    qOptions.textContent = '';
+    for (const o of m.options) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'secondary';
+      b.textContent = o;
+      b.addEventListener('click', () => sendAnswer(o));
+      qOptions.appendChild(b);
+    }
+    qInput.value = '';
+    qBox.hidden = false;
+    qInput.focus();
+    return;
+  }
+  if (m.type === 'questionDone') {
+    qBox.hidden = true;
+    return;
+  }
+  if (m.type === 'warn') {
+    warn.textContent = `Before any edit: planned changes to ${m.files.join(', ') || 'no files'}. Tests that might break: ${m.tests.join(', ') || 'none found'}.`;
+    warn.hidden = false;
+    return;
+  }
+  if (m.type === 'groups') {
+    groupsList.textContent = '';
+    for (const g of m.groups) {
+      const li = document.createElement('li');
+      const tag = document.createElement('span');
+      tag.className = `tag ${g.confidence === 'sure' ? 'sure' : g.confidence === 'risky' ? 'risky' : 'check'}`;
+      tag.textContent = g.confidence;
+      li.appendChild(tag);
+      const head = document.createElement('b');
+      head.textContent = `[${g.intent}] ${g.status}`;
+      li.appendChild(head);
+      for (const line of [g.plain, `Why: ${g.reason}`, `Confidence rule: ${g.why.join('; ')}`, `Tests: ${g.tests}`, `Files: ${g.files.join(', ')}`]) {
+        const d = document.createElement('div');
+        d.textContent = line;
+        li.appendChild(d);
+      }
+      groupsList.appendChild(li);
+    }
+    return;
+  }
+  if (m.type === 'metrics') {
+    const x = m.metrics;
+    mModel.textContent = x.model;
+    mTokens.textContent = x.inputTokens === undefined && x.outputTokens === undefined ? 'not reported yet' : `${x.inputTokens ?? '?'} input, ${x.outputTokens ?? '?'} output${x.costUsd !== undefined ? ` (about $${x.costUsd.toFixed(4)})` : ''}`;
+    mFiles.textContent = `${x.read} of ${x.total}`;
+    if (tick) clearInterval(tick);
+    tick = undefined;
+    if (x.elapsedMs !== undefined) mElapsed.textContent = secs(x.elapsedMs);
+    else {
+      const update = (): void => {
+        mElapsed.textContent = `${secs(Date.now() - x.startedAt)} (running)`;
+      };
+      update();
+      tick = setInterval(update, 1000);
+    }
     return;
   }
   if (m.type === 'context') {

@@ -34,12 +34,56 @@ export interface FileProposal {
 
 export interface GroupProposal {
   intent: string;
+  /** Why this group is needed (from the agent). */
+  reason?: string;
+  /** One plain-English sentence a beginner could understand (from the agent). */
+  plain?: string;
   files: FileProposal[];
+}
+
+/** What the user sees about a change group next to its diff (P5). */
+export interface GroupNote {
+  reason: string;
+  plain: string;
+  confidence: string;
+  /** The deciding confidence rule(s). */
+  why: string[];
+  /** Real test status, e.g. "not run yet", "passed", "a test that passed before now fails". */
+  tests: string;
 }
 
 export interface ReviewRequest {
   plan: string;
   groups: GroupProposal[];
+  /** One note per group (same order), when an annotator is set. */
+  notes?: GroupNote[];
+  /** Shown before the first write of a run: planned files and tests that might break. */
+  warning?: string;
+}
+
+/** Optional host hooks (P5). */
+export interface GateHooks {
+  /** Computes the note per group (confidence, plain sentence, test status). */
+  annotate?: (groups: GroupProposal[]) => Promise<GroupNote[]>;
+  /** Text for the warn-before-edit list, or undefined once a write happened in this run. */
+  warning?: () => string | undefined;
+  /** Awaited before any write (e.g. so a test baseline finishes on the unchanged files). */
+  beforeApply?: () => Promise<void>;
+  /** After a change set was applied: the operation, its groups and their notes. */
+  onApplied?: (info: { opId: string; groups: Array<{ intent: string; files: string[]; note?: GroupNote }> }) => void;
+}
+
+/** Content-addressed file contents (sha256) so a rollback can restore them after a restart. */
+export interface ContentStore {
+  put(hash: string, content: string): Promise<void>;
+  get(hash: string): Promise<string | undefined>;
+}
+
+/** A rollback planned from the journal (src/trust/rollback.ts). */
+export interface RollbackRequest {
+  label: string;
+  opIds: string[];
+  files: Array<{ path: string; expectHash: string; restoreHash: string | null }>;
 }
 
 /** Key of one hunk's decision: `${path}#${hunkId}`. */
@@ -71,6 +115,8 @@ export interface ProposeResult {
 
 export interface ChangeInput {
   intent: string;
+  reason?: string;
+  plain?: string;
   files: Array<{ path: string; newContent: string }>;
 }
 
@@ -84,6 +130,7 @@ interface StoredFile {
 interface StoredDecision {
   files: StoredFile[];
   decisions: Record<string, Decision>;
+  groups: Array<{ intent: string; files: string[]; note?: GroupNote }>;
 }
 
 interface UndoEntry {
@@ -104,13 +151,21 @@ export class WriteGate {
   /** Incremented by stop(); a proposal that started in an earlier generation never writes. */
   private generation = 0;
 
+  private hooks: GateHooks = {};
+
   constructor(
     private readonly fs: ReadFs,
     private readonly applier: Applier,
     private readonly reviewer: Reviewer,
     /** Optional append-only journal: operation IDs, checkpoint resume, edit history. */
     private readonly journal?: Journal,
+    /** Optional content store: file contents before and after each applied operation (rollback). */
+    private readonly contents?: ContentStore,
   ) {}
+
+  setHooks(h: GateHooks): void {
+    this.hooks = h;
+  }
 
   /** Called by read_file so a later write can be checked against what the agent actually saw. */
   recordRead(relPath: string, content: string): void {
@@ -159,7 +214,11 @@ export class WriteGate {
         files.push({ path, newContent: f.newContent });
         count++;
       }
-      if (files.length) normalized.push({ intent, files });
+      if (files.length) {
+        const reason = typeof g.reason === 'string' ? g.reason.trim().slice(0, 300) : '';
+        const plain = typeof g.plain === 'string' ? g.plain.trim().slice(0, 300) : '';
+        normalized.push({ intent, files, ...(reason ? { reason } : {}), ...(plain ? { plain } : {}) });
+      }
     }
     if (count === 0) return refuse('the change set is empty');
     if (count > MAX_SET_FILES) return refuse(`too many files in one change set (limit ${MAX_SET_FILES})`);
@@ -181,15 +240,18 @@ export class WriteGate {
         files.push({ path: f.path, reason: plan, oldText: current ?? '', newText: f.newContent, isNew: current === undefined, hunks });
         stored.push({ path: f.path, intent: g.intent, baseHash: current === undefined ? null : hash(current), hunks });
       }
-      if (files.length) review.push({ intent: g.intent, files });
+      if (files.length) review.push({ intent: g.intent, ...(g.reason ? { reason: g.reason } : {}), ...(g.plain ? { plain: g.plain } : {}), files });
     }
     if (stored.length === 0) return { status: 'no_change', message: 'every proposed file is identical to the current file' };
 
-    const chosen = await this.reviewer.review({ plan, groups: review });
+    const notes = this.hooks.annotate ? await this.hooks.annotate(review) : undefined;
+    const warning = this.hooks.warning?.();
+    const chosen = await this.reviewer.review({ plan, groups: review, ...(notes ? { notes } : {}), ...(warning ? { warning } : {}) });
     if (gen !== this.generation) return STOPPED; // Stop Run during the review: nothing is written
     const decisions: Record<string, Decision> = {};
     for (const f of stored) for (const h of f.hunks) decisions[hunkKey(f.path, h.id)] = chosen[hunkKey(f.path, h.id)] === 'accept' ? 'accept' : 'reject';
-    this.decisions.set(setKey(normalized), { files: stored, decisions });
+    const groupInfo = review.map((g, i) => ({ intent: g.intent, files: g.files.map((f) => f.path), ...(notes?.[i] ? { note: notes[i] } : {}) }));
+    this.decisions.set(setKey(normalized), { files: stored, decisions, groups: groupInfo });
     return this.applyApprovedSet(normalized);
   }
 
@@ -247,6 +309,13 @@ export class WriteGate {
       return refuse(`this exact change was already applied (operation ${opId}); nothing was written`);
     }
     const intentOf = new Map(stored.files.map((f) => [f.path, f.intent]));
+    await this.hooks.beforeApply?.();
+    // Keep exact contents before and after, so any checkpoint can be restored later (rollback).
+    for (const c of changes) {
+      const before = currents.get(c.path);
+      if (before !== undefined) await this.contents?.put(hash(before), before);
+      await this.contents?.put(hash(c.text), c.text);
+    }
     await this.journal?.append({ t: 'op_started', opId, files: changes.map((c) => ({ path: c.path, intent: intentOf.get(c.path) ?? 'edit' })) });
     await this.applier.applyAll(changes);
     await this.journal?.append({
@@ -260,6 +329,8 @@ export class WriteGate {
     });
     this.undoStack.push({ opId, files: changes.map((c) => ({ path: c.path, before: currents.get(c.path), after: c.text })) });
     for (const c of changes) this.readHashes.set(c.path, hash(c.text));
+    const written = new Set(changes.map((c) => c.path));
+    this.hooks.onApplied?.({ opId, groups: stored.groups.map((g) => ({ ...g, files: g.files.filter((p) => written.has(p)) })).filter((g) => g.files.length) });
     return {
       status: rej === 0 ? 'applied' : 'partially_applied',
       message: `applied ${acc} of ${acc + rej} hunk(s) in ${changes.length} file(s)`,
@@ -281,6 +352,43 @@ export class WriteGate {
     await this.journal?.append({ t: 'op_undone', opId: last.opId, files: last.files.map((f) => f.path) });
     for (const f of last.files) this.readHashes.delete(f.path);
     return { status: 'applied', message: `reverted ${last.files.map((f) => f.path).join(', ')}` };
+  }
+
+  /**
+   * Rollback to a checkpoint (P5): restores every listed file in ONE step, only if each is still exactly what
+   * CodeCraft last wrote and every content to restore is available. Serialized with proposals.
+   */
+  rollback(req: RollbackRequest): Promise<ProposeResult> {
+    const run = this.queue.then(() => this.rollbackInner(req));
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async rollbackInner(req: RollbackRequest): Promise<ProposeResult> {
+    if (!this.contents) return refuse('rollback needs the content store');
+    if (req.files.length === 0) return refuse('nothing to roll back');
+    const changes: Array<{ path: string; text: string | undefined }> = [];
+    for (const f of req.files) {
+      const now = await this.fs.read(f.path);
+      if (now === undefined || hash(now) !== f.expectHash) return refuse(`${f.path} changed since CodeCraft wrote it; nothing was rolled back`);
+      if (f.restoreHash === null) {
+        changes.push({ path: f.path, text: undefined }); // the file did not exist at the checkpoint
+        continue;
+      }
+      const text = await this.contents.get(f.restoreHash);
+      if (text === undefined) return refuse(`the saved content of ${f.path} at that checkpoint is missing; nothing was rolled back`);
+      changes.push({ path: f.path, text });
+    }
+    await this.applier.applyAll(changes);
+    for (const opId of req.opIds) {
+      const i = this.undoStack.findIndex((e) => e.opId === opId);
+      const files = i >= 0 ? this.undoStack[i]!.files.map((f) => f.path) : req.files.map((f) => f.path);
+      if (i >= 0) this.undoStack.splice(i, 1);
+      await this.journal?.append({ t: 'op_undone', opId, files });
+    }
+    await this.journal?.append({ t: 'rollback', checkpoint: req.label, opIds: req.opIds, files: req.files.map((f) => f.path) });
+    for (const c of changes) this.readHashes.delete(c.path);
+    return { status: 'applied', message: `rolled back ${changes.length} file(s) to "${req.label}"` };
   }
 
   get undoDepth(): number {

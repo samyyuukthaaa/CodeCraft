@@ -11,6 +11,12 @@ export interface PanelHandlers {
   onTestProviders?: (post: Post) => Promise<void>;
   /** "Inject fault…" button (testing failover): the host asks which fault to arm for the next run. */
   onInjectFault?: (post: Post) => Promise<void>;
+  /** The user's answer to the agent's question (arrives while a run is in progress). */
+  onAnswer?: (text: string) => void;
+  /** "Roll back…" button: the host shows the journal's checkpoints. */
+  onRollback?: (post: Post) => Promise<void>;
+  /** "Export report" button. */
+  onExportReport?: (post: Post) => Promise<void>;
   /** Called once the panel exists, e.g. to send the current provider health. */
   onReady?: (post: Post) => void;
 }
@@ -49,13 +55,19 @@ export class AgentPanel {
     let busy = false;
     panel.webview.onDidReceiveMessage(async (raw: unknown) => {
       const msg = parseWebviewMessage(raw);
-      if (!msg || busy) return;
+      if (!msg) return;
+      if (msg.type === 'answer') return void handlers.onAnswer?.(msg.text); // only meaningful during a run
+      if (busy) return;
       busy = true;
-      post({ type: 'status', state: 'running', ...(msg.type === 'testProviders' ? { note: 'testing providers' } : msg.type === 'injectFault' ? { note: 'choosing a fault' } : {}) });
+      const notes: Partial<Record<typeof msg.type, string>> = { testProviders: 'testing providers', injectFault: 'choosing a fault', rollback: 'choosing a checkpoint', exportReport: 'exporting the report' };
+      const note = notes[msg.type];
+      post({ type: 'status', state: 'running', ...(note ? { note } : {}) });
       try {
         if (msg.type === 'prompt') await handlers.onPrompt(msg.text, post);
         else if (msg.type === 'testProviders') await handlers.onTestProviders?.(post);
-        else await handlers.onInjectFault?.(post);
+        else if (msg.type === 'injectFault') await handlers.onInjectFault?.(post);
+        else if (msg.type === 'rollback') await handlers.onRollback?.(post);
+        else await handlers.onExportReport?.(post);
       } finally {
         busy = false;
         post({ type: 'status', state: 'idle' });

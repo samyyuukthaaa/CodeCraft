@@ -45,10 +45,19 @@ export class PlanStore {
   private plan: Plan | undefined;
   private rejectedInARow = 0;
   private failedTestRuns = 0;
+  /** During the automatic fix (P5): how many reviewed proposals are still allowed. */
+  private proposalsLeft: number | undefined;
   reset(): void {
     this.plan = undefined;
     this.rejectedInARow = 0;
     this.failedTestRuns = 0;
+    this.proposalsLeft = undefined;
+  }
+  /** The one automatic fix after a regression: keeps the plan, clears the stop counters, allows `n` proposals. */
+  startFix(n = 1): void {
+    this.rejectedInARow = 0;
+    this.failedTestRuns = 0;
+    this.proposalsLeft = n;
   }
   /** Records a run_tests result. Observed live: a lite model looped through 15 fix cycles on one failing test. */
   noteTests(passed: boolean): void {
@@ -56,10 +65,12 @@ export class PlanStore {
   }
   /** Observed live: after the user rejected a change, an agent re-proposed it for 25 rounds. */
   noteOutcome(status: string): void {
+    if (this.proposalsLeft !== undefined && (status === 'applied' || status === 'partially_applied' || status === 'rejected')) this.proposalsLeft = Math.max(0, this.proposalsLeft - 1);
     this.rejectedInARow = status === 'rejected' ? this.rejectedInARow + 1 : status === 'applied' || status === 'partially_applied' ? 0 : this.rejectedInARow;
   }
   /** An error once the user has rejected MAX_REJECTED_IN_A_ROW whole proposals in a row in this run. */
   rejectionStop(): string | undefined {
+    if (this.proposalsLeft === 0) return 'the automatic fix allows exactly one proposal and it was already made; do not propose again. Reply with one sentence on what you changed.';
     if (this.failedTestRuns >= MAX_FAILED_TEST_RUNS) {
       return `the tests failed ${this.failedTestRuns} times in this run; do not propose more changes. Stop and reply with which tests fail, the error, and what you tried.`;
     }
@@ -98,8 +109,8 @@ export interface ToolDeps {
   onRead?: (path: string) => void;
   /** Awaited before every tool runs (journal: an operation ID is recorded before the call). */
   beforeTool?: (tool: string, args: unknown) => Promise<void>;
-  /** Called with every real test result (journal). */
-  onTests?: (passed: boolean, exitCode: number | null) => void;
+  /** Called with every real test result (journal); `output` is the real (tail of the) test output. */
+  onTests?: (passed: boolean, exitCode: number | null, output?: string) => void;
 }
 
 export const MAX_READ_CHARS = 200_000;
@@ -136,6 +147,8 @@ export const schemas = {
       .array(
         z.object({
           intent: z.string().min(1).max(80).describe('What this group does, e.g. "rename", "update callers", "fix tests", "add test", "docs"'),
+          reason: z.string().max(300).optional().describe('Why this group is needed, one sentence'),
+          plain: z.string().max(300).optional().describe('One plain-English sentence a beginner could understand, no jargon'),
           files: z
             .array(
               z.object({
@@ -281,7 +294,7 @@ export function createHandlers(deps: ToolDeps) {
       return ok(rel);
     },
 
-    async propose_changes(a: { plan: string; groups: Array<{ intent: string; files: Array<{ path: string; newContent?: string; edits?: Edit[] }> }> }): Promise<ToolOutput> {
+    async propose_changes(a: { plan: string; groups: Array<{ intent: string; reason?: string; plain?: string; files: Array<{ path: string; newContent?: string; edits?: Edit[] }> }> }): Promise<ToolOutput> {
       if (deps.plan) {
         const paths: string[] = [];
         for (const g of a.groups) {
@@ -299,7 +312,7 @@ export function createHandlers(deps: ToolDeps) {
       const summary = a.groups.map((g) => `${g.intent} (${g.files.map((f) => f.path).join(', ')})`).join('; ');
       note(`propose_changes ${summary}`);
       // Resolve edits / line endings into full new contents; the gate still decides everything.
-      const groups: Array<{ intent: string; files: Array<{ path: string; newContent: string }> }> = [];
+      const groups: Array<{ intent: string; reason?: string; plain?: string; files: Array<{ path: string; newContent: string }> }> = [];
       for (const g of a.groups) {
         const files: Array<{ path: string; newContent: string }> = [];
         for (const f of g.files) {
@@ -319,7 +332,7 @@ export function createHandlers(deps: ToolDeps) {
             files.push({ path: f.path, newContent: matchEol(current, f.newContent as string) });
           }
         }
-        groups.push({ intent: g.intent, files });
+        groups.push({ intent: g.intent, ...(g.reason ? { reason: redact(g.reason) } : {}), ...(g.plain ? { plain: redact(g.plain) } : {}), files });
       }
       const r = await deps.gate.proposeSet(a.plan, groups);
       note(`propose_changes -> ${r.status}: ${r.message}`);
@@ -354,7 +367,7 @@ export function createHandlers(deps: ToolDeps) {
       const r = await deps.tests.run();
       if (!r.ran) return err(r.message ?? 'tests were not run');
       deps.plan?.noteTests(r.exitCode === 0);
-      deps.onTests?.(r.exitCode === 0, r.exitCode ?? null);
+      deps.onTests?.(r.exitCode === 0, r.exitCode ?? null, r.output);
       return ok({ exitCode: r.exitCode, passed: r.exitCode === 0, output: redact(r.output) });
     },
   };

@@ -40,6 +40,14 @@
       {
         "command": "codecraft.scanSecrets",
         "title": "CodeCraft: Scan Workspace for Secrets"
+      },
+      {
+        "command": "codecraft.rollbackToCheckpoint",
+        "title": "CodeCraft: Roll Back to Checkpoint"
+      },
+      {
+        "command": "codecraft.exportReport",
+        "title": "CodeCraft: Export Run Report"
       }
     ],
     "configuration": {
@@ -99,6 +107,7 @@
     "scenario": "node esbuild.mjs --scenarios && node out/scenarios/run.js",
     "failure-table": "node esbuild.mjs --scenarios && node out/scenarios/failure-table.js",
     "capture-errors": "node esbuild.mjs --scenarios && node out/scenarios/capture-errors.js",
+    "ask-user": "node esbuild.mjs --scenarios && node out/scenarios/ask-user.js",
     "test:vscode": "node esbuild.mjs && node esbuild.mjs --vscode && node out/vscode/run.js",
     "writeup": "node scripts/writeup-pdf.mjs"
   },
