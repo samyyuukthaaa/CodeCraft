@@ -16,6 +16,8 @@ export function townEventsFor(e: JournalEntry): TownEvent[] {
       return e.files.map((path) => ({ type: 'file_note' as const, path, reason: e.reason, plain: e.plain, confidence: e.confidence, at }));
     case 'file_read':
       return [{ type: 'file_read', path: e.path, at }];
+    case 'scout_navigate':
+      return [{ type: 'scout_navigate', path: e.path, at }];
     case 'op_proposed':
       return e.files.map((f) => ({ type: 'hunk_proposed' as const, path: f.path, intent: f.intent, hunks: f.hunks, ...(e.reason ? { reason: e.reason } : {}), at }));
     case 'review':

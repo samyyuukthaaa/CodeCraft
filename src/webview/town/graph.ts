@@ -13,6 +13,8 @@ import { KIND_VISUALS, POWER_VISUALS } from '../../town/grammar';
 import { FOOTPRINT, Layout, layoutScene } from '../../town/layout';
 import type { Building, SceneState } from '../../town/types';
 import { ViewMode, journeyStops } from '../../town/view';
+import type { ScoutPlace } from '../../town/scout';
+import { ScoutFigure } from './scout3d';
 
 export interface CaptionPart {
   text: string;
@@ -93,6 +95,11 @@ export class TownGraph {
   private selectRing: THREE.Mesh | undefined;
   private selected: string | undefined;
   private mode: ViewMode = 'journey';
+  // Scout: created once, survives rebuilds
+  private readonly scout: ScoutFigure;
+  private scoutBubble: THREE.Sprite | undefined;
+  private scoutMove = -1;
+  private scoutVisible = true;
 
   private readonly counters = { rebuilds: 0, buildingRebuilds: 0, incremental: 0 };
   private readonly tmp = new THREE.Matrix4();
@@ -102,6 +109,8 @@ export class TownGraph {
     private reducedMotion = false,
   ) {
     const windows = textures.windows();
+    this.scout = new ScoutFigure((x) => this.own(x));
+    this.scout.root.scale.setScalar(2.2); // about as tall as a small building
     this.bodyMat = this.own(
       new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0, ...(windows ? { emissiveMap: this.own(windows), emissive: WARM, emissiveIntensity: 0.9 } : {}) }),
     );
@@ -161,7 +170,8 @@ export class TownGraph {
     for (const sp of this.stopLabels.values()) sp.visible = journey;
     if (this.beacons) this.beacons.visible = journey;
     if (this.shaft) this.shaft.visible = journey && Boolean(this.scene?.activeBuildingId && this.layout?.buildings[this.scene.activeBuildingId]);
-    if (this.activeCaption) this.activeCaption.visible = journey;
+    // Scout's bubble says the same thing next to it; the caption comes back when Scout is muted
+    if (this.activeCaption) this.activeCaption.visible = journey && !this.scoutVisible;
   }
 
   /** The agent's path through the town: a yellow line over the building tops, with numbered stops (first 40). */
@@ -255,6 +265,7 @@ export class TownGraph {
     if (d.powerChanged) this.updatePower(next);
     // the path line is small (at most MAX_JOURNEY points): replaced (old one disposed) when the journey changes
     if (this.scene?.journey !== next.journey) this.updateJourney(next);
+    this.updateScout(next);
     this.scene = next;
   }
 
@@ -334,6 +345,62 @@ export class TownGraph {
     this.root.add(this.selectRing);
     this.select(this.selected && s.buildings[this.selected] ? this.selected : undefined);
     this.updateJourney(s);
+    this.root.add(this.scout.root);
+    this.scoutMove = -1;
+    this.updateScout(s, true);
+  }
+
+  /** Where Scout stands for a place: on the building's roof (visible from any angle), beside the power plant, or at
+   * the town gate. */
+  scoutPosition(place: ScoutPlace, s: SceneState | undefined = this.scene): THREE.Vector3 {
+    const L = this.layout;
+    if (place.kind === 'building') {
+      const lot = L?.buildings[place.id];
+      const b = s?.buildings[place.id];
+      if (lot) return new THREE.Vector3(lot.x, b ? buildingHeight(b) : 0, lot.z);
+    }
+    if (place.kind === 'plant' && L) return new THREE.Vector3(L.power.x - 6, 0, L.power.z + 3);
+    const b = L?.bounds ?? { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
+    return new THREE.Vector3((b.minX + b.maxX) / 2, 0, b.maxZ + 3);
+  }
+
+  /** Follows the scene's Scout: a new move starts a walk (or a fade with reduced motion) and a new bubble. */
+  private updateScout(s: SceneState, first = false): void {
+    const sc = s.scout;
+    if (sc.move === this.scoutMove) return;
+    this.scoutMove = sc.move;
+    this.scout.moveTo(this.scoutPosition(sc.at, s), sc.mood, this.reducedMotion, first);
+    if (this.scoutBubble) {
+      this.scout.root.remove(this.scoutBubble);
+      this.dropSprite(this.scoutBubble);
+    }
+    // the building name (if any) is the one yellow keyword
+    const key = sc.at.kind === 'building' ? (s.buildings[sc.at.id]?.name ?? '') : '';
+    const i = key ? sc.bubble.indexOf(key) : -1;
+    const parts: CaptionPart[] = i >= 0 ? [{ text: sc.bubble.slice(0, i) }, { text: key, yellow: true }, { text: sc.bubble.slice(i + key.length) }].filter((p) => p.text) : [{ text: sc.bubble }];
+    this.scoutBubble = this.sprite(parts, 0.55, 9);
+    this.root.remove(this.scoutBubble);
+    this.scoutBubble.name = 'scout-bubble';
+    this.scoutBubble.position.set(0, 1.85, 0);
+    this.scout.root.add(this.scoutBubble);
+    this.scout.root.visible = this.scoutVisible;
+  }
+
+  /** Mute: hides Scout and its bubble (the scene state still tracks it). */
+  setScoutVisible(v: boolean): void {
+    this.scoutVisible = v;
+    this.scout.root.visible = v;
+    this.applyModeVisibility();
+  }
+
+  /** True while something is moving (Scout walking or fading): reduced-motion rendering still draws these frames. */
+  get animating(): boolean {
+    return this.scout.animating;
+  }
+
+  /** Finishes Scout's current move at once (replay jumps). */
+  settleScout(): void {
+    this.scout.settle();
   }
 
   private addDistrict(s: SceneState, id: string, slabsIn?: THREE.InstancedMesh): void {
@@ -489,6 +556,7 @@ export class TownGraph {
 
   /** Per-frame animation (skipped entirely with reduced motion). Never allocates. */
   tick(t: number): void {
+    this.scout.tick(t); // a move animates even with reduced motion (as a short fade)
     if (this.reducedMotion) return;
     if (this.stringLights) (this.stringLights.material as THREE.PointsMaterial).opacity = 0.6 + 0.2 * Math.sin(t * 1.7);
     if (this.powerGlow) this.powerGlow.rotation.y = t * 0.6;

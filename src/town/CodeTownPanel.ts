@@ -76,6 +76,15 @@ export class CodeTownPanel {
         } catch {
           void vscode.window.showErrorMessage(`CodeCraft: could not open "${msg.path}"`);
         }
+      } else if (msg.type === 'navigate') {
+        // Only a building that is in the town: journal the click (Scout walks there, replay reproduces it), then open it.
+        if (!this.state.buildings[msg.path]) return;
+        await sources.journal.append({ t: 'scout_navigate', path: msg.path });
+        try {
+          await sources.onOpenFile(msg.path);
+        } catch {
+          void vscode.window.showErrorMessage(`CodeCraft: could not open "${msg.path}"`);
+        }
       } else if (msg.type === 'replay_run') {
         this.postReplay(msg.runId);
       }

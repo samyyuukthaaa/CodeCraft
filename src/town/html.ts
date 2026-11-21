@@ -68,6 +68,8 @@ ${stateRules}
   .fallback-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
   .fallback-card { background: rgba(30, 41, 59, 0.6); border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
   .fallback-card:hover { border-color: rgba(255, 255, 255, 0.4); }
+  .scout-2d { margin-bottom: 10px; padding: 6px 10px; border-radius: 8px; background: rgba(250, 204, 21, 0.12); border: 1px solid rgba(250, 204, 21, 0.5); color: #ffffff; font-weight: 700; font-size: 13px; }
+  .fallback-card.scout-target { outline: 2px dashed #facc15; outline-offset: 2px; }
   .fallback-card.active { border-color: var(--warm); box-shadow: 0 0 10px rgba(250, 204, 21, 0.35); }
   .fallback-card-title { font-size: 12px; font-weight: 700; color: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .fallback-card-meta { font-size: 11px; color: #94a3b8; }
@@ -148,7 +150,8 @@ ${stateRules}
   </div>
 
   <div id="fallback-view">
-    <div class="fallback-intro">2D town view: click a building to inspect it (the inspector can open the file)</div>
+    <div id="scout-2d" class="scout-2d" role="status" aria-live="polite"></div>
+    <div class="fallback-intro">2D town view: click a building to send Scout there and open the file</div>
     <div id="fallback-content"></div>
   </div>
 

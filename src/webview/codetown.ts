@@ -27,6 +27,7 @@ const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) 
 const canvasContainer = $('canvas-container');
 const fallbackView = $('fallback-view');
 const fallbackContent = $('fallback-content');
+const scout2d = $('scout-2d');
 const btnToggleView = $<HTMLButtonElement>('btn-toggle-view');
 const btnResetCam = $<HTMLButtonElement>('btn-reset-cam');
 const btnReplay = $<HTMLButtonElement>('btn-replay');
@@ -190,7 +191,7 @@ function loop(): void {
   frame = requestAnimationFrame(loop);
   frames++;
   if (!renderer || !scene3 || !camera || !is3D || webglLost) return;
-  if (reducedMotion && !dirty) return; // render on demand only
+  if (reducedMotion && !dirty && !graph?.animating) return; // render on demand (and while Scout fades)
   dirty = false;
   graph?.tick(clock.getElapsedTime());
   renderer.render(scene3, camera);
@@ -271,7 +272,7 @@ function setupControls(dom: HTMLCanvasElement): void {
   );
   on(dom, 'click', (e: MouseEvent) => {
     const b = buildingAt(e);
-    if (b) openInspector(b.id);
+    if (b) navigateTo(b.id);
   });
 }
 
@@ -318,7 +319,7 @@ function cardFor(b: Building): HTMLElement {
   const status = document.createElement('div');
   status.className = 'fallback-card-status';
   card.append(title, meta, status);
-  card.addEventListener('click', () => openInspector(b.id));
+  card.addEventListener('click', () => navigateTo(b.id));
   return card;
 }
 function fillCard(card: HTMLElement, b: Building, active: boolean): void {
@@ -330,8 +331,15 @@ function fillCard(card: HTMLElement, b: Building, active: boolean): void {
   status!.style.color = b.color;
   status!.style.borderColor = b.color;
   card.classList.toggle('active', active);
+  card.classList.toggle('scout-target', current.scout.at.kind === 'building' && current.scout.at.id === b.id);
 }
+/** 2D: Scout is shown as its speech bubble plus a highlight on its target building. */
+function render2DScout(s: SceneState): void {
+  scout2d.textContent = `🏮 Scout: ${s.scout.bubble}`;
+}
+
 function rebuild2D(s: SceneState): void {
+  render2DScout(s);
   fallbackContent.replaceChildren();
   cards.clear();
   if (!Object.keys(s.districts).length) {
@@ -364,7 +372,9 @@ function rebuild2D(s: SceneState): void {
 function update2D(prev: SceneState | undefined, s: SceneState): void {
   const d = diffScenes(prev, s);
   if (d.rebuild || d.addedDistricts.length || d.added.length) return rebuild2D(s);
-  const touched = new Set([...d.changed, ...(prev?.activeBuildingId ? [prev.activeBuildingId] : []), ...(s.activeBuildingId ? [s.activeBuildingId] : [])]);
+  render2DScout(s);
+  const scoutId = (x: SceneState | undefined) => (x?.scout.at.kind === 'building' ? [x.scout.at.id] : []);
+  const touched = new Set([...scoutId(prev), ...scoutId(s), ...d.changed, ...(prev?.activeBuildingId ? [prev.activeBuildingId] : []), ...(s.activeBuildingId ? [s.activeBuildingId] : [])]);
   for (const id of touched) {
     const card = cards.get(id);
     const b = s.buildings[id];
@@ -430,6 +440,22 @@ function renderInspector(): void {
     if (r.color) dd.style.color = r.color;
     inspRows.append(dt, dd);
   }
+}
+
+/** A click on a building or the inspector's file: Scout walks there and the file opens (the host validates and journals it). */
+function navigateTo(id: string): void {
+  openInspector(id);
+  vscode.postMessage({ type: 'navigate', path: id });
+}
+
+/** Brings the camera close to a building (a click or the host's focus): the town stays where it is. */
+function focusCamera(id: string): void {
+  const p = graph?.positionOf(id);
+  if (!p || !camera) return;
+  cameraTarget.set(p.x, 5, p.z + 2);
+  camera.position.set(p.x + 9, 24, p.z + 34);
+  camera.lookAt(cameraTarget);
+  dirty = true;
 }
 
 function openInspector(id: string): void {
@@ -527,7 +553,7 @@ on($('insp-close'), 'click', () => {
   renderInspector();
 });
 on($('insp-open'), 'click', () => {
-  if (inspected) vscode.postMessage({ type: 'open_file', path: inspected });
+  if (inspected) navigateTo(inspected);
 });
 for (const [k, b] of Object.entries(modeButtons)) b.title = `${VIEW_MODES[k as ViewMode]}: ${b.title}`;
 on(btnResetCam, 'click', resetCamera);
@@ -586,6 +612,7 @@ on(window, 'message', (event: MessageEvent<HostToTown>) => {
     startReplay(m.runId, m.base, m.events);
   } else if (m.type === 'focus' && typeof m.path === 'string') {
     openInspector(m.path);
+    focusCamera(m.path);
   } else if (m.type === 'settings') {
     reducedMotion = motionSetting(m.reducedMotion);
     graph?.setReducedMotion(reducedMotion);

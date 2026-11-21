@@ -1,6 +1,7 @@
 // Code Town scene model. Pure data: no VS Code, no Three.js. The scene is laid out from the repository index and
 // changed ONLY by town events, which are a projection of the append-only journal (src/town/fromJournal.ts).
 import type { BuildingKind, Road } from './grammar';
+import type { Scout } from './scout';
 
 export type BuildingState = 'idle' | 'planned' | 'read' | 'proposed' | 'applied' | 'rejected' | 'failed' | 'recovered';
 
@@ -115,6 +116,8 @@ export type TownEvent =
   | { type: 'file_failed'; path: string; reason: string; at: number }
   | { type: 'provider'; status: PowerStatus; model?: string; detail?: string; at: number }
   | { type: 'file_note'; path: string; reason: string; plain: string; confidence: string; at: number }
+  /** The user clicked a building or file: Scout walks there (journaled by the host, so replay reproduces it). */
+  | { type: 'scout_navigate'; path: string; at: number }
   | { type: 'reset' };
 
 export type SceneStats = Record<BuildingState, number>;
@@ -132,6 +135,8 @@ export interface SceneState {
   aggregated: boolean;
   /** The run the scene shows. */
   runId?: string;
+  /** Scout, the guide: derived only from events (src/town/scout.ts). */
+  scout: Scout;
   /** The path the agent took through the town in this run (Agent Journey mode), in order. */
   journey: JourneyStep[];
   /** Last real test run of the run. */
