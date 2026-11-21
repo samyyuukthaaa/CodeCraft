@@ -3,6 +3,7 @@
 // Usage: node scripts/writeup-pdf.mjs [--browser <path>]
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { countPdfPages, waitForStableFile } from './wait-file.mjs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -59,8 +60,12 @@ const candidates = [argIdx > 0 ? process.argv[argIdx + 1] : '', 'C:/Program File
 const browser = candidates.find((p) => existsSync(p));
 if (!browser) throw new Error('no Edge/Chrome found; pass --browser <path>');
 const pdf = resolve('docs/WRITEUP.pdf');
+// Remove the old PDF first, so the wait below can only succeed on the new one.
+rmSync(pdf, { force: true });
 execFileSync(browser, ['--headless', '--disable-gpu', '--no-pdf-header-footer', `--user-data-dir=${join(dir, 'profile')}`, `--print-to-pdf=${pdf}`, pathToFileURL(htmlPath).href], { stdio: 'ignore', timeout: 120_000 });
-const pages = (readFileSync(pdf).toString('latin1').match(/\/Type\s*\/Page[^s]/g) ?? []).length;
+// The browser writes the PDF after its launcher exits (Windows): wait until the file exists and stops growing.
+await waitForStableFile(pdf, 60_000);
+const pages = countPdfPages(readFileSync(pdf));
 rmSync(dir, { recursive: true, force: true });
 console.log(`wrote docs/WRITEUP.pdf (${pages} page(s))`);
 if (pages > 3) process.exitCode = 1;
