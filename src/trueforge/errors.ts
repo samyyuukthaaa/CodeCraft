@@ -43,6 +43,9 @@ export function retryDelayMs(message: string, retryIndex: number, rand: () => nu
   const c = classifyError(message);
   const jitter = Math.floor(rand() * 1000);
   if (c.cls === 'rate_limit') {
+    // observed: "Generate content requests per day limit exceeded on Free Tier" (limit 500); waiting a minute
+    // cannot help, so a daily quota is never retried (it fails over at once).
+    if (isDailyQuota(message)) return undefined;
     const hint = /retry in ([\d.]+)\s*s/i.exec(message);
     const ms = hint ? Math.ceil(Number(hint[1]) * 1000) : 10_000 * (retryIndex + 1);
     return Math.min(ms, MAX_HINT_MS) + jitter;
@@ -50,6 +53,9 @@ export function retryDelayMs(message: string, retryIndex: number, rand: () => nu
   if (c.cls === 'unavailable_or_timeout') return [5_000, 15_000, 30_000][retryIndex]! + jitter;
   return undefined; // TLS, invalid key, bad request, context too large, unknown: no blind retries
 }
+
+/** True for a provider's per-day quota (not a per-minute limit). */
+export const isDailyQuota = (message: string): boolean => /per day|daily (limit|quota)|requests_per_day|PerDay/i.test(message);
 
 const WHAT: Record<ErrorClass, string> = {
   tls_error: 'the secure connection to the provider failed (TLS certificate error on this machine or network)',
@@ -66,7 +72,8 @@ const WHAT: Record<ErrorClass, string> = {
 export function failoverBanner(fromModel: string, toModel: string, reason: string): string {
   const c = classifyError(reason);
   const code = c.status ? ` (HTTP ${c.status})` : '';
-  return `The primary model ${fromModel} stopped because ${WHAT[c.cls]}${code}. CodeCraft switched to the fallback model ${toModel} automatically and is continuing your request.`;
+  const what = c.cls === 'rate_limit' && isDailyQuota(reason) ? 'it used up its daily quota' : WHAT[c.cls];
+  return `The primary model ${fromModel} stopped because ${what}${code}. CodeCraft switched to the fallback model ${toModel} automatically and is continuing your request.`;
 }
 
 /** Message when a run fails and no fallback could take over. `appliedFiles` = files written during the run. */
@@ -80,6 +87,7 @@ export function failureMessage(model: string, reason: string, appliedFiles: stri
     case 'invalid_or_revoked_key':
       return `Provider key rejected${code} for ${model}: update it in TrueForge Settings.${filesNote}`;
     case 'rate_limit':
+      if (isDailyQuota(reason)) return `${model} has used up its daily quota${code}. It resets once a day (for Google's free tier, at midnight Pacific time); configure a fallback model with its own quota or try again after the reset.${filesNote}`;
       return `${model} hit a rate limit or quota${code}. Try again later or configure a fallback model.${filesNote}`;
     case 'unavailable_or_timeout':
       return `${model} is unavailable or timed out${code}. Try again, or configure a fallback model.${filesNote}`;

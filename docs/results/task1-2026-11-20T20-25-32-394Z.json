@@ -1,0 +1,141 @@
+[
+  {
+    "scenario": "task1",
+    "run": 1,
+    "startedAt": "2026-11-20T20:07:54.845Z",
+    "durationMs": 1057548,
+    "outcome": {
+      "status": "cancelled",
+      "rounds": 1
+    },
+    "finalAgent": "codecraft-fallback",
+    "switches": [
+      {
+        "from": "codecraft-primary",
+        "to": "codecraft-fallback",
+        "fromModel": "google-gemini/gemini-3-1-flash-lite",
+        "toModel": "google-gemini/gemini-3-5-flash-lite",
+        "reason": "[Model Error] Request failed (429): You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://aistudio.google.com/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 500, model: gemini-3.1-flash-lite, description: Generate content requests per day limit exceeded on Free Tier. See https://aistudio.google.com/docs/rate-limits.\nPlease retry in 11h50m44.401174935s."
+      }
+    ],
+    "sessions": [
+      {
+        "agent": "codecraft-primary",
+        "id": "01m7x957nnnk3p1s6hww3z7310"
+      },
+      {
+        "agent": "codecraft-fallback",
+        "id": "01m7x97nfxt0s6jesdr65yh73e"
+      }
+    ],
+    "tokens": 0,
+    "approvals": [],
+    "review": [],
+    "activity": [],
+    "filesRead": [],
+    "totalFiles": 234,
+    "context": {
+      "budgetTokens": 6000,
+      "usedTokens": 1980,
+      "totalFiles": 234,
+      "items": [
+        {
+          "path": "src/flask/helpers.py",
+          "reason": "selected in the editor (lines 28-35)",
+          "tokens": 98,
+          "included": true
+        },
+        {
+          "path": "tests/test_converters.py",
+          "reason": "test for src/flask/helpers.py",
+          "tokens": 302,
+          "included": true
+        },
+        {
+          "path": "tests/test_helpers.py",
+          "reason": "test for src/flask/helpers.py; outline only (whole file ~2919 tokens is over budget)",
+          "tokens": 734,
+          "included": true
+        },
+        {
+          "path": "src/flask/globals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 459,
+          "included": true
+        },
+        {
+          "path": "src/flask/signals.py",
+          "reason": "imported by src/flask/helpers.py",
+          "tokens": 209,
+          "included": true
+        },
+        {
+          "path": "src/flask/wrappers.py",
+          "reason": "imported by src/flask/helpers.py; outline only (whole file ~2434 tokens is over budget)",
+          "tokens": 178,
+          "included": true
+        }
+      ],
+      "unresolved": []
+    },
+    "changed": [],
+    "maxEventLoopLagMs": 893513,
+    "banners": [
+      "The primary model google-gemini/gemini-3-1-flash-lite stopped because it hit a rate limit or used up its quota (HTTP 429). CodeCraft switched to the fallback model google-gemini/gemini-3-5-flash-lite automatically and is continuing your request."
+    ],
+    "plans": [],
+    "retries": [
+      "codecraft-primary retry 1 after 11 s: [Model Error] Request failed (429): You exceeded your current quota, please check your plan and billing details. For mor",
+      "codecraft-primary retry 2 after 21 s: [Model Error] Request failed (429): You exceeded your current quota, please check your plan and billing details. For mor",
+      "codecraft-primary retry 3 after 30 s: [Model Error] Request failed (429): You exceeded your current quota, please check your plan and billing details. For mor",
+      "codecraft-fallback retry 1 after 11 s: [Model Error] Request failed (429): You exceeded your current quota, please check your plan and billing details. For mor",
+      "codecraft-fallback retry 2 after 20 s: [Model Error] Request failed (429): You exceeded your current quota, please check your plan and billing details. For mor",
+      "codecraft-fallback retry 3 after 31 s: [Model Error] Request failed (429): You exceeded your current quota, please check your plan and billing details. For mor"
+    ],
+    "atSwitch": [
+      {
+        "changed": [],
+        "approvalsBefore": 0,
+        "reviewsBefore": 0
+      }
+    ],
+    "checks": [
+      {
+        "name": "agent run finished",
+        "pass": false,
+        "detail": "{\"status\":\"cancelled\",\"rounds\":1}"
+      },
+      {
+        "name": "src/flask/helpers.py changed; nothing else except tests",
+        "pass": false,
+        "detail": "(nothing changed)"
+      },
+      {
+        "name": "TASKS.md check: FLASK_DEBUG=off prints False",
+        "pass": false,
+        "detail": "exit 0, stdout \"True\""
+      },
+      {
+        "name": "false for off/n/0/false/no (any case), empty and unset; true otherwise",
+        "pass": false,
+        "detail": "wrong for \"off\", \"OFF\", \"Off\", \"n\", \"N\""
+      },
+      {
+        "name": "docstring lists every false value (0, false, no, off, n)",
+        "pass": false,
+        "detail": "missing 0, no, off, n in: \"Get whether debug mode should be enabled for the app, indicated by the\\r\\n:envvar:`FLASK_DEBUG` environment variable. The default is ``False``.\\r\\n\""
+      },
+      {
+        "name": "full Flask test suite passes (>= 490 passed, 0 failed)",
+        "pass": true,
+        "detail": "490 passed in 2.30s"
+      },
+      {
+        "name": "fixture reset to clean after the run",
+        "pass": true,
+        "detail": "clean"
+      }
+    ],
+    "pass": false
+  }
+]

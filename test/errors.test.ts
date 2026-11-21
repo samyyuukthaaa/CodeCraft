@@ -1,7 +1,7 @@
 // Every input below is an error text actually observed from TrueForge 0.185.1 on 2026-11-20.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyError, failoverBanner, failureMessage } from '../src/trueforge/errors';
+import { classifyError, failoverBanner, failureMessage, retryDelayMs } from '../src/trueforge/errors';
 
 const OBSERVED = {
   key401: '[Model Error] Request failed (401): Invalid API Key',
@@ -26,6 +26,15 @@ test('classifyError: observed texts map to the right class and status', () => {
   // observed on this machine during a network problem
   assert.deepEqual(classifyError('[Model Error] Cannot connect to API: certificate has expired'), { cls: 'tls_error', status: undefined });
   assert.match(failureMessage('m', '[Model Error] Cannot connect to API: certificate has expired'), /\(TLS\) connection failed\. Check this machine's clock, proxy or network; retrying will not help\./);
+});
+
+test('daily quota (observed live): never retried, banner and message say "daily quota"', () => {
+  const daily = '[Model Error] Request failed (429): You exceeded your current quota ... * Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 500, model: gemini-3.5-flash-lite, description: Generate content requests per day limit exceeded on Free Tier. Please retry in 41.2s.';
+  const perMinute = '[Model Error] Request failed (429): ... limit: 15, model: gemini-3.5-flash-lite, description: Generate content requests per minute limit exceeded on Free Tier. Please retry in 41.2s.';
+  assert.equal(retryDelayMs(daily, 0), undefined);
+  assert.equal(retryDelayMs(perMinute, 0, () => 0), 41200);
+  assert.match(failoverBanner('a/m1', 'b/m2', daily), /stopped because it used up its daily quota \(HTTP 429\)/);
+  assert.match(failureMessage('b/m2', daily), /^b\/m2 has used up its daily quota \(HTTP 429\)\. It resets once a day/);
 });
 
 test('failoverBanner: plain words, names both models, says the key was rejected, never a key value', () => {
