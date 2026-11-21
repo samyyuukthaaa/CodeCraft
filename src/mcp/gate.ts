@@ -247,12 +247,20 @@ export class WriteGate {
     }
     if (stored.length === 0) return { status: 'no_change', message: 'every proposed file is identical to the current file' };
 
+    await this.journal?.append({ t: 'op_proposed', files: stored.map((f) => ({ path: f.path, intent: f.intent, hunks: f.hunks.length, created: f.baseHash === null })), reason: plan.replace(/\s+/g, ' ').slice(0, 300) });
     const notes = this.hooks.annotate ? await this.hooks.annotate(review) : undefined;
     const warning = this.hooks.warning?.();
     const chosen = await this.reviewer.review({ plan, groups: review, ...(notes ? { notes } : {}), ...(warning ? { warning } : {}) });
     if (gen !== this.generation) return STOPPED; // Stop Run during the review: nothing is written
     const decisions: Record<string, Decision> = {};
     for (const f of stored) for (const h of f.hunks) decisions[hunkKey(f.path, h.id)] = chosen[hunkKey(f.path, h.id)] === 'accept' ? 'accept' : 'reject';
+    await this.journal?.append({
+      t: 'review',
+      files: stored.map((f) => {
+        const accepted = f.hunks.filter((h) => decisions[hunkKey(f.path, h.id)] === 'accept').length;
+        return { path: f.path, accepted, rejected: f.hunks.length - accepted };
+      }),
+    });
     const groupInfo = review.map((g, i) => ({ intent: g.intent, files: g.files.map((f) => f.path), ...(notes?.[i] ? { note: notes[i] } : {}) }));
     this.decisions.set(setKey(normalized), { files: stored, decisions, groups: groupInfo });
     return this.applyApprovedSet(normalized);

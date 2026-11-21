@@ -41,9 +41,9 @@ test('gate+journal: op_started is written before the apply, op_applied after; un
     gate.recordRead('a.py', 'x = 1\n');
     assert.equal((await gate.propose('a.py', 'x = 2\n', 'r')).status, 'applied');
     const types = journal.all().map((e) => e.t);
-    assert.deepEqual(types, ['op_started', 'op_applied']);
-    assert.equal(journalAtApply, 1, 'op_started was already in the journal when the write happened');
-    const applied = journal.all()[1] as Extract<ReturnType<Journal['all']>[number], { t: 'op_applied' }>;
+    assert.deepEqual(types, ['op_proposed', 'review', 'op_started', 'op_applied']);
+    assert.equal(journalAtApply, 3, 'op_started was already in the journal when the write happened');
+    const applied = journal.all()[3] as Extract<ReturnType<Journal['all']>[number], { t: 'op_applied' }>;
     assert.equal(applied.opId, operationId([{ path: 'a.py', before: 'x = 1\n', after: 'x = 2\n' }]));
     assert.deepEqual(applied.files.map((f) => [f.path, f.accepted, f.rejected]), [['a.py', 1, 0]]);
     assert.equal(journal.appliedOps().size, 1);
@@ -84,7 +84,8 @@ test('gate+journal: rejections are journaled', async () => {
     const gate = new WriteGate(ws.fs, new DiskApplier(ws.root), new ScriptedReviewer(rejectAll), journal);
     gate.recordRead('a.py', 'x = 1\n');
     await gate.propose('a.py', 'x = 2\n', 'r');
-    assert.deepEqual(journal.all().map((e) => e.t), ['op_rejected']);
+    assert.deepEqual(journal.all().map((e) => e.t), ['op_proposed', 'review', 'op_rejected']);
+    assert.deepEqual(journal.all()[1], { t: 'review', files: [{ path: 'a.py', accepted: 0, rejected: 1 }], runId: '', at: journal.all()[1]!.at, seq: 2 } as never);
   } finally {
     await ws.cleanup();
   }

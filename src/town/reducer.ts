@@ -1,3 +1,5 @@
+// Pure, deterministic scene reducer: (state, event) -> new state. No VS Code, no Three.js, no clock, no
+// randomness; every timestamp comes from the event. Replaying the same events always gives the same scene.
 import {
   Building,
   BuildingState,
@@ -5,21 +7,18 @@ import {
   STATE_VISUALS,
   SceneState,
   SceneStats,
+  TestStatus,
   TownEvent,
   TownFileInput,
 } from './types';
+import { AGGREGATE_THRESHOLD, computeRoads, districtOf, kindOf } from './grammar';
 
 export const MIN_BUILDING_HEIGHT = 1;
 export const MAX_BUILDING_HEIGHT = 20;
 
-export function computeBuildingHeight(
-  lines: number,
-  min: number = MIN_BUILDING_HEIGHT,
-  max: number = MAX_BUILDING_HEIGHT,
-): number {
+export function computeBuildingHeight(lines: number, min: number = MIN_BUILDING_HEIGHT, max: number = MAX_BUILDING_HEIGHT): number {
   if (!Number.isFinite(lines) || lines <= 0) return min;
-  const raw = Math.round(lines / 20);
-  return Math.max(min, Math.min(max, Math.max(min, raw)));
+  return Math.max(min, Math.min(max, Math.round(lines / 20)));
 }
 
 export function normalizePath(p: string): string {
@@ -29,324 +28,222 @@ export function normalizePath(p: string): string {
 export function getDistrictAndName(filePath: string): { district: string; name: string } {
   const norm = normalizePath(filePath);
   const lastSlash = norm.lastIndexOf('/');
-  if (lastSlash === -1) {
-    return { district: '.', name: norm };
-  }
-  return {
-    district: norm.slice(0, lastSlash),
-    name: norm.slice(lastSlash + 1),
-  };
+  if (lastSlash === -1) return { district: '.', name: norm };
+  return { district: norm.slice(0, lastSlash), name: norm.slice(lastSlash + 1) };
 }
 
 export function createEmptyStats(): SceneStats {
-  return {
-    idle: 0,
-    read: 0,
-    proposed: 0,
-    applied: 0,
-    rejected: 0,
-    failed: 0,
-  };
+  return { idle: 0, planned: 0, read: 0, proposed: 0, applied: 0, rejected: 0, failed: 0, recovered: 0 };
 }
 
 export function initialSceneState(): SceneState {
-  return {
-    districts: {},
-    buildings: {},
-    activeBuildingId: undefined,
-    totalBuildings: 0,
-    stats: createEmptyStats(),
-    lastEvent: undefined,
-    version: 0,
-  };
+  return { districts: {}, buildings: {}, activeBuildingId: undefined, totalBuildings: 0, stats: createEmptyStats(), power: { status: 'healthy' }, roads: [], aggregated: false, journey: [], version: 0 };
 }
 
 function calculateStats(buildings: Record<string, Building>): SceneStats {
   const stats = createEmptyStats();
-  for (const b of Object.values(buildings)) {
-    if (b.state in stats) {
-      stats[b.state]++;
-    }
-  }
+  for (const b of Object.values(buildings)) stats[b.state]++;
   return stats;
 }
 
-export function createBuilding(input: TownFileInput, state: BuildingState = 'idle'): Building {
-  const normPath = normalizePath(input.path);
-  const { district, name } = getDistrictAndName(normPath);
-  const lines = Math.max(0, input.lines ?? 0);
-  const height = computeBuildingHeight(lines);
-  const visual = STATE_VISUALS[state];
+const LANGUAGE_BY_EXT: Record<string, string> = { py: 'python', ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript', md: 'markdown', rst: 'markdown', json: 'json', toml: 'config', cfg: 'config', ini: 'config', yaml: 'config', yml: 'config' };
+const languageOf = (p: string): string => LANGUAGE_BY_EXT[p.split('.').pop()?.toLowerCase() ?? ''] ?? 'other';
+const looksLikeTest = (p: string): boolean => /(^|\/)(tests?|__tests__)\/|(^|\/)test_[^/]*\.py$|_test\.py$|\.(test|spec)\.[cm]?[jt]sx?$/.test(p);
 
+export function createBuilding(input: TownFileInput, state: BuildingState = 'idle', placeholder = false, aggregated = false): Building {
+  const normPath = normalizePath(input.path);
+  const { district: folder, name } = getDistrictAndName(normPath);
+  const district = aggregated ? districtOf(normPath, true) : folder;
+  const isTest = input.isTest ?? looksLikeTest(normPath);
+  const lines = Math.max(0, input.lines ?? 0);
+  const visual = STATE_VISUALS[state];
   return {
     id: normPath,
     path: normPath,
     name,
     district,
+    folder,
+    kind: kindOf(normPath, isTest),
     lines,
-    height,
-    language: input.language ?? 'other',
-    isTest: Boolean(input.isTest),
+    height: computeBuildingHeight(lines),
+    language: input.language ?? languageOf(normPath),
+    isTest,
     state,
+    testStatus: 'unknown',
     color: visual.color,
     icon: visual.icon,
     label: visual.label,
+    placeholder,
+  };
+}
+
+function addToDistrict(districts: Record<string, District>, b: Building): Record<string, District> {
+  const existing = districts[b.district];
+  if (existing?.buildingIds.includes(b.id)) return districts;
+  return {
+    ...districts,
+    [b.district]: existing
+      ? { ...existing, buildingIds: [...existing.buildingIds, b.id] }
+      : { id: b.district, name: b.district === '.' ? 'root' : b.district, path: b.district, buildingIds: [b.id], ...(b.district !== b.folder ? { aggregated: true } : {}) },
   };
 }
 
 export function initSceneFromFiles(files: TownFileInput[]): SceneState {
-  const districts: Record<string, District> = {};
+  let districts: Record<string, District> = {};
   const buildings: Record<string, Building> = {};
-
+  const aggregated = files.length > AGGREGATE_THRESHOLD;
   for (const file of files) {
-    const building = createBuilding(file, 'idle');
-    buildings[building.id] = building;
-
-    const distId = building.district;
-    if (!districts[distId]) {
-      districts[distId] = {
-        id: distId,
-        name: distId === '.' ? 'root' : distId,
-        path: distId,
-        buildingIds: [],
-      };
-    }
-    districts[distId].buildingIds.push(building.id);
+    const b = createBuilding(file, 'idle', false, aggregated);
+    if (buildings[b.id]) continue;
+    buildings[b.id] = b;
+    districts = addToDistrict(districts, b);
   }
-
-  return {
-    districts,
-    buildings,
-    activeBuildingId: undefined,
-    totalBuildings: Object.keys(buildings).length,
-    stats: calculateStats(buildings),
-    version: 1,
-  };
+  const roads = computeRoads(files.map((f) => ({ path: normalizePath(f.path), imports: f.imports?.map(normalizePath) })), (p) => buildings[p]?.district);
+  return { ...initialSceneState(), districts, buildings, roads, aggregated, totalBuildings: Object.keys(buildings).length, stats: calculateStats(buildings), version: 1 };
 }
 
-function updateBuildingState(
-  state: SceneState,
-  targetPath: string,
-  newState: BuildingState,
-  timestamp?: number,
-): { updatedBuildings: Record<string, Building>; updatedDistricts: Record<string, District>; targetId?: string } {
-  const norm = normalizePath(targetPath);
-  let targetId: string | undefined;
+/** Which test file a failing test ID belongs to ("tests/test_cli.py::test_x" -> "tests/test_cli.py"). */
+export function testFileOf(id: string): string {
+  return normalizePath(id.split('::')[0] ?? id);
+}
 
-  // Exact match or suffix match
-  if (state.buildings[norm]) {
-    targetId = norm;
-  } else {
-    const found = Object.keys(state.buildings).find(
-      (k) => k === norm || k.endsWith('/' + norm) || norm.endsWith('/' + k),
-    );
-    if (found) targetId = found;
-  }
+type Patch = Partial<Pick<Building, 'state' | 'testStatus' | 'reason' | 'plain' | 'confidence'>> & { detail: string };
 
-  if (!targetId) {
-    // If not in index yet, dynamically add it
-    const newB = createBuilding({ path: norm, lines: 50 }, newState);
-    newB.lastUpdated = timestamp ?? Date.now();
+/** Events that are a stop on the agent's journey (planning is not a visit). */
+const JOURNEY_TYPES = new Set<TownEvent['type']>(['file_read', 'hunk_proposed', 'hunk_decided', 'file_written', 'file_reverted', 'file_failed']);
+export const MAX_JOURNEY = 500;
 
-    const updatedDistricts = { ...state.districts };
-    const distId = newB.district;
-    if (!updatedDistricts[distId]) {
-      updatedDistricts[distId] = {
-        id: distId,
-        name: distId === '.' ? 'root' : distId,
-        path: distId,
-        buildingIds: [],
-      };
-    } else {
-      updatedDistricts[distId] = {
-        ...updatedDistricts[distId],
-        buildingIds: [...updatedDistricts[distId].buildingIds],
-      };
-    }
-    if (!updatedDistricts[distId].buildingIds.includes(newB.id)) {
-      updatedDistricts[distId].buildingIds.push(newB.id);
-    }
+function extendJourney(journey: SceneState['journey'], path: string, type: TownEvent['type'], at: number): SceneState['journey'] {
+  if (!JOURNEY_TYPES.has(type)) return journey;
+  const last = journey[journey.length - 1];
+  // consecutive actions on the same building are one stop (its latest action)
+  if (last && last.path === path) return [...journey.slice(0, -1), { path, type, at }];
+  const next = [...journey, { path, type, at }];
+  return next.length > MAX_JOURNEY ? next.slice(next.length - MAX_JOURNEY) : next;
+}
 
-    return {
-      updatedBuildings: {
-        ...state.buildings,
-        [newB.id]: newB,
-      },
-      updatedDistricts,
-      targetId: newB.id,
-    };
-  }
-
-  const existing = state.buildings[targetId];
+/** Updates one building (added as a placeholder lot when it is not in the index). Exact path match only. */
+function touch(state: SceneState, path: string, ev: Exclude<TownEvent, { type: 'reset' } | { type: 'init' }>, patch: Patch): SceneState {
+  const id = normalizePath(path);
+  let districts = state.districts;
+  let existing = state.buildings[id];
   if (!existing) {
-    return {
-      updatedBuildings: state.buildings,
-      updatedDistricts: state.districts,
-      targetId: undefined,
-    };
+    existing = createBuilding({ path: id, lines: 0 }, 'idle', true, state.aggregated);
+    districts = addToDistrict(districts, existing);
   }
-  const visual = STATE_VISUALS[newState];
+  const next = patch.state ?? existing.state;
+  const visual = STATE_VISUALS[next];
   const updated: Building = {
     ...existing,
-    state: newState,
+    state: next,
+    testStatus: patch.testStatus ?? existing.testStatus,
+    ...(patch.reason !== undefined ? { reason: patch.reason } : {}),
+    ...(patch.plain !== undefined ? { plain: patch.plain } : {}),
+    ...(patch.confidence !== undefined ? { confidence: patch.confidence } : {}),
     color: visual.color,
     icon: visual.icon,
     label: visual.label,
-    lastUpdated: timestamp ?? Date.now(),
+    lastAction: { type: ev.type, at: ev.at, detail: patch.detail },
+    lastUpdated: ev.at,
   };
+  const buildings = { ...state.buildings, [id]: updated };
+  return { ...state, buildings, districts, totalBuildings: Object.keys(buildings).length, stats: calculateStats(buildings), activeBuildingId: id, journey: extendJourney(state.journey, id, ev.type, ev.at) };
+}
 
-  return {
-    updatedBuildings: {
-      ...state.buildings,
-      [targetId]: updated,
-    },
-    updatedDistricts: state.districts,
-    targetId,
-  };
+const EARLY: BuildingState[] = ['idle', 'planned'];
+
+function step(state: SceneState, event: TownEvent): SceneState {
+  switch (event.type) {
+    case 'init':
+      return { ...initSceneFromFiles(event.files), power: state.power };
+    case 'reset':
+    case 'run_started': {
+      const idle = STATE_VISUALS.idle;
+      const buildings: Record<string, Building> = {};
+      for (const [id, b] of Object.entries(state.buildings)) {
+        const { lastAction: _a, lastUpdated: _u, reason: _r, plain: _p, confidence: _c, ...rest } = b;
+        buildings[id] = { ...rest, state: 'idle', testStatus: 'unknown', color: idle.color, icon: idle.icon, label: idle.label };
+      }
+      const base = { ...state, buildings, activeBuildingId: undefined, stats: calculateStats(buildings), tests: undefined, journey: [] };
+      if (event.type === 'reset') return { ...base, power: { status: 'healthy', ...(state.power.model ? { model: state.power.model } : {}) } };
+      return { ...base, runId: event.runId, power: { status: 'healthy', ...(state.power.model ? { model: state.power.model } : {}), at: event.at } };
+    }
+    case 'run_finished':
+      return state;
+    case 'file_planned': {
+      const b = state.buildings[normalizePath(event.path)];
+      const detail = `planned to ${event.action}${event.why ? `: ${event.why}` : ''}`;
+      return touch(state, event.path, event, { detail, ...(event.why ? { reason: event.why } : {}), ...(!b || EARLY.includes(b.state) ? { state: 'planned' as const } : {}) });
+    }
+    case 'file_read': {
+      const b = state.buildings[normalizePath(event.path)];
+      return touch(state, event.path, event, { detail: 'read by the agent', ...(!b || EARLY.includes(b.state) ? { state: 'read' as const } : {}) });
+    }
+    case 'hunk_proposed':
+      return touch(state, event.path, event, { state: 'proposed', ...(event.reason ? { reason: event.reason } : {}), detail: `proposed ${event.hunks} hunk(s) [${event.intent}]` });
+    case 'hunk_decided':
+      return event.accepted === 0
+        ? touch(state, event.path, event, { state: 'rejected', detail: `all ${event.rejected} hunk(s) rejected by the user` })
+        : touch(state, event.path, event, { detail: `${event.accepted} hunk(s) accepted, ${event.rejected} rejected` });
+    case 'file_written':
+      return touch(state, event.path, event, {
+        state: 'applied',
+        testStatus: 'unknown',
+        detail: `${event.created ? 'created' : 'changed'}: ${event.accepted} hunk(s) applied${event.rejected ? `, ${event.rejected} rejected` : ''} (operation ${event.opId})`,
+      });
+    case 'file_reverted':
+      return touch(state, event.path, event, { state: 'idle', testStatus: 'unknown', detail: `reverted (undo or rollback of ${event.opId})` });
+    case 'file_failed':
+      return touch(state, event.path, event, { state: 'failed', testStatus: 'failed', detail: event.reason });
+    case 'test_run': {
+      const failingFiles = new Set(event.failing.map(testFileOf));
+      const perTest = event.failing.length > 0 && event.failing.every((f) => f.includes('::'));
+      const buildings: Record<string, Building> = { ...state.buildings };
+      for (const [id, b] of Object.entries(state.buildings)) {
+        let next: BuildingState = b.state;
+        let ts: TestStatus = b.testStatus;
+        let detail: string | undefined;
+        if (failingFiles.has(id)) {
+          next = 'failed';
+          ts = 'failed';
+          detail = `failing: ${event.failing.filter((f) => testFileOf(f) === id).join(', ')}`;
+        } else if (b.state === 'failed' && (event.passed || perTest)) {
+          next = 'recovered';
+          ts = 'passed';
+          detail = `passes again (${event.phase.replace('_', ' ')} tests)`;
+        } else if (b.state === 'applied' || b.state === 'recovered') {
+          ts = event.passed ? 'passed' : 'failed';
+          detail = `tests ${event.passed ? 'passed' : 'failed'} after the change (${event.phase.replace('_', ' ')})`;
+        } else if (b.isTest && perTest) {
+          ts = 'passed'; // per-test results were listed and this test file was not among the failures
+        } else if (b.isTest && event.passed) {
+          ts = 'passed';
+        }
+        if (next !== b.state || ts !== b.testStatus || detail) {
+          const v = STATE_VISUALS[next];
+          buildings[id] = { ...b, state: next, testStatus: ts, color: v.color, icon: v.icon, label: v.label, ...(detail ? { lastAction: { type: 'test_run', at: event.at, detail }, lastUpdated: event.at } : {}) };
+        }
+      }
+      return { ...state, buildings, stats: calculateStats(buildings), tests: { passed: event.passed, failing: event.failing, phase: event.phase, at: event.at } };
+    }
+    case 'file_note': {
+      // the change group's reason, plain sentence and confidence (P5): annotations, not an agent action
+      const id = normalizePath(event.path);
+      const b = state.buildings[id];
+      if (!b) return state;
+      return { ...state, buildings: { ...state.buildings, [id]: { ...b, reason: event.reason, plain: event.plain, confidence: event.confidence } } };
+    }
+    case 'provider':
+      // Provider health belongs to the power plant; it never marks a building failed.
+      return { ...state, power: { status: event.status, ...(event.model ?? state.power.model ? { model: event.model ?? state.power.model } : {}), ...(event.detail ? { detail: event.detail } : {}), at: event.at } };
+  }
 }
 
 export function sceneReducer(state: SceneState, event: TownEvent): SceneState {
-  switch (event.type) {
-    case 'init': {
-      const s = initSceneFromFiles(event.files);
-      return {
-        ...s,
-        lastEvent: event,
-        version: state.version + 1,
-      };
-    }
+  return { ...step(state, event), lastEvent: event, version: state.version + 1 };
+}
 
-    case 'file_read': {
-      const { updatedBuildings, updatedDistricts, targetId } = updateBuildingState(
-        state,
-        event.path,
-        'read',
-        event.timestamp,
-      );
-      return {
-        ...state,
-        buildings: updatedBuildings,
-        districts: updatedDistricts,
-        totalBuildings: Object.keys(updatedBuildings).length,
-        activeBuildingId: targetId,
-        stats: calculateStats(updatedBuildings),
-        lastEvent: event,
-        version: state.version + 1,
-      };
-    }
-
-    case 'hunk_proposed': {
-      const { updatedBuildings, updatedDistricts, targetId } = updateBuildingState(
-        state,
-        event.path,
-        'proposed',
-        event.timestamp,
-      );
-      return {
-        ...state,
-        buildings: updatedBuildings,
-        districts: updatedDistricts,
-        totalBuildings: Object.keys(updatedBuildings).length,
-        activeBuildingId: targetId,
-        stats: calculateStats(updatedBuildings),
-        lastEvent: event,
-        version: state.version + 1,
-      };
-    }
-
-    case 'hunk_decided': {
-      const newState: BuildingState = event.decision === 'accepted' ? 'applied' : 'rejected';
-      const { updatedBuildings, updatedDistricts, targetId } = updateBuildingState(
-        state,
-        event.path,
-        newState,
-        event.timestamp,
-      );
-      return {
-        ...state,
-        buildings: updatedBuildings,
-        districts: updatedDistricts,
-        totalBuildings: Object.keys(updatedBuildings).length,
-        activeBuildingId: targetId,
-        stats: calculateStats(updatedBuildings),
-        lastEvent: event,
-        version: state.version + 1,
-      };
-    }
-
-    case 'file_written': {
-      const { updatedBuildings, updatedDistricts, targetId } = updateBuildingState(
-        state,
-        event.path,
-        'applied',
-        event.timestamp,
-      );
-      return {
-        ...state,
-        buildings: updatedBuildings,
-        districts: updatedDistricts,
-        totalBuildings: Object.keys(updatedBuildings).length,
-        activeBuildingId: targetId,
-        stats: calculateStats(updatedBuildings),
-        lastEvent: event,
-        version: state.version + 1,
-      };
-    }
-
-    case 'model_failed': {
-      const target = event.path || state.activeBuildingId;
-      if (!target) {
-        return {
-          ...state,
-          lastEvent: event,
-          version: state.version + 1,
-        };
-      }
-      const { updatedBuildings, updatedDistricts, targetId } = updateBuildingState(
-        state,
-        target,
-        'failed',
-        event.timestamp,
-      );
-      return {
-        ...state,
-        buildings: updatedBuildings,
-        districts: updatedDistricts,
-        totalBuildings: Object.keys(updatedBuildings).length,
-        activeBuildingId: targetId,
-        stats: calculateStats(updatedBuildings),
-        lastEvent: event,
-        version: state.version + 1,
-      };
-    }
-
-    case 'reset': {
-      const resetBuildings: Record<string, Building> = {};
-      const idleVisual = STATE_VISUALS.idle;
-      for (const [id, b] of Object.entries(state.buildings)) {
-        resetBuildings[id] = {
-          ...b,
-          state: 'idle',
-          color: idleVisual.color,
-          icon: idleVisual.icon,
-          label: idleVisual.label,
-        };
-      }
-      return {
-        ...state,
-        buildings: resetBuildings,
-        activeBuildingId: undefined,
-        stats: calculateStats(resetBuildings),
-        lastEvent: event,
-        version: state.version + 1,
-      };
-    }
-
-    default:
-      return {
-        ...state,
-        lastEvent: event,
-        version: state.version + 1,
-      };
-  }
+/** Folds events into a scene (used for reloads and replay). */
+export function foldEvents(start: SceneState, events: readonly TownEvent[]): SceneState {
+  return events.reduce(sceneReducer, start);
 }

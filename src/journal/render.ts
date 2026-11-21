@@ -54,6 +54,12 @@ function line(e: JournalEntry): string | undefined {
       return `- ${time(e.at)} **undone** part of operation \`${e.opId}\`: ${e.files.join(', ')}`;
     case 'report_exported':
       return `- ${time(e.at)} report exported for run ${e.reportRunId}`;
+    case 'file_read':
+      return undefined; // shown in Code Town; too frequent for the edit history
+    case 'op_proposed':
+      return `- ${time(e.at)} proposed: ${e.files.map((f) => `${f.path} [${f.intent}] ${f.hunks} hunk(s)${f.created ? ' (new file)' : ''}`).join('; ')}`;
+    case 'review':
+      return `- ${time(e.at)} reviewed: ${e.files.map((f) => `${f.path} ${f.accepted} accepted, ${f.rejected} rejected`).join('; ')}`;
     case 'metrics':
       return `- ${time(e.at)} cost and speed: ${e.model}, ${e.inputTokens ?? '?'} input / ${e.outputTokens ?? '?'} output tokens, ${(e.elapsedMs / 1000).toFixed(1)} s, read ${e.filesRead} of ${e.filesTotal} files`;
   }

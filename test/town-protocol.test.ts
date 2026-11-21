@@ -49,3 +49,17 @@ test('buildTownHtml: strict CSP, nonce, and containers', () => {
   assert.ok(html.includes('id="btn-replay"'));
   assert.ok(html.includes(`nonce="${nonce}" src="vscode-webview://out/codetown.js"`));
 });
+
+test('parseTownMessage: the read-only webview may only send exact, typed requests', () => {
+  assert.equal(parseTownMessage({ type: 'replay_run', runId: 'x' }), undefined);
+  assert.equal(parseTownMessage({ type: 'open_file', path: 'a.py', line: 3 }), undefined);
+  assert.equal(parseTownMessage({ type: 'write_file', path: 'a.py' }), undefined);
+});
+
+test('buildTownHtml: no inline style attributes (CSP blocks them); every state has a badge with icon and label', () => {
+  const html = buildTownHtml({ cspSource: 'vscode-webview:', nonce: 'N', scriptUri: 'x.js' });
+  assert.doesNotMatch(html, /sstyle="/, 'inline style attributes are blocked by style-src nonce');
+  assert.doesNotMatch(html, /son[a-z]+="/, 'no inline event handlers');
+  for (const s of ['idle', 'planned', 'read', 'proposed', 'applied', 'rejected', 'failed', 'recovered']) assert.match(html, new RegExp(`id="badge-${s}" data-icon="[^"]+" data-label="[A-Z][a-z]+"`));
+  assert.match(html, /id="badge-power"/);
+});
