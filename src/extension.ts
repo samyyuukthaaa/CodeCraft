@@ -26,6 +26,8 @@ import {
 import { CodeCraftConfig, FALLBACK_AGENT_NAME, PRIMARY_AGENT_NAME, validateConfig } from './trueforge/config';
 import { toDisplay } from './trueforge/events';
 import { CircuitBreaker, circuitOpenBanner, providerOf } from './trueforge/breaker';
+import { healthRows, probeProviders } from './trueforge/health';
+import { runWithApprovals } from './trueforge/run';
 import { classifyError, failoverBanner, failureMessage } from './trueforge/errors';
 import { AgentAttempt, runWithFailover } from './trueforge/failover';
 import { redact } from './util/redact';
@@ -302,10 +304,50 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
     }
   }
 
+  // Provider/key health: the configured models, the breaker state, last error class and time. No key values.
+  const configuredAgents = (): Array<{ role: string; model: string; agent: string }> => {
+    const cfg = readConfig();
+    return [
+      { role: 'primary', model: cfg.primaryModel, agent: PRIMARY_AGENT_NAME },
+      { role: 'fallback', model: cfg.fallbackModel, agent: FALLBACK_AGENT_NAME },
+    ];
+  };
+  const postHealth = (post: (m: HostToWebview) => void, note?: string): void => {
+    try {
+      post({ type: 'health', rows: healthRows(breaker, configuredAgents()), ...(note ? { note } : {}) });
+    } catch {
+      // invalid settings: the next run reports them
+    }
+  };
+  breaker.onChange(() => {
+    const p = AgentPanel.currentPanel();
+    if (p) postHealth(p.post);
+  });
+
+  // "Test providers": one tiny turn per agent through TrueForge (the only live call this button makes).
+  async function testProviders(post: (m: HostToWebview) => void): Promise<void> {
+    try {
+      const cfg = readConfig();
+      const client = await ensureSetup(cfg);
+      const results = await probeProviders(breaker, configuredAgents(), async (agent) => {
+        const sid = await createSession(client, agent);
+        const r = await runWithApprovals('Reply with exactly: OK', { driver: sessionDriver(client, sid), approver: { approve: async () => ({ allow: false, reason: 'provider test only' }) } });
+        return r.status === 'done' ? undefined : r.status === 'error' ? r.message : `probe ended: ${r.status}`;
+      });
+      for (const r of results) {
+        out.appendLine(`[test providers] ${r.role} ${r.model}: ${r.ok ? 'ok' : r.errorClass}${r.recovered ? ' (recovered)' : ''}`);
+        if (r.recovered) void host?.journal.append({ t: 'provider_recovered', model: r.model });
+      }
+      postHealth(post, `Tested ${new Date().toISOString().slice(11, 16)} UTC: ${results.map((r) => `${r.role} ${r.ok ? 'ok' : (r.errorClass ?? 'failed').replace(/_/g, ' ')}`).join(', ')}`);
+    } catch (e) {
+      postHealth(post, `Test failed: ${redact(describeError(e)).slice(0, 200)}`);
+    }
+  }
+
   context.subscriptions.push(
     vscode.commands.registerCommand('codecraft.openAgentPanel', () => {
       out.show(true);
-      AgentPanel.show(context, runPrompt);
+      AgentPanel.show(context, { onPrompt: runPrompt, onTestProviders: testProviders, onReady: (post) => postHealth(post) });
     }),
     vscode.commands.registerCommand('codecraft.openCodeTown', () => {
       out.show(true);

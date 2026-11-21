@@ -16,6 +16,13 @@ const ctxRows = document.getElementById('context-rows') as HTMLElement;
 const reads = document.getElementById('reads') as HTMLElement;
 const planSummary = document.getElementById('plan-summary') as HTMLElement;
 const planRows = document.getElementById('plan-rows') as HTMLElement;
+const healthRows = document.getElementById('health-rows') as HTMLElement;
+const healthNote = document.getElementById('health-note') as HTMLElement;
+const testProviders = document.getElementById('test-providers') as HTMLButtonElement;
+testProviders.addEventListener('click', () => {
+  healthNote.textContent = 'Testing...';
+  vscode.postMessage({ type: 'testProviders' });
+});
 
 function cell(row: HTMLElement, text: string, cls?: string): void {
   const td = document.createElement('td');
@@ -35,6 +42,7 @@ window.addEventListener('message', (e: MessageEvent<HostToWebview>) => {
   const m = e.data;
   if (m.type === 'status') {
     send.disabled = m.state === 'running';
+    testProviders.disabled = m.state === 'running';
     status.textContent = m.note ? `${m.state}: ${m.note}` : m.state;
     return;
   }
@@ -52,6 +60,20 @@ window.addEventListener('message', (e: MessageEvent<HostToWebview>) => {
       ctxRows.appendChild(tr);
     }
     reads.textContent = '';
+    return;
+  }
+  if (m.type === 'health') {
+    healthRows.textContent = '';
+    for (const r of m.rows) {
+      const tr = document.createElement('tr');
+      cell(tr, r.role);
+      cell(tr, r.model);
+      cell(tr, r.status === 'paused' && r.retryAt ? `paused until ${r.retryAt.slice(11, 16)} UTC` : r.status, r.status === 'paused' ? 'paused' : undefined);
+      cell(tr, r.lastErrorClass ? r.lastErrorClass.replace(/_/g, ' ') : '-');
+      cell(tr, r.lastErrorAt ? r.lastErrorAt.replace('T', ' ').slice(0, 16) : '-');
+      healthRows.appendChild(tr);
+    }
+    healthNote.textContent = m.note ?? '';
     return;
   }
   if (m.type === 'plan') {
