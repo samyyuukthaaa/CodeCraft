@@ -1,608 +1,413 @@
+// Code Town webview. Read-only: it renders the scene and only sends typed requests (open a file, replay) that
+// the host validates. Every update goes through the same pure reducer as the host; the 3D view applies only
+// what changed (TownGraph), and the 2D fallback updates only the changed cards.
 import * as THREE from 'three';
-import { Building, SceneState, TownEvent } from '../town/types';
-import { HostToTown, TownToHost } from '../town/protocol';
+import { diffScenes } from '../town/diff';
+import { KIND_VISUALS, POWER_VISUALS, TEST_VISUALS } from '../town/grammar';
 import { initialSceneState, sceneReducer } from '../town/reducer';
-import { KIND_VISUALS, TEST_VISUALS } from '../town/grammar';
+import type { Building, SceneState, TownEvent } from '../town/types';
+import type { HostToTown, TownToHost } from '../town/protocol';
+import { CaptionPart, TextureFactory, TownGraph } from './town/graph';
 
 declare function acquireVsCodeApi(): { postMessage(msg: TownToHost): void };
 const vscode = acquireVsCodeApi();
 
-// Check for reduced motion preference
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-// DOM Elements
-const canvasContainer = document.getElementById('canvas-container') as HTMLElement;
-const fallbackView = document.getElementById('fallback-view') as HTMLElement;
-const fallbackContent = document.getElementById('fallback-content') as HTMLElement;
-const btnToggleView = document.getElementById('btn-toggle-view') as HTMLButtonElement;
-const btnResetCam = document.getElementById('btn-reset-cam') as HTMLButtonElement;
-const btnReplay = document.getElementById('btn-replay') as HTMLButtonElement;
-const activeTag = document.getElementById('active-tag') as HTMLElement;
-const tooltip = document.getElementById('tooltip') as HTMLElement;
-const ttTitle = document.getElementById('tt-title') as HTMLElement;
-const ttMeta = document.getElementById('tt-meta') as HTMLElement;
-const ttState = document.getElementById('tt-state') as HTMLElement;
+const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
+const canvasContainer = $('canvas-container');
+const fallbackView = $('fallback-view');
+const fallbackContent = $('fallback-content');
+const btnToggleView = $<HTMLButtonElement>('btn-toggle-view');
+const btnResetCam = $<HTMLButtonElement>('btn-reset-cam');
+const btnReplay = $<HTMLButtonElement>('btn-replay');
+const activeTag = $('active-tag');
+const tooltip = $('tooltip');
+const ttTitle = $('tt-title');
+const ttMeta = $('tt-meta');
+const ttState = $('tt-state');
+const powerBadge = $('badge-power');
+const STATE_KEYS = ['idle', 'planned', 'read', 'proposed', 'applied', 'rejected', 'failed', 'recovered'] as const;
+const badges = Object.fromEntries(STATE_KEYS.map((k) => [k, $(`badge-${k}`)])) as Record<(typeof STATE_KEYS)[number], HTMLElement>;
 
-const badges = {
-  idle: document.getElementById('badge-idle') as HTMLElement,
-  read: document.getElementById('badge-read') as HTMLElement,
-  proposed: document.getElementById('badge-proposed') as HTMLElement,
-  applied: document.getElementById('badge-applied') as HTMLElement,
-  rejected: document.getElementById('badge-rejected') as HTMLElement,
-  failed: document.getElementById('badge-failed') as HTMLElement,
-  planned: document.getElementById('badge-planned') as HTMLElement,
-  recovered: document.getElementById('badge-recovered') as HTMLElement,
-};
-const powerBadge = document.getElementById('badge-power') as HTMLElement;
-const POWER_TEXT = { healthy: 'healthy', retrying: 'retrying', failed_over: 'failed over', recovered: 'recovered' } as const;
+let current: SceneState = initialSceneState();
+let is3D = true;
 
-let currentState: SceneState = initialSceneState();
-let is3DMode = true;
-
-// WebGL availability check
 function isWebGLAvailable(): boolean {
   try {
-    const canvas = document.createElement('canvas');
-    return Boolean(window.WebGLRenderingContext && (canvas.getContext('webgl') || canvas.getContext('experimental-webgl')));
+    const c = document.createElement('canvas');
+    return Boolean(window.WebGLRenderingContext && (c.getContext('webgl2') || c.getContext('webgl')));
   } catch {
     return false;
   }
 }
-
 const hasWebGL = isWebGLAvailable();
-if (!hasWebGL) {
-  is3DMode = false;
-  btnToggleView.style.display = 'none';
-  fallbackView.style.display = 'block';
-  canvasContainer.style.display = 'none';
-}
 
 // ---------------------------------------------------------------------------
-// 2D Fallback Rendering
+// Canvas textures: captions (bold white, one yellow keyword) and warm windows
 // ---------------------------------------------------------------------------
-function render2D(state: SceneState): void {
-  fallbackContent.innerHTML = '';
-  const districts = Object.values(state.districts);
-  if (districts.length === 0) {
-    fallbackContent.innerHTML = '<div style="color:#64748b; font-size:12px;">No workspace files indexed yet.</div>';
-    return;
-  }
-
-  for (const dist of districts) {
-    const distDiv = document.createElement('div');
-    distDiv.className = 'fallback-district';
-
-    const nameDiv = document.createElement('div');
-    nameDiv.className = 'fallback-district-name';
-    nameDiv.textContent = `📁 ${dist.name} (${dist.buildingIds.length} files)`;
-    distDiv.appendChild(nameDiv);
-
-    const gridDiv = document.createElement('div');
-    gridDiv.className = 'fallback-grid';
-
-    for (const bId of dist.buildingIds) {
-      const b = state.buildings[bId];
-      if (!b) continue;
-
-      const card = document.createElement('div');
-      card.className = 'fallback-card';
-      if (state.activeBuildingId === b.id) {
-        card.style.borderColor = '#38bdf8';
-        card.style.boxShadow = '0 0 10px rgba(56, 189, 248, 0.4)';
-      }
-
-      const title = document.createElement('div');
-      title.className = 'fallback-card-title';
-      title.textContent = b.name;
-      title.title = b.path;
-
-      const meta = document.createElement('div');
-      meta.className = 'fallback-card-meta';
-      meta.textContent = `${KIND_VISUALS[b.kind].icon} ${KIND_VISUALS[b.kind].label} • ${b.lines} lines • ${TEST_VISUALS[b.testStatus].icon} ${TEST_VISUALS[b.testStatus].label}${b.placeholder ? ' • not in the index' : ''}`;
-
-      const status = document.createElement('div');
-      status.className = 'fallback-card-status';
-      status.style.backgroundColor = b.color + '33';
-      status.style.color = b.color;
-      status.style.border = `1px solid ${b.color}`;
-      status.textContent = `${b.icon} ${b.label}`;
-
-      card.appendChild(title);
-      card.appendChild(meta);
-      card.appendChild(status);
-
-      card.addEventListener('click', () => {
-        vscode.postMessage({ type: 'open_file', path: b.path });
-      });
-
-      gridDiv.appendChild(card);
+const textures: TextureFactory = {
+  caption(parts: CaptionPart[]) {
+    const font = '700 44px "Segoe UI", system-ui, sans-serif';
+    const c = document.createElement('canvas');
+    const ctx = c.getContext('2d')!;
+    ctx.font = font;
+    const width = Math.ceil(parts.reduce((w, p) => w + ctx.measureText(p.text).width, 0)) + 28;
+    c.width = width;
+    c.height = 64;
+    ctx.font = font;
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 8;
+    ctx.strokeStyle = 'rgba(5, 10, 28, 0.9)';
+    let x = 14;
+    for (const p of parts) {
+      ctx.strokeText(p.text, x, 34);
+      ctx.fillStyle = p.yellow ? '#facc15' : '#ffffff';
+      ctx.fillText(p.text, x, 34);
+      x += ctx.measureText(p.text).width;
     }
-
-    distDiv.appendChild(gridDiv);
-    fallbackContent.appendChild(distDiv);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Three.js 3D Night Scene
-// ---------------------------------------------------------------------------
-let scene: THREE.Scene;
-let camera: THREE.PerspectiveCamera;
-let renderer: THREE.WebGLRenderer;
-let townGroup: THREE.Group;
-let stars: THREE.Points;
-const buildingMeshes = new Map<string, THREE.Group>();
-
-function createNightWindowTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 64;
-  canvas.height = 64;
-  const ctx = canvas.getContext('2d')!;
-
-  // Building wall background
-  ctx.fillStyle = '#1e293b';
-  ctx.fillRect(0, 0, 64, 64);
-
-  // Warm glowing windows
-  ctx.fillStyle = '#fef08a';
-  for (let x = 8; x < 60; x += 16) {
-    for (let y = 8; y < 60; y += 16) {
-      if (Math.random() > 0.25) {
-        ctx.fillRect(x, y, 8, 8);
+    const texture = new THREE.CanvasTexture(c);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return { texture, aspect: c.width / c.height };
+  },
+  windows() {
+    const c = document.createElement('canvas');
+    c.width = 64;
+    c.height = 64;
+    const ctx = c.getContext('2d')!;
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, 64, 64);
+    // fixed pattern (no randomness): most windows lit warm, a few dark
+    const dark = new Set([1, 6, 11]);
+    let k = 0;
+    for (let y = 10; y < 60; y += 18)
+      for (let x = 8; x < 60; x += 16) {
+        if (!dark.has(k++)) {
+          ctx.fillStyle = '#ffd27a';
+          ctx.fillRect(x, y, 8, 9);
+        }
       }
-    }
+    const t = new THREE.CanvasTexture(c);
+    t.magFilter = THREE.NearestFilter;
+    return t;
+  },
+};
+
+// ---------------------------------------------------------------------------
+// 3D view
+// ---------------------------------------------------------------------------
+let renderer: THREE.WebGLRenderer | undefined;
+let scene3: THREE.Scene | undefined;
+let camera: THREE.PerspectiveCamera | undefined;
+let graph: TownGraph | undefined;
+const cameraTarget = new THREE.Vector3();
+const listeners: Array<() => void> = [];
+const on = (t: EventTarget, type: string, f: (e: never) => void, opts?: AddEventListenerOptions): void => {
+  t.addEventListener(type, f as EventListener, opts);
+  listeners.push(() => t.removeEventListener(type, f as EventListener, opts));
+};
+
+function starfield(): THREE.Points {
+  // deterministic sky: a small LCG instead of Math.random, so every reload looks the same
+  let seed = 7;
+  const rnd = (): number => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+  const n = prefersReducedMotion ? 500 : 900;
+  const pos = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const th = rnd() * Math.PI * 2;
+    const r = 120 + rnd() * 160;
+    pos.set([Math.cos(th) * r, 25 + rnd() * 140, Math.sin(th) * r], i * 3);
   }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.magFilter = THREE.NearestFilter;
-  texture.minFilter = THREE.NearestFilter;
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  return texture;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  return new THREE.Points(g, new THREE.PointsMaterial({ color: '#e0e7ff', size: 0.9, sizeAttenuation: true, transparent: true, opacity: 0.85, depthWrite: false }));
 }
-
-const windowTexture = hasWebGL ? createNightWindowTexture() : null;
 
 function init3D(): void {
-  if (!hasWebGL) return;
-
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x070b16);
-  scene.fog = new THREE.FogExp2(0x070b16, 0.015);
-
-  const aspect = window.innerWidth / window.innerHeight;
-  camera = new THREE.PerspectiveCamera(45, aspect, 0.5, 1000);
-  camera.position.set(0, 35, 55);
-  camera.lookAt(0, 0, 0);
-
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  scene3 = new THREE.Scene();
+  scene3.background = new THREE.Color('#0a1330');
+  scene3.fog = new THREE.FogExp2('#0a1330', 0.0028);
+  camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.5, 2000);
+  renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   canvasContainer.appendChild(renderer.domElement);
 
-  // Lighting: Low-poly night moonlight + ambient
-  const ambientLight = new THREE.AmbientLight(0x1e293b, 1.2);
-  scene.add(ambientLight);
+  scene3.add(new THREE.HemisphereLight('#6d82c9', '#141a33', 1.7));
+  const moon = new THREE.DirectionalLight('#dbe4ff', 1.6);
+  moon.position.set(40, 80, 30);
+  scene3.add(moon);
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(600, 48).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#0c1530', roughness: 1 }));
+  ground.position.y = -0.32;
+  scene3.add(ground, starfield());
 
-  const moonLight = new THREE.DirectionalLight(0xc8d6e5, 1.8);
-  moonLight.position.set(30, 60, 40);
-  scene.add(moonLight);
-
-  const softFill = new THREE.DirectionalLight(0x38bdf8, 0.6);
-  softFill.position.set(-40, 20, -30);
-  scene.add(softFill);
-
-  // Starfield
-  const starGeo = new THREE.BufferGeometry();
-  const starCount = prefersReducedMotion ? 400 : 800;
-  const starPos = new Float32Array(starCount * 3);
-  for (let i = 0; i < starCount * 3; i += 3) {
-    starPos[i] = (Math.random() - 0.5) * 300;
-    starPos[i + 1] = Math.random() * 120 + 20;
-    starPos[i + 2] = (Math.random() - 0.5) * 300;
-  }
-  starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-  const starMat = new THREE.PointsMaterial({
-    color: 0xffffff,
-    size: 1.2,
-    transparent: true,
-    opacity: 0.8,
+  graph = new TownGraph(textures, prefersReducedMotion);
+  scene3.add(graph.root);
+  setupControls(renderer.domElement);
+  on(window, 'resize', () => {
+    if (!renderer || !camera) return;
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
   });
-  stars = new THREE.Points(starGeo, starMat);
-  scene.add(stars);
-
-  townGroup = new THREE.Group();
-  scene.add(townGroup);
-
-  setupControls();
-  window.addEventListener('resize', onWindowResize);
-  animate();
+  resetCamera();
+  loop();
 }
 
-// ---------------------------------------------------------------------------
-// Camera Controls (Simple Orbit + Pan + Zoom)
-// ---------------------------------------------------------------------------
-let isDragging = false;
-let isRightDragging = false;
-let previousMousePosition = { x: 0, y: 0 };
-let cameraTarget = new THREE.Vector3(0, 0, 0);
-
-function setupControls(): void {
-  const dom = renderer.domElement;
-
-  dom.addEventListener('mousedown', (e) => {
-    if (e.button === 0) isDragging = true;
-    if (e.button === 2) isRightDragging = true;
-    previousMousePosition = { x: e.clientX, y: e.clientY };
-  });
-
-  window.addEventListener('mouseup', () => {
-    isDragging = false;
-    isRightDragging = false;
-  });
-
-  dom.addEventListener('contextmenu', (e) => e.preventDefault());
-
-  window.addEventListener('mousemove', (e) => {
-    if (isDragging) {
-      const deltaX = e.clientX - previousMousePosition.x;
-      const deltaY = e.clientY - previousMousePosition.y;
-
-      const rotSpeed = 0.005;
-      const radius = camera.position.distanceTo(cameraTarget);
-      const theta = Math.atan2(camera.position.x - cameraTarget.x, camera.position.z - cameraTarget.z) - deltaX * rotSpeed;
-      let phi = Math.atan2(Math.sqrt((camera.position.x - cameraTarget.x) ** 2 + (camera.position.z - cameraTarget.z) ** 2), camera.position.y - cameraTarget.y) - deltaY * rotSpeed;
-      phi = Math.max(0.1, Math.min(Math.PI / 2 - 0.05, phi));
-
-      camera.position.x = cameraTarget.x + radius * Math.sin(phi) * Math.sin(theta);
-      camera.position.y = cameraTarget.y + radius * Math.cos(phi);
-      camera.position.z = cameraTarget.z + radius * Math.sin(phi) * Math.cos(theta);
-      camera.lookAt(cameraTarget);
-    } else if (isRightDragging) {
-      const deltaX = e.clientX - previousMousePosition.x;
-      const deltaY = e.clientY - previousMousePosition.y;
-      const panSpeed = 0.08;
-
-      const forward = new THREE.Vector3();
-      camera.getWorldDirection(forward);
-      forward.y = 0;
-      forward.normalize();
-      const right = new THREE.Vector3();
-      right.crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
-
-      const panOffset = right.clone().multiplyScalar(-deltaX * panSpeed).add(forward.clone().multiplyScalar(deltaY * panSpeed));
-      camera.position.add(panOffset);
-      cameraTarget.add(panOffset);
-    } else {
-      handleRaycast(e);
-    }
-    previousMousePosition = { x: e.clientX, y: e.clientY };
-  });
-
-  dom.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    const zoomFactor = e.deltaY * 0.05;
-    const dir = new THREE.Vector3().subVectors(camera.position, cameraTarget).normalize();
-    const dist = camera.position.distanceTo(cameraTarget);
-    const newDist = Math.max(10, Math.min(150, dist + zoomFactor));
-    camera.position.copy(cameraTarget).add(dir.multiplyScalar(newDist));
-  }, { passive: false });
-
-  dom.addEventListener('click', (e) => {
-    const b = getBuildingUnderMouse(e);
-    if (b) {
-      vscode.postMessage({ type: 'open_file', path: b.path });
-    }
-  });
+let frame = 0;
+const clock = new THREE.Clock();
+function loop(): void {
+  frame = requestAnimationFrame(loop);
+  if (!renderer || !scene3 || !camera || !is3D) return;
+  graph?.tick(clock.getElapsedTime());
+  renderer.render(scene3, camera);
 }
 
 function resetCamera(): void {
-  cameraTarget.set(0, 0, 0);
-  camera.position.set(0, 35, 55);
-  camera.lookAt(0, 0, 0);
+  if (!camera) return;
+  const b = graph?.bounds;
+  // frame the whole town plus the power plant on its east side
+  const minX = b ? b.minX : -20;
+  const maxX = b ? b.maxX + 18 : 20;
+  const span = b ? Math.max(maxX - minX, b.maxZ - b.minZ) : 40;
+  cameraTarget.set((minX + maxX) / 2, 0, b ? (b.minZ + b.maxZ) / 2 : 0);
+  camera.position.set(cameraTarget.x, span * 0.58 + 8, cameraTarget.z + span * 0.72 + 10);
+  camera.lookAt(cameraTarget);
 }
 
-function onWindowResize(): void {
-  if (!renderer || !camera) return;
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+// orbit (left drag), pan (right drag), zoom (wheel), hover tooltip, click opens the file
+function setupControls(dom: HTMLCanvasElement): void {
+  let drag = 0;
+  let last = { x: 0, y: 0 };
+  on(dom, 'mousedown', (e: MouseEvent) => {
+    drag = e.button === 2 ? 2 : 1;
+    last = { x: e.clientX, y: e.clientY };
+  });
+  on(window, 'mouseup', () => (drag = 0));
+  on(dom, 'contextmenu', (e: MouseEvent) => e.preventDefault());
+  on(window, 'mousemove', (e: MouseEvent) => {
+    if (!camera) return;
+    const dx = e.clientX - last.x;
+    const dy = e.clientY - last.y;
+    last = { x: e.clientX, y: e.clientY };
+    if (drag === 1) {
+      const off = camera.position.clone().sub(cameraTarget);
+      const sph = new THREE.Spherical().setFromVector3(off);
+      sph.theta -= dx * 0.005;
+      sph.phi = Math.max(0.15, Math.min(Math.PI / 2 - 0.05, sph.phi - dy * 0.005));
+      camera.position.copy(cameraTarget).add(new THREE.Vector3().setFromSpherical(sph));
+      camera.lookAt(cameraTarget);
+    } else if (drag === 2) {
+      const fwd = new THREE.Vector3();
+      camera.getWorldDirection(fwd);
+      fwd.y = 0;
+      fwd.normalize();
+      const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
+      const pan = right.multiplyScalar(-dx * 0.08).add(fwd.multiplyScalar(dy * 0.08));
+      camera.position.add(pan);
+      cameraTarget.add(pan);
+    } else hover(e);
+  });
+  on(
+    dom,
+    'wheel',
+    (e: WheelEvent) => {
+      if (!camera) return;
+      e.preventDefault();
+      const dir = camera.position.clone().sub(cameraTarget).normalize();
+      const dist = Math.max(8, Math.min(600, camera.position.distanceTo(cameraTarget) + e.deltaY * 0.05));
+      camera.position.copy(cameraTarget).add(dir.multiplyScalar(dist));
+    },
+    { passive: false },
+  );
+  on(dom, 'click', (e: MouseEvent) => {
+    const b = buildingAt(e);
+    if (b) vscode.postMessage({ type: 'open_file', path: b.path });
+  });
 }
 
-// ---------------------------------------------------------------------------
-// Raycasting & Tooltips
-// ---------------------------------------------------------------------------
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
-function getBuildingUnderMouse(e: MouseEvent): Building | undefined {
-  if (!renderer || !camera) return undefined;
-  const rect = renderer.domElement.getBoundingClientRect();
-  mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-  mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
+function buildingAt(e: MouseEvent): Building | undefined {
+  if (!renderer || !camera || !graph) return undefined;
+  const r = renderer.domElement.getBoundingClientRect();
+  mouse.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(mouse, camera);
-  const intersects = raycaster.intersectObjects(townGroup.children, true);
+  const id = graph.pick(raycaster);
+  return id ? current.buildings[id] : undefined;
+}
 
-  for (const hit of intersects) {
-    let curr: THREE.Object3D | null = hit.object;
-    while (curr && curr !== townGroup) {
-      if (curr.userData?.building) {
-        return curr.userData.building as Building;
-      }
-      curr = curr.parent;
+function hover(e: MouseEvent): void {
+  const b = buildingAt(e);
+  if (!b) {
+    tooltip.classList.remove('show');
+    document.body.classList.remove('pointer');
+    return;
+  }
+  tooltip.classList.add('show');
+  tooltip.style.left = `${e.clientX + 14}px`;
+  tooltip.style.top = `${e.clientY + 14}px`;
+  ttTitle.textContent = b.path;
+  ttMeta.textContent = `${KIND_VISUALS[b.kind].icon} ${KIND_VISUALS[b.kind].label} • ${b.lines} lines • ${TEST_VISUALS[b.testStatus].icon} ${TEST_VISUALS[b.testStatus].label}`;
+  ttState.textContent = `${b.icon} ${b.label}${b.lastAction ? `: ${b.lastAction.detail}` : ''}`;
+  ttState.style.color = b.color;
+  ttState.style.borderColor = b.color;
+  document.body.classList.add('pointer');
+}
+
+// ---------------------------------------------------------------------------
+// 2D fallback (also incremental: one card per building, only changed cards are touched)
+// ---------------------------------------------------------------------------
+const cards = new Map<string, HTMLElement>();
+function cardFor(b: Building): HTMLElement {
+  const card = document.createElement('div');
+  card.className = 'fallback-card';
+  const title = document.createElement('div');
+  title.className = 'fallback-card-title';
+  const meta = document.createElement('div');
+  meta.className = 'fallback-card-meta';
+  const status = document.createElement('div');
+  status.className = 'fallback-card-status';
+  card.append(title, meta, status);
+  card.addEventListener('click', () => vscode.postMessage({ type: 'open_file', path: b.path }));
+  return card;
+}
+function fillCard(card: HTMLElement, b: Building, active: boolean): void {
+  const [title, meta, status] = Array.from(card.children) as HTMLElement[];
+  title!.textContent = b.name;
+  title!.title = b.path;
+  meta!.textContent = `${KIND_VISUALS[b.kind].icon} ${KIND_VISUALS[b.kind].label} • ${b.lines} lines • ${TEST_VISUALS[b.testStatus].icon} ${TEST_VISUALS[b.testStatus].label}${b.placeholder ? ' • not in the index' : ''}`;
+  status!.textContent = `${b.icon} ${b.label}`;
+  status!.style.color = b.color;
+  status!.style.borderColor = b.color;
+  card.classList.toggle('active', active);
+}
+function rebuild2D(s: SceneState): void {
+  fallbackContent.replaceChildren();
+  cards.clear();
+  if (!Object.keys(s.districts).length) {
+    const empty = document.createElement('div');
+    empty.className = 'muted';
+    empty.textContent = 'No workspace files indexed yet.';
+    fallbackContent.append(empty);
+    return;
+  }
+  for (const d of Object.values(s.districts).sort((a, b) => a.id.localeCompare(b.id))) {
+    const wrap = document.createElement('div');
+    wrap.className = 'fallback-district';
+    const name = document.createElement('div');
+    name.className = 'fallback-district-name';
+    name.textContent = `${d.name} (${d.buildingIds.length} files)${d.aggregated ? ' +' : ''}`;
+    const grid = document.createElement('div');
+    grid.className = 'fallback-grid';
+    for (const id of d.buildingIds) {
+      const b = s.buildings[id];
+      if (!b) continue;
+      const card = cardFor(b);
+      fillCard(card, b, s.activeBuildingId === id);
+      cards.set(id, card);
+      grid.append(card);
     }
+    wrap.append(name, grid);
+    fallbackContent.append(wrap);
   }
-  return undefined;
 }
-
-function handleRaycast(e: MouseEvent): void {
-  const b = getBuildingUnderMouse(e);
-  if (b) {
-    tooltip.style.display = 'block';
-    tooltip.style.left = `${e.clientX + 14}px`;
-    tooltip.style.top = `${e.clientY + 14}px`;
-    ttTitle.textContent = b.name;
-    ttMeta.textContent = `${b.district} • ${b.lines} lines • ${b.language}`;
-    ttState.textContent = `${b.icon} ${b.label}`;
-    ttState.style.backgroundColor = b.color + '33';
-    ttState.style.color = b.color;
-    ttState.style.border = `1px solid ${b.color}`;
-    document.body.style.cursor = 'pointer';
-  } else {
-    tooltip.style.display = 'none';
-    document.body.style.cursor = 'default';
+function update2D(prev: SceneState | undefined, s: SceneState): void {
+  const d = diffScenes(prev, s);
+  if (d.rebuild || d.addedDistricts.length || d.added.length) return rebuild2D(s);
+  const touched = new Set([...d.changed, ...(prev?.activeBuildingId ? [prev.activeBuildingId] : []), ...(s.activeBuildingId ? [s.activeBuildingId] : [])]);
+  for (const id of touched) {
+    const card = cards.get(id);
+    const b = s.buildings[id];
+    if (card && b) fillCard(card, b, s.activeBuildingId === id);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Town 3D Builder
+// HUD and state updates
 // ---------------------------------------------------------------------------
-function buildTown3D(state: SceneState): void {
-  if (!hasWebGL) return;
+function updateHud(s: SceneState): void {
+  for (const k of STATE_KEYS) badges[k].textContent = `${badges[k].dataset.icon ?? ''} ${badges[k].dataset.label ?? k}: ${s.stats[k]}`;
+  const pv = POWER_VISUALS[s.power.status];
+  powerBadge.textContent = `${pv.icon} Provider: ${pv.label}${s.power.model ? ` (${s.power.model})` : ''}`;
+  powerBadge.style.borderLeftColor = pv.color;
+  const b = s.activeBuildingId ? s.buildings[s.activeBuildingId] : undefined;
+  activeTag.textContent = b ? `• ${b.icon} ${b.label}: ${b.name}` : '';
+}
 
-  // Clear existing
-  while (townGroup.children.length > 0) {
-    const obj = townGroup.children[0];
-    if (obj) townGroup.remove(obj);
-  }
-  buildingMeshes.clear();
+function show(next: SceneState): void {
+  const prev = current;
+  current = next;
+  updateHud(next);
+  if (is3D) graph?.sync(next);
+  else update2D(prev, next);
+}
 
-  const districts = Object.values(state.districts);
-  if (districts.length === 0) return;
-
-  // Lay out districts on a grid
-  const distCols = Math.ceil(Math.sqrt(districts.length));
-  const distSpacing = 28;
-
-  districts.forEach((dist, dIdx) => {
-    const col = dIdx % distCols;
-    const row = Math.floor(dIdx / distCols);
-    const centerX = (col - (distCols - 1) / 2) * distSpacing;
-    const centerZ = (row - (distCols - 1) / 2) * distSpacing;
-
-    const bCount = dist.buildingIds.length;
-    const bCols = Math.ceil(Math.sqrt(bCount || 1));
-    const bSpacing = 4.5;
-    const distWidth = Math.max(8, bCols * bSpacing + 4);
-    const distDepth = Math.max(8, Math.ceil(bCount / bCols) * bSpacing + 4);
-
-    // District ground slab (dark asphalt with neon edge)
-    const slabGeo = new THREE.BoxGeometry(distWidth, 0.4, distDepth);
-    const slabMat = new THREE.MeshLambertMaterial({ color: 0x0f172a });
-    const slab = new THREE.Mesh(slabGeo, slabMat);
-    slab.position.set(centerX, -0.2, centerZ);
-    townGroup.add(slab);
-
-    // District border outline
-    const borderGeo = new THREE.EdgesGeometry(slabGeo);
-    const borderMat = new THREE.LineBasicMaterial({ color: 0x334155, linewidth: 1 });
-    const border = new THREE.LineSegments(borderGeo, borderMat);
-    border.position.copy(slab.position);
-    townGroup.add(border);
-
-    // Buildings inside district
-    dist.buildingIds.forEach((bId, bIdx) => {
-      const b = state.buildings[bId];
-      if (!b) return;
-
-      const bx = (bIdx % bCols - (bCols - 1) / 2) * bSpacing;
-      const bz = (Math.floor(bIdx / bCols) - (Math.ceil(bCount / bCols) - 1) / 2) * bSpacing;
-
-      const bGroup = new THREE.Group();
-      bGroup.position.set(centerX + bx, 0, centerZ + bz);
-      bGroup.userData = { building: b };
-
-      const bHeight = Math.max(1.2, b.height * 0.9);
-      const bWidth = 2.4;
-      const bDepth = 2.4;
-
-      // Building geometry
-      const bGeo = new THREE.BoxGeometry(bWidth, bHeight, bDepth);
-
-      // Building material: state color + window pattern
-      const stateColor = new THREE.Color(b.color);
-      const bMat = new THREE.MeshLambertMaterial({
-        color: stateColor,
-        map: windowTexture,
-        emissive: stateColor,
-        emissiveIntensity: b.state === 'idle' ? 0.05 : 0.4,
-      });
-
-      const bMesh = new THREE.Mesh(bGeo, bMat);
-      bMesh.position.y = bHeight / 2;
-      bMesh.castShadow = true;
-      bMesh.receiveShadow = true;
-      bGroup.add(bMesh);
-
-      // Rooftop Beacon / Status Glow
-      const beaconGeo = new THREE.SphereGeometry(0.4, 8, 8);
-      const beaconMat = new THREE.MeshBasicMaterial({
-        color: stateColor,
-      });
-      const beacon = new THREE.Mesh(beaconGeo, beaconMat);
-      beacon.position.y = bHeight + 0.4;
-      bGroup.add(beacon);
-
-      // Highlight ring if active
-      if (state.activeBuildingId === b.id) {
-        const ringGeo = new THREE.RingGeometry(1.6, 1.9, 16);
-        const ringMat = new THREE.MeshBasicMaterial({
-          color: 0x38bdf8,
-          side: THREE.DoubleSide,
-        });
-        const ring = new THREE.Mesh(ringGeo, ringMat);
-        ring.rotation.x = -Math.PI / 2;
-        ring.position.y = 0.02;
-        bGroup.add(ring);
-      }
-
-      townGroup.add(bGroup);
-      buildingMeshes.set(b.id, bGroup);
-    });
-  });
+function setMode3D(want: boolean): void {
+  is3D = want && hasWebGL;
+  btnToggleView.textContent = is3D ? 'Switch to 2D' : 'Switch to 3D';
+  fallbackView.classList.toggle('show', !is3D);
+  canvasContainer.classList.toggle('hidden', !is3D);
+  if (is3D) graph?.sync(current);
+  else rebuild2D(current);
 }
 
 // ---------------------------------------------------------------------------
-// Animation Loop
+// Replay of the run's journal events (same reducer)
 // ---------------------------------------------------------------------------
-let clock = new THREE.Clock();
-
-function animate(): void {
-  requestAnimationFrame(animate);
-
-  const time = clock.getElapsedTime();
-
-  // Subtle starfield twinkling if motion is enabled
-  if (stars && !prefersReducedMotion) {
-    stars.rotation.y = time * 0.01;
-  }
-
-  // Active building beacon pulse
-  if (currentState.activeBuildingId && !prefersReducedMotion) {
-    const activeMesh = buildingMeshes.get(currentState.activeBuildingId);
-    if (activeMesh) {
-      const beacon = activeMesh.children[1];
-      if (beacon) {
-        const s = 1.0 + Math.sin(time * 6) * 0.25;
-        beacon.scale.set(s, s, s);
-      }
-    }
-  }
-
-  if (renderer && scene && camera) {
-    renderer.render(scene, camera);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// State Updates & UI Sync
-// ---------------------------------------------------------------------------
-function updateUI(state: SceneState): void {
-  badges.idle.textContent = `◻ Idle: ${state.stats.idle}`;
-  badges.read.textContent = `👁 Read: ${state.stats.read}`;
-  badges.proposed.textContent = `✏ Proposed: ${state.stats.proposed}`;
-  badges.applied.textContent = `✔ Applied: ${state.stats.applied}`;
-  badges.rejected.textContent = `⊘ Rejected: ${state.stats.rejected}`;
-  badges.failed.textContent = `⚠ Failed: ${state.stats.failed}`;
-  badges.planned.textContent = `☐ Planned: ${state.stats.planned}`;
-  badges.recovered.textContent = `↺ Recovered: ${state.stats.recovered}`;
-  powerBadge.textContent = `⚡ Provider: ${POWER_TEXT[state.power.status]}${state.power.model ? ` (${state.power.model})` : ''}`;
-
-  if (state.activeBuildingId) {
-    const b = state.buildings[state.activeBuildingId];
-    if (b) {
-      activeTag.textContent = `• Active: ${b.name} (${b.icon} ${b.label})`;
-      activeTag.style.color = b.color;
-    }
-  } else {
-    activeTag.textContent = '';
-  }
-
-  if (is3DMode) {
-    buildTown3D(state);
-  } else {
-    render2D(state);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Event Handlers & VS Code Message Dispatch
-// ---------------------------------------------------------------------------
-let recordedJournal: TownEvent[] = [];
-let replayTimer: ReturnType<typeof setInterval> | null = null;
-
-function replayJournal(): void {
-  if (recordedJournal.length === 0) return;
+let recorded: TownEvent[] = [];
+let replayTimer: ReturnType<typeof setInterval> | undefined;
+function replay(): void {
+  if (!recorded.length) return;
   if (replayTimer) clearInterval(replayTimer);
-
-  // Reset to idle
-  currentState = sceneReducer(currentState, { type: 'reset' });
-  updateUI(currentState);
-
-  let step = 0;
-  if (btnReplay) btnReplay.disabled = true;
-
-  replayTimer = setInterval(() => {
-    if (step >= recordedJournal.length) {
-      if (replayTimer) clearInterval(replayTimer);
-      replayTimer = null;
-      if (btnReplay) btnReplay.disabled = false;
-      return;
-    }
-    const ev = recordedJournal[step] as TownEvent;
-    currentState = sceneReducer(currentState, ev);
-    updateUI(currentState);
-    step++;
-  }, prefersReducedMotion ? 50 : 250);
+  show(sceneReducer(current, { type: 'reset' }));
+  let i = 0;
+  btnReplay.disabled = true;
+  replayTimer = setInterval(
+    () => {
+      const ev = recorded[i++];
+      if (!ev) {
+        clearInterval(replayTimer);
+        replayTimer = undefined;
+        btnReplay.disabled = false;
+        return;
+      }
+      show(sceneReducer(current, ev));
+    },
+    prefersReducedMotion ? 50 : 250,
+  );
 }
 
-btnToggleView.addEventListener('click', () => {
-  if (!hasWebGL) return;
-  is3DMode = !is3DMode;
-  if (is3DMode) {
-    btnToggleView.textContent = 'Switch to 2D';
-    fallbackView.style.display = 'none';
-    canvasContainer.style.display = 'block';
-    buildTown3D(currentState);
-  } else {
-    btnToggleView.textContent = 'Switch to 3D';
-    fallbackView.style.display = 'block';
-    canvasContainer.style.display = 'none';
-    render2D(currentState);
-  }
+on(btnToggleView, 'click', () => setMode3D(!is3D));
+on(btnResetCam, 'click', resetCamera);
+on(btnReplay, 'click', () => {
+  vscode.postMessage({ type: 'replay_run' });
+  replay();
 });
 
-btnResetCam.addEventListener('click', resetCamera);
-if (btnReplay) {
-  btnReplay.addEventListener('click', () => {
-    vscode.postMessage({ type: 'replay_run' });
-    replayJournal();
-  });
-}
-
-window.addEventListener('message', (event: MessageEvent<HostToTown>) => {
+on(window, 'message', (event: MessageEvent<HostToTown>) => {
   const m = event.data;
   if (!m || typeof m !== 'object') return;
-
   if (m.type === 'scene') {
-    currentState = m.state;
-    updateUI(currentState);
-  } else if (m.type === 'journal') {
-    recordedJournal = m.events;
-  } else if (m.type === 'event') {
-    if (m.event.type !== 'reset' && m.event.type !== 'init') {
-      recordedJournal.push(m.event);
-    }
-    currentState = sceneReducer(currentState, m.event);
-    updateUI(currentState);
-  } else if (m.type === 'focus') {
-    currentState = {
-      ...currentState,
-      activeBuildingId: m.path,
-    };
-    updateUI(currentState);
-  }
+    // a full scene from the host replaces the old one: one rebuild, then only increments
+    current = m.state;
+    updateHud(current);
+    graph?.rebuild(current);
+    if (!is3D) rebuild2D(current);
+    resetCamera();
+  } else if (m.type === 'journal') recorded = m.events;
+  else if (m.type === 'event') show(sceneReducer(current, m.event));
 });
 
-// Start Three.js
-init3D();
+// Clean shutdown: stop the loop, remove every listener, free GPU resources.
+on(window, 'unload', () => {
+  cancelAnimationFrame(frame);
+  if (replayTimer) clearInterval(replayTimer);
+  for (const off of listeners.splice(0)) off();
+  graph?.dispose();
+  renderer?.dispose();
+});
+
+if (hasWebGL) init3D();
+else btnToggleView.classList.add('hidden');
+setMode3D(hasWebGL);

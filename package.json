@@ -108,6 +108,7 @@
     "failure-table": "node esbuild.mjs --scenarios && node out/scenarios/failure-table.js",
     "capture-errors": "node esbuild.mjs --scenarios && node out/scenarios/capture-errors.js",
     "ask-user": "node esbuild.mjs --scenarios && node out/scenarios/ask-user.js",
+    "town-preview": "node esbuild.mjs && node esbuild.mjs --scenarios && node out/scenarios/town-preview.js",
     "test:vscode": "node esbuild.mjs && node esbuild.mjs --vscode && node out/vscode/run.js",
     "writeup": "node scripts/writeup-pdf.mjs"
   },
