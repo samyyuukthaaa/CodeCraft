@@ -71,11 +71,11 @@ test('sceneReducer: transitions building states correctly with icons, colors, an
     { path: 'src/util.ts', lines: 50 },
   ];
 
-  let state = sceneReducer(initialSceneState(), { type: 'init', files });
+  let state = sceneReducer(initialSceneState(), { type: 'init', files, at: 1 });
   assert.equal(state.stats.idle, 2);
 
   // 1. file_read
-  state = sceneReducer(state, { type: 'file_read', path: 'src/app.ts' });
+  state = sceneReducer(state, { type: 'file_read', path: 'src/app.ts', at: 2 });
   const appRead = state.buildings['src/app.ts'];
   assert.ok(appRead);
   assert.equal(appRead.state, 'read');
@@ -87,7 +87,7 @@ test('sceneReducer: transitions building states correctly with icons, colors, an
   assert.equal(state.activeBuildingId, 'src/app.ts');
 
   // 2. hunk_proposed
-  state = sceneReducer(state, { type: 'hunk_proposed', path: 'src/app.ts', reason: 'refactor' });
+  state = sceneReducer(state, { type: 'hunk_proposed', path: 'src/app.ts', intent: 'refactor', hunks: 2, reason: 'refactor', at: 3 });
   const appProp = state.buildings['src/app.ts'];
   assert.ok(appProp);
   assert.equal(appProp.state, 'proposed');
@@ -96,8 +96,8 @@ test('sceneReducer: transitions building states correctly with icons, colors, an
   assert.equal(appProp.label, STATE_VISUALS.proposed.label);
   assert.equal(state.stats.proposed, 1);
 
-  // 3. hunk_decided rejected
-  state = sceneReducer(state, { type: 'hunk_decided', path: 'src/app.ts', decision: 'rejected' });
+  // 3. every hunk rejected
+  state = sceneReducer(state, { type: 'hunk_decided', path: 'src/app.ts', accepted: 0, rejected: 2, at: 4 });
   const appRej = state.buildings['src/app.ts'];
   assert.ok(appRej);
   assert.equal(appRej.state, 'rejected');
@@ -107,7 +107,7 @@ test('sceneReducer: transitions building states correctly with icons, colors, an
   assert.equal(state.stats.rejected, 1);
 
   // 4. file_written (applied)
-  state = sceneReducer(state, { type: 'file_written', path: 'src/app.ts' });
+  state = sceneReducer(state, { type: 'file_written', path: 'src/app.ts', opId: 'op1', accepted: 1, rejected: 1, created: false, at: 5 });
   const appApp = state.buildings['src/app.ts'];
   assert.ok(appApp);
   assert.equal(appApp.state, 'applied');
@@ -116,8 +116,8 @@ test('sceneReducer: transitions building states correctly with icons, colors, an
   assert.equal(appApp.label, STATE_VISUALS.applied.label);
   assert.equal(state.stats.applied, 1);
 
-  // 5. model_failed
-  state = sceneReducer(state, { type: 'model_failed', path: 'src/util.ts', error: 'Syntax error' });
+  // 5. a failing test marks the building failed (provider errors never do: see town-journal tests)
+  state = sceneReducer(state, { type: 'file_failed', path: 'src/util.ts', reason: 'a test that passed before now fails', at: 6 });
   const utilFailed = state.buildings['src/util.ts'];
   assert.ok(utilFailed);
   assert.equal(utilFailed.state, 'failed');
@@ -135,16 +135,17 @@ test('sceneReducer: transitions building states correctly with icons, colors, an
   assert.equal(state.buildings['src/util.ts'].state, 'idle');
 });
 
-test('sceneReducer: handles unindexed dynamic files on the fly', () => {
-  const state = sceneReducer(initialSceneState(), {
-    type: 'file_read',
-    path: 'new_folder/dynamic.ts',
-  });
+test('sceneReducer: a file not in the index becomes a placeholder lot (no guessed size)', () => {
+  const state = sceneReducer(initialSceneState(), { type: 'file_read', path: 'new_folder/dynamic.ts', at: 10 });
 
   const b = state.buildings['new_folder/dynamic.ts'];
   assert.ok(b);
   assert.equal(b.state, 'read');
   assert.equal(b.district, 'new_folder');
   assert.equal(b.name, 'dynamic.ts');
+  assert.equal(b.placeholder, true);
+  assert.equal(b.lines, 0);
+  assert.equal(b.height, 1, 'the minimum height, not a guessed 50-line building');
+  assert.equal(b.language, 'typescript');
   assert.equal(state.totalBuildings, 1);
 });

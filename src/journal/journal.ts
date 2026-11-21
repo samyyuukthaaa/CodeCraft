@@ -30,6 +30,10 @@ export type JournalEntry =
   /** Some groups of an applied change set were rolled back; the operation's other files stay applied. */
   | { t: 'files_undone'; runId: string; at: number; opId: string; files: string[] }
   | { t: 'report_exported'; runId: string; at: number; reportRunId: string }
+  // Code Town: what the agent read, what it proposed, and the per-hunk decision for every file of a proposal.
+  | { t: 'file_read'; runId: string; at: number; path: string }
+  | { t: 'op_proposed'; runId: string; at: number; files: Array<{ path: string; intent: string; hunks: number; created: boolean }>; reason?: string }
+  | { t: 'review'; runId: string; at: number; files: Array<{ path: string; accepted: number; rejected: number }> }
   | { t: 'metrics'; runId: string; at: number; model: string; inputTokens?: number; outputTokens?: number; costUsd?: number; elapsedMs: number; filesRead: number; filesTotal: number };
 
 /** Which test run a `tests` entry is: the agent's run_tests, or CodeCraft's own runs around a change (P5). */
@@ -69,6 +73,7 @@ export class Journal {
   private loaded = false;
   private writing: Promise<void> = Promise.resolve();
   private readonly seqByRun = new Map<string, number>();
+  private readonly listeners = new Set<(e: JournalEntry) => void>();
   /** The current run, set by the host at run start ('' outside a run). */
   runId = '';
 
@@ -98,9 +103,16 @@ export class Journal {
     this.seqByRun.set(runId, seq);
     const full = redactDeep({ ...e, runId, at: this.now(), seq }) as unknown as JournalEntry;
     this.entries.push(full);
+    for (const l of this.listeners) l(full);
     const line = JSON.stringify(full);
     this.writing = this.writing.then(() => this.sink.append(line));
     return this.writing;
+  }
+
+  /** Called with every new (redacted) entry, e.g. to update Code Town live. Returns the unsubscribe function. */
+  onAppend(listener: (e: JournalEntry) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
   /** The last persisted stream position of a run (for resume after a restart). */

@@ -29,7 +29,11 @@ const badges = {
   applied: document.getElementById('badge-applied') as HTMLElement,
   rejected: document.getElementById('badge-rejected') as HTMLElement,
   failed: document.getElementById('badge-failed') as HTMLElement,
+  planned: document.getElementById('badge-planned') as HTMLElement,
+  recovered: document.getElementById('badge-recovered') as HTMLElement,
 };
+const powerBadge = document.getElementById('badge-power') as HTMLElement;
+const POWER_TEXT = { healthy: 'healthy', retrying: 'retrying', failed_over: 'failed over', recovered: 'recovered' } as const;
 
 let currentState: SceneState = initialSceneState();
 let is3DMode = true;
@@ -499,6 +503,9 @@ function updateUI(state: SceneState): void {
   badges.applied.textContent = `✔ Applied: ${state.stats.applied}`;
   badges.rejected.textContent = `⊘ Rejected: ${state.stats.rejected}`;
   badges.failed.textContent = `⚠ Failed: ${state.stats.failed}`;
+  badges.planned.textContent = `☐ Planned: ${state.stats.planned}`;
+  badges.recovered.textContent = `↺ Recovered: ${state.stats.recovered}`;
+  powerBadge.textContent = `⚡ Provider: ${POWER_TEXT[state.power.status]}${state.power.model ? ` (${state.power.model})` : ''}`;
 
   if (state.activeBuildingId) {
     const b = state.buildings[state.activeBuildingId];

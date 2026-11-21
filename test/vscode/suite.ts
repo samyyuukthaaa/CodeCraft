@@ -38,6 +38,26 @@ it('CodeCraft: Open Agent Panel opens the webview panel', async () => {
   assert.ok(tabs.includes('CodeCraft Agent'), `tabs: ${tabs.join(', ')}`);
 });
 
+it('Code Town: opens, builds the town from the index, and follows the journal live (provider errors only on the power plant)', async () => {
+  fs.writeFileSync(path.join(root().fsPath, 'town_probe.py'), 'x = 1\n');
+  const api = vscode.extensions.getExtension('codecraft-dev.codecraft')!.exports as { journal?: { append(e: unknown): Promise<void> }; town(): { buildings: Record<string, { state: string }>; power: { status: string }; stats: { failed: number } } | undefined };
+  await vscode.commands.executeCommand('codecraft.openCodeTown');
+  const wait = async (ok: () => boolean, what: string) => {
+    for (let i = 0; i < 50 && !ok(); i++) await new Promise((r) => setTimeout(r, 100));
+    assert.ok(ok(), what);
+  };
+  const tabs = () => vscode.window.tabGroups.all.flatMap((g) => g.tabs.map((t) => t.label));
+  await wait(() => tabs().includes('CodeCraft: Code Town'), `Code Town tab; tabs: ${tabs().join(', ')}`);
+  await wait(() => Boolean(api.town()?.buildings['town_probe.py']), 'the index file appears as a building');
+  assert.ok(api.journal, 'journal handle');
+  await api.journal!.append({ t: 'run_started', request: 'vscode town test' });
+  await api.journal!.append({ t: 'file_read', path: 'town_probe.py' });
+  await api.journal!.append({ t: 'provider_error', model: 'test/model', cls: 'rate_limit' });
+  await wait(() => api.town()?.buildings['town_probe.py']?.state === 'read', 'the read reaches the town live');
+  assert.equal(api.town()!.power.status, 'retrying');
+  assert.equal(api.town()!.stats.failed, 0, 'a provider error never marks a building failed');
+});
+
 it('CodeCraft: Undo Last Change with nothing to undo does not throw', async () => {
   await vscode.commands.executeCommand('codecraft.undoLastChange');
 });

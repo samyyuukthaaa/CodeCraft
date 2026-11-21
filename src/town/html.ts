@@ -95,6 +95,9 @@ export function buildTownHtml(opts: { cspSource: string; nonce: string; scriptUr
   .stat-applied { border-left: 3px solid #16a34a; }
   .stat-rejected { border-left: 3px solid #94a3b8; }
   .stat-failed { border-left: 3px solid #ef4444; }
+  .stat-planned { border-left: 3px solid #a78bfa; }
+  .stat-recovered { border-left: 3px solid #14b8a6; }
+  .stat-power { border-left: 3px solid #facc15; }
   
   .controls-group {
     display: flex;
@@ -209,11 +212,14 @@ export function buildTownHtml(opts: { cspSource: string; nonce: string; scriptUr
       <div class="hud-title"><span>🏙️</span> Code Town <span id="active-tag" style="font-size:11px; font-weight:normal; opacity:0.8; margin-left:8px;"></span></div>
       <div class="stats-bar" id="stats-bar">
         <div class="stat-badge stat-idle" id="badge-idle">◻ Idle: 0</div>
+        <div class="stat-badge stat-planned" id="badge-planned">☐ Planned: 0</div>
         <div class="stat-badge stat-read" id="badge-read">👁 Read: 0</div>
         <div class="stat-badge stat-proposed" id="badge-proposed">✏ Proposed: 0</div>
         <div class="stat-badge stat-applied" id="badge-applied">✔ Applied: 0</div>
         <div class="stat-badge stat-rejected" id="badge-rejected">⊘ Rejected: 0</div>
         <div class="stat-badge stat-failed" id="badge-failed">⚠ Failed: 0</div>
+        <div class="stat-badge stat-recovered" id="badge-recovered">↺ Recovered: 0</div>
+        <div class="stat-badge stat-power" id="badge-power">⚡ Provider: healthy</div>
       </div>
     </div>
     <div class="hud-panel controls-group">

@@ -15,6 +15,7 @@ import { Plan, PlanStore, createHandlers } from './mcp/tools';
 import { PROPOSED_SCHEME, ProposedContentProvider, VsCodeApplier, VsCodeReviewer, VsCodeTestRunner } from './mcp/vscodeHost';
 import { AgentPanel } from './panel/AgentPanel';
 import { CodeTownPanel } from './town/CodeTownPanel';
+import type { SceneState } from './town/types';
 import type { HostToWebview } from './panel/protocol';
 import {
   agentsApi,
@@ -61,7 +62,7 @@ const SSRF_HINT =
   'TrueForge blocked the local editor-tools URL (its outbound-URL guard rejects loopback addresses). ' +
   'Restart TrueForge with the environment variable OUTBOUND_URL_ALLOWED_HOSTS=["127.0.0.1"] and try again.';
 
-export function activate(context: vscode.ExtensionContext): { gate: WriteGate | undefined; fs: NodeReadFs | undefined } {
+export function activate(context: vscode.ExtensionContext): { gate: WriteGate | undefined; fs: NodeReadFs | undefined; journal: Journal | undefined; town: () => SceneState | undefined } {
   const out = vscode.window.createOutputChannel('CodeCraft');
   context.subscriptions.push(out);
 
@@ -131,23 +132,6 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
             out.appendLine(`[tool] ${l}`);
             const outcome = /^propose_(?:changes|write)\b.* -> (\w+)/.exec(l);
             if (outcome) trust?.onProposalOutcome(outcome[1]!);
-            const p = CodeTownPanel.currentPanel();
-            if (!p) return;
-            if (l.startsWith('propose_write ')) {
-              const file = l.slice('propose_write '.length).split(' ')[0];
-              if (file) {
-                if (l.includes(' -> applied') || l.includes(' -> partially_applied')) {
-                  p.dispatchEvent({ type: 'file_written', path: file });
-                } else if (l.includes(' -> rejected')) {
-                  p.dispatchEvent({ type: 'hunk_decided', path: file, decision: 'rejected' });
-                } else if (!l.includes(' -> ')) {
-                  p.dispatchEvent({ type: 'hunk_proposed', path: file });
-                }
-              }
-            } else if (l.startsWith('read_file ')) {
-              const file = l.slice('read_file '.length).split(' ')[0];
-              if (file) p.dispatchEvent({ type: 'file_read', path: file });
-            }
           },
           plan: planStore,
           onTests: (passed, exitCode, output) => void (trust ? trust.onAgentTests(passed, exitCode, output) : journal.append({ t: 'tests', phase: 'agent', passed, exitCode })),
@@ -163,7 +147,8 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
           onRead: (p) => {
             readThisRun.add(p);
             postReads?.();
-            CodeTownPanel.currentPanel()?.dispatchEvent({ type: 'file_read', path: p });
+            // One journaled read per real read_file (Code Town and the report read it from the journal).
+            void journal.append({ t: 'file_read', path: p });
           },
         });
         return { fs, gate, index, handlers, tests, journal, contents };
@@ -285,7 +270,6 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
           trust?.setReads(readThisRun.size, index.stats.totalFiles);
         };
         postReads();
-        CodeTownPanel.currentPanel()?.dispatchEvent({ type: 'run_started' });
       }
 
       const depthAtStart = host ? host.gate.undoDepth : 0;
@@ -381,19 +365,15 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
       await host?.journal.append({ t: 'run_finished', status: outcome.status });
       out.appendLine(`Run ${outcome.status} on ${result.agent} after ${outcome.rounds} round(s)`);
       if (outcome.status === 'error') {
-        CodeTownPanel.currentPanel()?.dispatchEvent({ type: 'model_failed', error: outcome.message });
         const model = result.agent === FALLBACK_AGENT_NAME ? cfg.fallbackModel : cfg.primaryModel;
         const msg = failureMessage(model, outcome.message, host ? host.gate.filesAppliedSince(depthAtStart) : []);
         post({ type: 'event', event: { type: 'run.failed', summary: msg, failed: true } });
         void vscode.window.showErrorMessage(`CodeCraft: ${msg}`);
       } else if (outcome.status === 'unsupported') {
-        CodeTownPanel.currentPanel()?.dispatchEvent({ type: 'model_failed', error: outcome.message });
         post({ type: 'event', event: { type: 'run.failed', summary: outcome.message, failed: true } });
       } else if (outcome.status === 'cancelled') {
-        CodeTownPanel.currentPanel()?.dispatchEvent({ type: 'run_finished' });
         post({ type: 'event', event: { type: 'run.cancelled', summary: 'stopped' } });
       } else {
-        CodeTownPanel.currentPanel()?.dispatchEvent({ type: 'run_finished' });
       }
     } catch (e) {
       const raw = describeError(e);
@@ -509,26 +489,20 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
     vscode.commands.registerCommand('codecraft.exportReport', () => exportReport()),
     vscode.commands.registerCommand('codecraft.openCodeTown', () => {
       out.show(true);
-      CodeTownPanel.show(
-        context,
-        async () => {
-          if (!host) return [];
-          const idx = await host.index.get();
-          return Object.values(idx.files).map((f) => ({
-            path: f.path,
-            lines: f.lines,
-            size: f.size,
-            language: f.language,
-            isTest: f.isTest,
-          }));
+      if (!host) return void vscode.window.showWarningMessage('CodeCraft: open a folder first.');
+      const h = host;
+      CodeTownPanel.show(context, {
+        journal: h.journal,
+        loadFiles: async () => {
+          const idx = await h.index.get();
+          return Object.values(idx.files).map((f) => ({ path: f.path, lines: f.lines, size: f.size, language: f.language, isTest: f.isTest }));
         },
-        async (relPath) => {
+        onOpenFile: async (relPath) => {
           if (!folder) return;
-          const uri = vscode.Uri.joinPath(folder.uri, relPath);
-          const doc = await vscode.workspace.openTextDocument(uri);
+          const doc = await vscode.workspace.openTextDocument(vscode.Uri.joinPath(folder.uri, relPath));
           await vscode.window.showTextDocument(doc, { preview: true, viewColumn: vscode.ViewColumn.One });
         },
-      );
+      });
     }),
     vscode.commands.registerCommand('codecraft.scanSecrets', async () => {
       if (!host || !folder) return void vscode.window.showWarningMessage('CodeCraft: open a folder first.');
@@ -576,7 +550,7 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
     { dispose: () => void server?.close() },
   );
   // Handle for the VS Code integration test (test/vscode). Not a public API.
-  return { gate: host?.gate, fs: host?.fs };
+  return { gate: host?.gate, fs: host?.fs, journal: host?.journal, town: () => CodeTownPanel.currentPanel()?.getState() };
 }
 
 /** .env-style files in the workspace (two levels deep, skipping dependency and VCS folders). */
