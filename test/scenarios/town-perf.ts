@@ -93,7 +93,8 @@ async function main(): Promise<void> {
   const files = Object.values(index.files).map((f) => ({ path: f.path, lines: f.lines, size: f.size, language: f.language, isTest: f.isTest, imports: f.imports }));
   const events = eventsFromRecord(rec, Date.parse(rec.startedAt));
   const state = sceneReducer(initialSceneState(), { type: 'init', files, at: 0 });
-  fs.copyFileSync(path.resolve('out/codetown.js'), path.join(dir, 'codetown.js'));
+  // --bundle: measure another build of the webview (e.g. main's) with the same harness
+  fs.copyFileSync(path.resolve(arg('bundle', 'out/codetown.js')), path.join(dir, 'codetown.js'));
   const interval = (seconds * 1000) / events.length;
   fs.writeFileSync(
     path.join(dir, 'stub.js'),
@@ -116,7 +117,7 @@ window.addEventListener('load', () => {
   }, 5000);
 });`,
   );
-  const html = buildTownHtml({ cspSource: 'file:', nonce: 'N', scriptUri: 'codetown.js', reducedMotion: (arg('motion', 'off') as 'on' | 'off' | 'auto') }).replace(
+  const html = buildTownHtml({ cspSource: 'file:', nonce: 'N', scriptUri: 'codetown.js', reducedMotion: (arg('motion', 'off') as 'on' | 'off' | 'auto'), scout: arg('scout', 'on') === 'muted' ? 'muted' : 'on' }).replace(
     '<script nonce="N" src="codetown.js">',
     '<script nonce="N" src="stub.js"></script>\n  <script nonce="N" src="codetown.js">',
   );
@@ -166,7 +167,28 @@ window.addEventListener('load', () => {
     c.close();
     console.log(JSON.stringify({ record: path.basename(recPath), recordedDurationS: Math.round(rec.durationMs / 1000), streamedOverS: seconds, events: events.length, buildings: files.length, gpu, renderer, motion: arg('motion', 'off'), samples: JSON.parse(String(perf ?? '[]')) }, null, 1));
   } finally {
-    child.kill();
+    // Ask the browser to close itself first: on Windows the launched msedge.exe hands off to a broker process that
+    // is not its child, so killing the process tree alone left the browser (and its renderers) running.
+    try {
+      const v = (await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()) as { webSocketDebuggerUrl?: string };
+      if (v.webSocketDebuggerUrl) {
+        const b = await cdp(v.webSocketDebuggerUrl);
+        void b.send('Browser.close');
+        await new Promise((r) => setTimeout(r, 1500));
+        b.close();
+      }
+    } catch {
+      // already closed
+    }
+    // Then end the WHOLE browser process tree: killing only the launcher left the renderer processes running (observed:
+    // 165 orphaned headless Edge processes after repeated runs, which skewed every later measurement).
+    if (process.platform === 'win32' && child.pid) {
+      try {
+        cp.execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+      } catch {
+        // already gone
+      }
+    } else child.kill('SIGKILL');
   }
 }
 if (require.main === module)

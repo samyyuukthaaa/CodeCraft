@@ -82,7 +82,8 @@ export class TownGraph {
   // shared, created once
   private readonly boxGeo = this.own(new RoundedBoxGeometry(FOOTPRINT, 1, FOOTPRINT, 2, 0.22).translate(0, 0.5, 0));
   private readonly beaconGeo = this.own(new THREE.OctahedronGeometry(0.42, 0));
-  private readonly roofGeo = this.own(new RoundedBoxGeometry(FOOTPRINT + 0.25, 0.3, FOOTPRINT + 0.25, 2, 0.1));
+  // plain boxes: rooftops are thin, and rounded caps cost many vertices for no visible gain (software rendering)
+  private readonly roofGeo = this.own(new THREE.BoxGeometry(FOOTPRINT + 0.25, 0.3, FOOTPRINT + 0.25));
   private readonly lanternGeo = this.own(new THREE.SphereGeometry(0.34, 10, 8));
   private readonly roofMat = this.own(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 }));
   private readonly lanternMat = this.own(new THREE.MeshBasicMaterial({ color: 0xffffff }));
@@ -97,6 +98,8 @@ export class TownGraph {
   private roofs: THREE.InstancedMesh | undefined;
   private lanterns: THREE.InstancedMesh | undefined;
   private replay = false;
+  /** Lantern pool: only celebrating buildings hold a slot, and only used slots are drawn. */
+  private readonly lanternSlots = new Map<string, number>();
   private porch: THREE.Points | undefined;
   private stringLights: THREE.Points | undefined;
   private readonly idByIndex: string[] = [];
@@ -254,6 +257,16 @@ export class TownGraph {
 
   stats(): GraphStats {
     return { ...this.counters, instances: this.indexById.size, capacity: this.buildings?.count ?? 0, owned: this.owned.size };
+  }
+
+  /** Lanterns shown over a building (0 or 3), for tests and the perf check. */
+  lanternsOver(id: string): number {
+    return this.lanternSlots.has(id) ? LANTERNS_PER_BUILDING : 0;
+  }
+
+  /** Lantern instances drawn (only the slots in use). */
+  get lanternsDrawn(): number {
+    return this.lanterns?.count ?? 0;
   }
 
   /** Building id under the ray, if any. */
@@ -512,6 +525,8 @@ export class TownGraph {
     this.roofs.name = 'roofs';
     this.lanterns = this.build(new THREE.InstancedMesh(this.lanternGeo, this.lanternMat, capacity * LANTERNS_PER_BUILDING));
     this.lanterns.name = 'lanterns';
+    this.lanterns.count = 0;
+    this.lanternSlots.clear();
     const porchGeo = this.build(new THREE.BufferGeometry());
     porchGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(capacity * 3), 3));
     porchGeo.setDrawRange(0, 0);
@@ -561,13 +576,25 @@ export class TownGraph {
       this.roofs.setColorAt(i, roofColor(b, this.mode));
     }
     if (this.lanterns) {
-      // festival lanterns over a success: fixed spots around the roof (no randomness)
+      // festival lanterns over a success: fixed spots around the roof (no randomness), from a small pool
       const on = celebrates(b) && this.mode === 'journey';
-      for (let k = 0; k < LANTERNS_PER_BUILDING; k++) {
-        const a = (k / LANTERNS_PER_BUILDING) * Math.PI * 2 + 0.6;
-        this.tmp.compose(new THREE.Vector3(lot.x + Math.cos(a) * 1.6, h + 1.6 + (k % 2) * 0.45, lot.z + Math.sin(a) * 1.6), new THREE.Quaternion(), new THREE.Vector3().setScalar(on ? 1 : 0));
-        this.lanterns.setMatrixAt(i * LANTERNS_PER_BUILDING + k, this.tmp);
+      let slot = this.lanternSlots.get(b.id);
+      if (on && slot === undefined) {
+        const used = new Set(this.lanternSlots.values());
+        slot = 0;
+        while (used.has(slot)) slot++;
+        this.lanternSlots.set(b.id, slot);
       }
+      if (slot !== undefined) {
+        for (let k = 0; k < LANTERNS_PER_BUILDING; k++) {
+          const a = (k / LANTERNS_PER_BUILDING) * Math.PI * 2 + 0.6;
+          this.tmp.compose(new THREE.Vector3(lot.x + Math.cos(a) * 1.6, h + 1.6 + (k % 2) * 0.45, lot.z + Math.sin(a) * 1.6), new THREE.Quaternion(), new THREE.Vector3().setScalar(on ? 1 : 0));
+          this.lanterns.setMatrixAt(slot * LANTERNS_PER_BUILDING + k, this.tmp);
+        }
+        if (!on) this.lanternSlots.delete(b.id);
+      }
+      const top = this.lanternSlots.size ? Math.max(...this.lanternSlots.values()) + 1 : 0;
+      this.lanterns.count = top * LANTERNS_PER_BUILDING; // draw only the slots in use
     }
     const pos = this.porch.geometry.getAttribute('position') as THREE.BufferAttribute;
     pos.setXYZ(i, lot.x, 0.35, lot.z + FOOTPRINT / 2 + 0.25);

@@ -65,22 +65,28 @@ test('idle buildings wear their district colours with coloured roofs; touched bu
   assert.equal(colorAt(mesh(g, 'buildings'), i), new THREE.Color(STATE_VISUALS.proposed.color).getHexString());
 });
 
-test('festival lanterns appear only over successes (applied, recovered), and not in Architecture mode', () => {
+test('festival lanterns appear only over successes (applied, recovered), not in Architecture mode, and only used slots are drawn', () => {
   const g = new TownGraph(tex, false);
   let s = scene();
   g.sync(s);
-  const ids = Object.keys(s.buildings).sort();
-  const lit = (id: string) => [0, 1, 2].map((k) => scaleAt(mesh(g, 'lanterns'), ids.indexOf(id) * 3 + k));
-  assert.deepEqual(lit('src/flask/cli.py'), [0, 0, 0]);
+  assert.equal(g.lanternsOver('src/flask/cli.py'), 0);
+  assert.equal(g.lanternsDrawn, 0, 'nothing drawn while nothing succeeded');
   s = sceneReducer(s, { type: 'file_written', path: 'src/flask/cli.py', opId: 'o', accepted: 1, rejected: 0, created: false, at: 1 });
   s = sceneReducer(s, { type: 'file_read', path: 'src/flask/app.py', at: 2 });
   g.sync(s);
-  assert.deepEqual(lit('src/flask/cli.py'), [1, 1, 1]);
-  assert.deepEqual(lit('src/flask/app.py'), [0, 0, 0]);
+  assert.equal(g.lanternsOver('src/flask/cli.py'), 3);
+  assert.equal(g.lanternsOver('src/flask/app.py'), 0);
+  assert.equal(g.lanternsDrawn, 3, 'one celebrating building: 3 lanterns drawn, not 3 per building');
+  const lit = [0, 1, 2].map((k) => scaleAt(mesh(g, 'lanterns'), k));
+  assert.deepEqual(lit, [1, 1, 1]);
   g.setMode('architecture');
-  assert.deepEqual(lit('src/flask/cli.py'), [0, 0, 0], 'Architecture shows kinds, not celebrations');
+  assert.equal(g.lanternsOver('src/flask/cli.py'), 0, 'Architecture shows kinds, not celebrations');
+  assert.equal(g.lanternsDrawn, 0);
   g.setMode('journey');
-  assert.deepEqual(lit('src/flask/cli.py'), [1, 1, 1]);
+  assert.equal(g.lanternsOver('src/flask/cli.py'), 3);
+  s = sceneReducer(s, { type: 'file_reverted', path: 'src/flask/cli.py', opId: 'o', at: 3 });
+  g.sync(s);
+  assert.equal(g.lanternsDrawn, 0, 'a reverted change frees its lanterns');
   assert.equal(g.stats().rebuilds, 1);
 });
 
