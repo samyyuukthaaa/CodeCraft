@@ -5,7 +5,7 @@ import { buildTownHtml } from './html';
 import { HostToTown, parseTownMessage } from './protocol';
 import { SceneState, TownEvent, TownFileInput } from './types';
 import { foldEvents, initialSceneState, sceneReducer } from './reducer';
-import { townEventsFor, townEventsFromJournal } from './fromJournal';
+import { finishedRuns, townEventsFor, townEventsFromJournal } from './fromJournal';
 
 export interface TownSources {
   /** The repository index (layout). */
@@ -24,6 +24,8 @@ export class CodeTownPanel {
   private readonly panel: vscode.WebviewPanel;
   private state: SceneState = initialSceneState();
   private ready = false;
+  /** The index files of the last build: the base town for replays. */
+  private files: TownFileInput[] = [];
   private readonly disposables: Array<() => void> = [];
 
   static show(context: vscode.ExtensionContext, sources: TownSources): CodeTownPanel {
@@ -65,7 +67,7 @@ export class CodeTownPanel {
           void vscode.window.showErrorMessage(`CodeCraft: could not open "${msg.path}"`);
         }
       } else if (msg.type === 'replay_run') {
-        this.post({ type: 'journal', events: townEventsFromJournal(sources.journal.all()) });
+        this.postReplay(msg.runId);
       }
     });
     this.disposables.push(() => sub.dispose());
@@ -85,8 +87,18 @@ export class CodeTownPanel {
     const init: TownEvent = { type: 'init', files, at: first && first.type !== 'reset' ? first.at : 0 };
     this.state = foldEvents(sceneReducer(initialSceneState(), init), events);
     this.ready = true;
+    this.files = files;
     this.post({ type: 'scene', state: this.state });
-    this.post({ type: 'journal', events });
+    this.post({ type: 'runs', runs: finishedRuns(this.sources.journal.all()) });
+  }
+
+  /** A finished run, replayed through the same reducer: the town before it (index only) plus its journal events. */
+  private postReplay(runId: string | undefined): void {
+    const runs = finishedRuns(this.sources.journal.all());
+    const run = runId ? runs.find((r) => r.runId === runId) : runs[0];
+    if (!run) return;
+    const base = sceneReducer(initialSceneState(), { type: 'init', files: this.files, at: run.at });
+    this.post({ type: 'replay', runId: run.runId, base, events: townEventsFromJournal(this.sources.journal.all(), run.runId) });
   }
 
   private onJournal(e: JournalEntry): void {
@@ -95,6 +107,7 @@ export class CodeTownPanel {
       this.state = sceneReducer(this.state, ev);
       this.post({ type: 'event', event: ev });
     }
+    if (e.t === 'run_finished') this.post({ type: 'runs', runs: finishedRuns(this.sources.journal.all()) });
   }
 
   getState(): SceneState {

@@ -72,11 +72,15 @@ async function main(): Promise<void> {
   const measure = has('measure');
   fs.writeFileSync(
     path.join(dir, 'stub.js'),
-    `window.acquireVsCodeApi = () => ({ postMessage: (m) => { window.__sent = (window.__sent || []).concat([m]); } });
+    `window.acquireVsCodeApi = () => ({ postMessage: (m) => { window.__sent = (window.__sent || []).concat([m]);
+  if (m.type === 'replay_run') setTimeout(() => window.postMessage({ type: 'replay', runId: 'ab12ab12ab12ab12', base: window.__base, events: window.__replay }, '*'), 10); } });
+window.__base = ${JSON.stringify(has('replay') ? start : null)};
+window.__replay = ${JSON.stringify(has('replay') ? events : [])};
 window.__state = ${JSON.stringify(state)};
 window.__events = ${JSON.stringify(live ? events : [])};
 window.addEventListener('load', () => {
   window.postMessage({ type: 'scene', state: window.__state }, '*');
+  ${has('replay') ? `window.postMessage({ type: 'runs', runs: [{ runId: 'ab12ab12ab12ab12', request: 'Add a --env-file option', at: 1700000000000, status: 'done' }] }, '*'); setTimeout(() => document.getElementById('btn-replay').click(), 300);` : ''}
   ${arg('mode') ? `setTimeout(() => document.getElementById('mode-${arg('mode')}').click(), 100);` : ''}
   ${arg('inspect') ? `setTimeout(() => window.postMessage({ type: 'focus', path: ${JSON.stringify(arg('inspect'))} }, '*'), 150);` : ''}
   const evs = window.__events; let i = 0;

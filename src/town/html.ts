@@ -85,6 +85,14 @@ ${stateRules}
   #insp-rows { display: grid; grid-template-columns: max-content 1fr; gap: 4px 10px; margin: 0 0 10px; }
   #insp-rows dt { color: #94a3b8; }
   #insp-rows dd { margin: 0; word-break: break-word; }
+  #replay-bar { position: absolute; left: 50%; transform: translateX(-50%); bottom: 12px; z-index: 11; display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  #replay-bar select, #replay-bar input { background: rgba(30, 41, 59, 0.92); color: #e2e8f0; border: 1px solid var(--border-color); border-radius: 6px; padding: 4px 6px; font-size: 12px; }
+  #replay-bar button, #replay-bar label { white-space: nowrap; }
+  #rp-pos { width: 220px; padding: 0; accent-color: #facc15; }
+  #rp-text { min-width: 150px; font-variant-numeric: tabular-nums; }
+  .replay-tag { display: none; color: #0a1330; background: #facc15; border-radius: 4px; padding: 1px 6px; font-weight: 800; font-size: 11px; }
+  body.replaying .replay-tag { display: inline; }
+  body.replaying #legend { bottom: 64px; }
   .fallback-card-status { font-size: 11px; padding: 2px 6px; border-radius: 3px; border: 1px solid; width: fit-content; font-weight: 600; }
 </style>
 </head>
@@ -92,7 +100,7 @@ ${stateRules}
   <div id="canvas-container"></div>
   <div id="overlay">
     <div class="hud-panel">
-      <div class="hud-title"><span>🏙️</span> Code <span class="keyword">Town</span><span id="active-tag"></span></div>
+      <div class="hud-title"><span>🏙️</span> Code <span class="keyword">Town</span><span class="replay-tag">REPLAY</span><span id="active-tag"></span></div>
       <div class="stats-bar" id="stats-bar">
         ${badges}
         <div class="stat-badge stat-power" id="badge-power">⚡ Provider: Healthy</div>
@@ -103,13 +111,24 @@ ${stateRules}
         <button id="mode-journey" type="button" aria-pressed="true" title="The path the agent took in this run">Agent Journey</button>
         <button id="mode-architecture" type="button" aria-pressed="false" title="Districts, roads (imports) and building kinds">Architecture</button>
       </div>
-      <button id="btn-replay" type="button" title="Replay the last agent run">▶ Replay</button>
+      <button id="btn-replay" type="button" title="Replay a finished run from the journal" disabled>▶ Replay</button>
       <button id="btn-toggle-view" type="button">Switch to 2D</button>
       <button id="btn-reset-cam" type="button">Reset View</button>
     </div>
   </div>
 
   <div id="legend" class="hud-panel" aria-label="Legend"></div>
+
+  <div id="replay-bar" class="hud-panel hidden" role="group" aria-label="Replay controls">
+    <label class="muted" for="rp-run">Run</label>
+    <select id="rp-run" aria-label="Finished run to replay"></select>
+    <button id="rp-play" type="button">⏸ Pause</button>
+    <label class="muted" for="rp-speed">Speed</label>
+    <select id="rp-speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select>
+    <input id="rp-pos" type="range" min="0" max="0" value="0" aria-label="Replay position">
+    <span id="rp-text">0 / 0</span>
+    <button id="rp-live" type="button">Back to live</button>
+  </div>
 
   <aside id="inspector" class="hud-panel hidden" aria-label="Building inspector">
     <div class="insp-head"><b id="insp-title"></b><button id="insp-close" type="button" aria-label="Close the inspector">✕</button></div>

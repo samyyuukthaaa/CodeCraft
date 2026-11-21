@@ -9,6 +9,7 @@ import type { Building, SceneState, TownEvent } from '../town/types';
 import type { HostToTown, TownToHost } from '../town/protocol';
 import { CaptionPart, TextureFactory, TownGraph } from './town/graph';
 import { VIEW_MODES, ViewMode, inspect, legendFor } from '../town/view';
+import { Player, createPlayer, delayToNext, pause, play, positionText, seek, setSpeed, step } from '../town/replay';
 
 declare function acquireVsCodeApi(): { postMessage(msg: TownToHost): void };
 const vscode = acquireVsCodeApi();
@@ -416,29 +417,65 @@ function setMode3D(want: boolean): void {
 }
 
 // ---------------------------------------------------------------------------
-// Replay of the run's journal events (same reducer)
+// Replay of a finished run from the journal, through the same reducer (src/town/replay.ts)
 // ---------------------------------------------------------------------------
-let recorded: TownEvent[] = [];
-let replayTimer: ReturnType<typeof setInterval> | undefined;
-function replay(): void {
-  if (!recorded.length) return;
-  if (replayTimer) clearInterval(replayTimer);
-  show(sceneReducer(current, { type: 'reset' }));
-  let i = 0;
-  btnReplay.disabled = true;
-  replayTimer = setInterval(
-    () => {
-      const ev = recorded[i++];
-      if (!ev) {
-        clearInterval(replayTimer);
-        replayTimer = undefined;
-        btnReplay.disabled = false;
-        return;
-      }
-      show(sceneReducer(current, ev));
-    },
-    prefersReducedMotion ? 50 : 250,
-  );
+/** The live scene (what the agent is doing now). While replaying, `current` shows the replay instead. */
+let live: SceneState = current;
+let player: Player | undefined;
+let replayTimer: ReturnType<typeof setTimeout> | undefined;
+const replayBar = $('replay-bar');
+const rpRun = $<HTMLSelectElement>('rp-run');
+const rpPlay = $<HTMLButtonElement>('rp-play');
+const rpSpeed = $<HTMLSelectElement>('rp-speed');
+const rpPos = $<HTMLInputElement>('rp-pos');
+const rpText = $('rp-text');
+
+function display(next: SceneState, rebuild = false): void {
+  if (!rebuild) return show(next);
+  current = next;
+  updateHud(next);
+  graph?.rebuild(next);
+  if (!is3D) rebuild2D(next);
+  renderInspector();
+}
+
+function renderReplayBar(): void {
+  replayBar.classList.toggle('hidden', !player);
+  document.body.classList.toggle('replaying', Boolean(player));
+  if (!player) return;
+  rpPlay.textContent = player.playing ? '⏸ Pause' : '▶ Play';
+  rpPos.max = String(player.events.length);
+  rpPos.value = String(player.index);
+  rpText.textContent = positionText(player);
+  rpSpeed.value = String(player.speed);
+}
+
+function schedule(): void {
+  if (replayTimer) clearTimeout(replayTimer);
+  replayTimer = undefined;
+  if (!player?.playing) return;
+  replayTimer = setTimeout(() => {
+    if (!player) return;
+    player = step(player);
+    show(player.scene);
+    renderReplayBar();
+    schedule();
+  }, delayToNext(player));
+}
+
+function startReplay(runId: string, base: SceneState, events: TownEvent[]): void {
+  player = setSpeed(play(createPlayer(runId, base, events)), Number(rpSpeed.value));
+  display(player.scene, true); // the town before the run: one rebuild, then increments
+  renderReplayBar();
+  schedule();
+}
+
+function stopReplay(): void {
+  if (replayTimer) clearTimeout(replayTimer);
+  replayTimer = undefined;
+  player = undefined;
+  renderReplayBar();
+  display(live, true);
 }
 
 on(btnToggleView, 'click', () => setMode3D(!is3D));
@@ -453,31 +490,66 @@ on($('insp-open'), 'click', () => {
 });
 for (const [k, b] of Object.entries(modeButtons)) b.title = `${VIEW_MODES[k as ViewMode]}: ${b.title}`;
 on(btnResetCam, 'click', resetCamera);
-on(btnReplay, 'click', () => {
-  vscode.postMessage({ type: 'replay_run' });
-  replay();
+const requestReplay = (): void => vscode.postMessage(rpRun.value ? { type: 'replay_run', runId: rpRun.value } : { type: 'replay_run' });
+on(btnReplay, 'click', requestReplay);
+on(rpRun, 'change', requestReplay);
+on(rpPlay, 'click', () => {
+  if (!player) return;
+  const restart = !player.playing && player.index >= player.events.length;
+  player = player.playing ? pause(player) : play(player);
+  if (restart) display(player.scene, true);
+  renderReplayBar();
+  schedule();
 });
+on(rpSpeed, 'change', () => {
+  if (!player) return;
+  player = setSpeed(player, Number(rpSpeed.value));
+  schedule();
+});
+on(rpPos, 'input', () => {
+  if (!player) return;
+  player = seek(pause(player), Number(rpPos.value));
+  display(player.scene, true); // a jump (user action): one rebuild of the seeked scene
+  renderReplayBar();
+  schedule();
+});
+on($('rp-live'), 'click', stopReplay);
 
 on(window, 'message', (event: MessageEvent<HostToTown>) => {
   const m = event.data;
   if (!m || typeof m !== 'object') return;
   if (m.type === 'scene') {
     // a full scene from the host replaces the old one: one rebuild, then only increments
-    current = m.state;
-    updateHud(current);
-    graph?.rebuild(current);
-    if (!is3D) rebuild2D(current);
-    renderInspector();
-    resetCamera();
-  } else if (m.type === 'journal') recorded = m.events;
-  else if (m.type === 'event') show(sceneReducer(current, m.event));
-  else if (m.type === 'focus' && typeof m.path === 'string') openInspector(m.path);
+    live = m.state;
+    if (!player) {
+      display(live, true);
+      resetCamera();
+    }
+  } else if (m.type === 'event') {
+    live = sceneReducer(live, m.event);
+    if (!player) show(live); // during a replay the live town keeps updating in the background
+  } else if (m.type === 'runs') {
+    const keep = rpRun.value;
+    rpRun.replaceChildren();
+    for (const r of m.runs) {
+      const o = document.createElement('option');
+      o.value = r.runId;
+      o.textContent = `${new Date(r.at).toISOString().slice(5, 16).replace('T', ' ')} ${r.status}: ${r.request.slice(0, 50)}`;
+      rpRun.append(o);
+    }
+    if (keep && m.runs.some((r) => r.runId === keep)) rpRun.value = keep;
+    btnReplay.disabled = m.runs.length === 0;
+    btnReplay.title = m.runs.length ? 'Replay a finished run from the journal' : 'No finished run in the journal yet';
+  } else if (m.type === 'replay') {
+    if (rpRun.value !== m.runId) rpRun.value = m.runId;
+    startReplay(m.runId, m.base, m.events);
+  } else if (m.type === 'focus' && typeof m.path === 'string') openInspector(m.path);
 });
 
-// Clean shutdown: stop the loop, remove every listener, free GPU resources.
+// Clean shutdown: stop the loop and timers, remove every listener, free GPU resources.
 on(window, 'unload', () => {
   cancelAnimationFrame(frame);
-  if (replayTimer) clearInterval(replayTimer);
+  if (replayTimer) clearTimeout(replayTimer);
   for (const off of listeners.splice(0)) off();
   graph?.dispose();
   renderer?.dispose();

@@ -50,6 +50,22 @@ export function entriesOfRun(entries: readonly JournalEntry[], runId?: string): 
   return [];
 }
 
+/** Finished runs (run_started ... run_finished) for replay, newest first. */
+export function finishedRuns(entries: readonly JournalEntry[], max = 30): Array<{ runId: string; request: string; at: number; status: string }> {
+  const started = new Map<string, { request: string; at: number }>();
+  const out: Array<{ runId: string; request: string; at: number; status: string }> = [];
+  for (const e of entries) {
+    if (e.t === 'run_started' && e.runId) started.set(e.runId, { request: e.request.replace(/\s+/g, ' ').slice(0, 120), at: e.at });
+    if (e.t === 'run_finished' && started.has(e.runId)) {
+      const s = started.get(e.runId)!;
+      const i = out.findIndex((r) => r.runId === e.runId);
+      if (i >= 0) out.splice(i, 1);
+      out.push({ runId: e.runId, request: s.request, at: s.at, status: e.status });
+    }
+  }
+  return out.sort((a, b) => b.at - a.at).slice(0, max);
+}
+
 export function townEventsFromJournal(entries: readonly JournalEntry[], runId?: string): TownEvent[] {
   return entriesOfRun(entries, runId).flatMap(townEventsFor);
 }
