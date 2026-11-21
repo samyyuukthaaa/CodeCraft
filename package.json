@@ -44,7 +44,7 @@
         },
         "codecraft.primaryModel": {
           "type": "string",
-          "default": "google-gemini/gemini-3-1-flash-lite",
+          "default": "google-gemini/gemini-3-5-flash",
           "description": "Model name for the primary agent, as registered in TrueForge. Keys are configured only in TrueForge."
         },
         "codecraft.fallbackModel": {

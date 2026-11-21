@@ -4,8 +4,10 @@ All agent execution and model calls happen inside TrueForge. CodeCraft never cal
 
 | Role | Agent name in TrueForge | Setting | Default model reference | Provider |
 |---|---|---|---|---|
-| Primary | `codecraft-primary` | `codecraft.primaryModel` | `google-gemini/gemini-3-1-flash-lite` (model id `gemini-3.1-flash-lite`) | `google-gemini` |
+| Primary | `codecraft-primary` | `codecraft.primaryModel` | `google-gemini/gemini-3-5-flash` (model id `gemini-3.5-flash`) | `google-gemini` |
 | Fallback | `codecraft-fallback` | `codecraft.fallbackModel` | `google-gemini/gemini-3-5-flash-lite` (model id `gemini-3.5-flash-lite`) | `google-gemini` |
+
+**Why the primary changed (2026-11-21):** the primary was `google-gemini/gemini-3-1-flash-lite`. In Task B the free-tier "lite" models repeatedly wrote a `flask config` command that could not JSON-encode some config values and then looped on debugging (up to 4.2M tokens per run) until the free-tier quota stopped them; see `docs/RESULTS.md`. With the project owner's approval the primary is now the stronger `google-gemini/gemini-3-5-flash`; `google-gemini/gemini-3-5-flash-lite` stays the fallback. Task C's fallback variant still exercises the lite fallback.
 
 Both agents get identical instructions (`AGENT_INSTRUCTIONS` in `src/trueforge/config.ts`) and the same editor tools, so only the model differs.
 

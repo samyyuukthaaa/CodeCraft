@@ -101,6 +101,37 @@ test('plan: after the user rejects 2 proposals in a row, further proposals are r
   }
 });
 
+test('plan: after 2 failed run_tests in a run, further proposals are refused with "stop and report"', async () => {
+  const ws = await tempWorkspace(FILES);
+  try {
+    let exitCode = 1;
+    const plan = new PlanStore();
+    const h = createHandlers({
+      fs: ws.fs,
+      gate: new WriteGate(ws.fs, new DiskApplier(ws.root), new ScriptedReviewer(acceptAll)),
+      tests: { run: async () => ({ ran: true, exitCode, output: exitCode ? '1 failed' : 'ok' }) },
+      plan,
+    });
+    await h.read_file({ path: 'src/cli.py' });
+    await h.submit_plan({ summary: 's', files: [{ path: 'src/cli.py', action: 'edit', why: 'code' }] });
+    assert.equal(JSON.parse((await h.propose_changes(CHANGE)).text).status, 'applied');
+    await h.run_tests();
+    await h.read_file({ path: 'src/cli.py' });
+    const fix = { plan: 'p', groups: [{ intent: 'fix', files: [{ path: 'src/cli.py', edits: [{ find: 'print("x")', replace: 'print("y")' }] }] }] };
+    assert.equal(JSON.parse((await h.propose_changes(fix)).text).status, 'applied', 'one failed test run still allows a fix');
+    await h.run_tests();
+    const third = await h.propose_changes(fix);
+    assert.equal(third.isError, true);
+    assert.match(third.text, /tests failed 2 times in this run; do not propose more changes/);
+    exitCode = 0;
+    assert.equal(JSON.parse((await h.run_tests()).text).passed, true, 'run_tests itself is still allowed (to report)');
+    plan.reset();
+    assert.match((await h.propose_changes(fix)).text, /submit_plan first/, 'a new run starts fresh');
+  } finally {
+    await ws.cleanup();
+  }
+});
+
 test('plan: actions are checked against the workspace and paths are validated', async () => {
   const { ws, plan, h } = await setup();
   try {

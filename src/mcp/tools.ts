@@ -38,13 +38,21 @@ export interface Plan {
  * exists, and only files the plan lists as "edit" or "create" may be proposed. Reset at the start of a run.
  */
 export const MAX_REJECTED_IN_A_ROW = 2;
+/** After this many failed run_tests in one run, no more proposals: the agent must stop and report. */
+export const MAX_FAILED_TEST_RUNS = 2;
 
 export class PlanStore {
   private plan: Plan | undefined;
   private rejectedInARow = 0;
+  private failedTestRuns = 0;
   reset(): void {
     this.plan = undefined;
     this.rejectedInARow = 0;
+    this.failedTestRuns = 0;
+  }
+  /** Records a run_tests result. Observed live: a lite model looped through 15 fix cycles on one failing test. */
+  noteTests(passed: boolean): void {
+    if (!passed) this.failedTestRuns++;
   }
   /** Observed live: after the user rejected a change, an agent re-proposed it for 25 rounds. */
   noteOutcome(status: string): void {
@@ -52,6 +60,9 @@ export class PlanStore {
   }
   /** An error once the user has rejected MAX_REJECTED_IN_A_ROW whole proposals in a row in this run. */
   rejectionStop(): string | undefined {
+    if (this.failedTestRuns >= MAX_FAILED_TEST_RUNS) {
+      return `the tests failed ${this.failedTestRuns} times in this run; do not propose more changes. Stop and reply with which tests fail, the error, and what you tried.`;
+    }
     return this.rejectedInARow >= MAX_REJECTED_IN_A_ROW
       ? `the user rejected your last ${this.rejectedInARow} proposals; do not propose again. Stop and reply with a short summary of what you proposed and why.`
       : undefined;
@@ -338,6 +349,7 @@ export function createHandlers(deps: ToolDeps) {
       note('run_tests requested');
       const r = await deps.tests.run();
       if (!r.ran) return err(r.message ?? 'tests were not run');
+      deps.plan?.noteTests(r.exitCode === 0);
       return ok({ exitCode: r.exitCode, passed: r.exitCode === 0, output: redact(r.output) });
     },
   };

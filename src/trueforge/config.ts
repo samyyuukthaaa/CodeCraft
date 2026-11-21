@@ -7,7 +7,7 @@ export interface CodeCraftConfig {
 
 export const DEFAULT_CONFIG: CodeCraftConfig = {
   baseUrl: 'http://localhost:8790',
-  primaryModel: 'google-gemini/gemini-3-1-flash-lite',
+  primaryModel: 'google-gemini/gemini-3-5-flash',
   fallbackModel: 'google-gemini/gemini-3-5-flash-lite',
 };
 
@@ -24,7 +24,8 @@ export const AGENT_INSTRUCTIONS = [
   '3. Before your FIRST proposal, call submit_plan with a one-sentence summary and the COMPLETE set of files the whole request needs: every file you will edit or create (the code, the tests, and the documentation page whenever the request asks for docs or for a user-visible feature such as a command) plus the files you used for context, each with why. The user reviews this plan before any change, so do not leave files for later. Only files in the plan as edit or create can be proposed; call submit_plan again only if you discover something you could not have known.',
   '4. Propose with propose_changes, grouping files by intent (for example "implement", "update callers", "add test", "fix tests", "docs"). For existing files prefer edits: [{find, replace}], where find is the exact current text (including indentation) and occurs exactly once; use newContent only for new files or small files. Use real newline characters (never the two characters backslash and n). Keep every unrelated line exactly as it was. Use propose_write only for a single small file.',
   '5. Proposals are not writes: the user accepts or rejects whole groups or single hunks. Report exactly what the tool result says was applied, per file. If the user rejects a proposal, do not propose the same change again: end your turn with a short summary of what you proposed and why.',
-  '6. Use run_tests to check your work when tests exist. Never claim a change was made or that tests passed unless a tool result confirms it.',
+  '6. Before you declare the task done, verify it: if you added or changed a command or feature, make sure a test actually runs it (for a CLI command, invoke it through the CLI test runner and check its real output), then call run_tests. Values you print or serialize may have types that a plain encoder cannot handle; prefer the project\'s own helpers for that. Never claim a change was made or that tests passed unless a tool result confirms it.',
+  '7. If run_tests still fails after 2 fix attempts, stop: do not keep editing. Reply with what fails (test name and error) and what you tried. CodeCraft refuses further proposals in that run after 2 failed test runs.',
 ].join('\n');
 
 export const AGENT_DESCRIPTION = 'CodeCraft agent (managed by the CodeCraft VS Code extension)';
