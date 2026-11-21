@@ -13,6 +13,11 @@ function motionSetting(): 'on' | 'off' | 'auto' {
   return v === 'on' || v === 'off' ? v : 'auto';
 }
 
+/** codecraft.scout: 'muted' hides Scout and its tips (Ask Scout stays available on request). */
+function scoutSetting(): 'on' | 'muted' {
+  return vscode.workspace.getConfiguration('codecraft').get<string>('scout', 'on') === 'muted' ? 'muted' : 'on';
+}
+
 export interface TownSources {
   /** The repository index (layout). */
   loadFiles: () => Promise<TownFileInput[]>;
@@ -57,9 +62,9 @@ export class CodeTownPanel {
     this.panel = panel;
     const nonce = crypto.randomBytes(16).toString('base64');
     const scriptUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(mediaRoot, 'codetown.js')).toString();
-    panel.webview.html = buildTownHtml({ cspSource: panel.webview.cspSource, nonce, scriptUri, reducedMotion: motionSetting() });
+    panel.webview.html = buildTownHtml({ cspSource: panel.webview.cspSource, nonce, scriptUri, reducedMotion: motionSetting(), scout: scoutSetting() });
     const cfg = vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration('codecraft.townReducedMotion')) this.post({ type: 'settings', reducedMotion: motionSetting() });
+      if (e.affectsConfiguration('codecraft.townReducedMotion') || e.affectsConfiguration('codecraft.scout')) this.post({ type: 'settings', reducedMotion: motionSetting(), scout: scoutSetting() });
     });
     this.disposables.push(() => cfg.dispose());
 

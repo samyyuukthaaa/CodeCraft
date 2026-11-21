@@ -9,6 +9,7 @@ import type { Building, SceneState, TownEvent } from '../town/types';
 import type { HostToTown, TownToHost } from '../town/protocol';
 import { CaptionPart, TextureFactory, TownGraph } from './town/graph';
 import { VIEW_MODES, ViewMode, inspect, legendFor } from '../town/view';
+import { SUGGESTED, Tip, askScout, tipFor } from '../town/help';
 import { Player, createPlayer, delayToNext, pause, play, positionText, seek, setSpeed, step } from '../town/replay';
 
 declare function acquireVsCodeApi(): { postMessage(msg: TownToHost): void };
@@ -18,6 +19,8 @@ const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)
 /** codecraft.townReducedMotion: 'on' / 'off', or 'auto' (follow the OS setting). Changeable while open. */
 const motionSetting = (v: string | undefined): boolean => (v === 'on' ? true : v === 'off' ? false : prefersReducedMotion);
 let reducedMotion = motionSetting(document.body.dataset.reducedMotion);
+/** codecraft.scout: muted hides Scout, its bubble and its tips. */
+let scoutMuted = document.body.dataset.scout === 'muted';
 /** With reduced motion nothing animates, so a frame is drawn only when something changed. */
 let dirty = true;
 let renderedFrames = 0;
@@ -466,6 +469,7 @@ function openInspector(id: string): void {
 function show(next: SceneState): void {
   dirty = true;
   const prev = current;
+  if (!player) maybeTip(tipFor(prev, next)); // no tips during a replay
   current = next;
   updateHud(next);
   if (inspected && prev.buildings[inspected] !== next.buildings[inspected]) renderInspector();
@@ -616,6 +620,7 @@ on(window, 'message', (event: MessageEvent<HostToTown>) => {
   } else if (m.type === 'settings') {
     reducedMotion = motionSetting(m.reducedMotion);
     graph?.setReducedMotion(reducedMotion);
+    setScoutMuted(m.scout === 'muted');
   }
 });
 
@@ -628,7 +633,68 @@ on(window, 'unload', () => {
   renderer?.dispose();
 });
 
+// ---------------------------------------------------------------------------
+// Ask Scout (built-in help: static knowledge + the town state; no model, no network) and context tips
+// ---------------------------------------------------------------------------
+const ask = $('ask');
+const askToggle = $<HTMLButtonElement>('ask-toggle');
+const askAnswer = $('ask-answer');
+const askSuggest = $('ask-suggest');
+const askInput = $<HTMLInputElement>('ask-input');
+const tipBox = $('tip');
+const tipText = $('tip-text');
+const dismissedTips = new Set<string>();
+let tipShown: string | undefined;
+
+function renderSuggestions(qs: string[]): void {
+  askSuggest.replaceChildren();
+  for (const q of qs) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = q;
+    b.addEventListener('click', () => answer(q));
+    askSuggest.append(b);
+  }
+}
+
+function answer(q: string): void {
+  const r = askScout(q, current);
+  askInput.value = q;
+  askAnswer.textContent = r.answer;
+  renderSuggestions(r.suggestions);
+}
+
+function maybeTip(tip: Tip | undefined): void {
+  if (!tip || scoutMuted || dismissedTips.has(tip.id)) return;
+  tipShown = tip.id;
+  tipText.textContent = `🏮 ${tip.text}`;
+  tipBox.classList.remove('hidden');
+}
+
+function setScoutMuted(muted: boolean): void {
+  scoutMuted = muted;
+  document.body.classList.toggle('scout-muted', muted);
+  graph?.setScoutVisible(!muted);
+  if (muted) tipBox.classList.add('hidden');
+}
+
+on(askToggle, 'click', () => {
+  const open = ask.classList.toggle('collapsed') === false;
+  askToggle.setAttribute('aria-expanded', String(open));
+  if (open) askInput.focus();
+});
+on($('ask-form'), 'submit', (e: Event) => {
+  e.preventDefault();
+  if (askInput.value.trim()) answer(askInput.value.trim().slice(0, 200));
+});
+on($('tip-close'), 'click', () => {
+  if (tipShown) dismissedTips.add(tipShown);
+  tipBox.classList.add('hidden');
+});
+renderSuggestions(SUGGESTED);
+
 renderLegend();
 if (hasWebGL) init3D();
 else btnToggleView.classList.add('hidden');
+setScoutMuted(scoutMuted);
 setMode3D(hasWebGL);

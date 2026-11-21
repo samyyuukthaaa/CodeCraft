@@ -2,9 +2,10 @@
 // nonce'd stylesheet; dynamic colours are set through the CSSOM, which CSP allows), no remote resources.
 import { STATE_VISUALS } from './types';
 
-export function buildTownHtml(opts: { cspSource: string; nonce: string; scriptUri: string; reducedMotion?: 'on' | 'off' | 'auto' }): string {
+export function buildTownHtml(opts: { cspSource: string; nonce: string; scriptUri: string; reducedMotion?: 'on' | 'off' | 'auto'; scout?: 'on' | 'muted' }): string {
   const { cspSource, nonce, scriptUri } = opts;
   const motion = opts.reducedMotion ?? 'auto';
+  const scout = opts.scout === 'muted' ? 'muted' : 'on';
   const csp = [
     "default-src 'none'",
     `style-src 'nonce-${nonce}'`,
@@ -70,6 +71,20 @@ ${stateRules}
   .fallback-card:hover { border-color: rgba(255, 255, 255, 0.4); }
   .scout-2d { margin-bottom: 10px; padding: 6px 10px; border-radius: 8px; background: rgba(250, 204, 21, 0.12); border: 1px solid rgba(250, 204, 21, 0.5); color: #ffffff; font-weight: 700; font-size: 13px; }
   .fallback-card.scout-target { outline: 2px dashed #facc15; outline-offset: 2px; }
+  #ask { position: absolute; right: 12px; bottom: 12px; z-index: 13; width: 340px; font-size: 12px; }
+  body.replaying #ask { bottom: 64px; }
+  #ask.collapsed .ask-body { display: none; }
+  #ask-toggle { width: 100%; font-weight: 800; background: #facc15; color: #0a1330; border: 0; }
+  .ask-body { margin-top: 8px; }
+  #ask-answer { white-space: pre-wrap; line-height: 1.45; color: #ffffff; margin-bottom: 8px; }
+  #ask-answer:empty { display: none; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+  .chips button { font-size: 11px; padding: 3px 8px; border-radius: 12px; }
+  #ask-form { display: flex; gap: 6px; }
+  #ask-input { flex: 1; background: rgba(30, 41, 59, 0.92); color: #e2e8f0; border: 1px solid var(--border-color); border-radius: 6px; padding: 5px 8px; font-size: 12px; }
+  #tip { position: absolute; top: 112px; left: 50%; transform: translateX(-50%); z-index: 12; display: flex; gap: 10px; align-items: flex-start; max-width: 520px; font-size: 12px; border-color: rgba(250, 204, 21, 0.6); }
+  #tip button { padding: 2px 8px; }
+  body.scout-muted #tip, body.scout-muted #scout-2d { display: none !important; }
   .fallback-card.active { border-color: var(--warm); box-shadow: 0 0 10px rgba(250, 204, 21, 0.35); }
   .fallback-card-title { font-size: 12px; font-weight: 700; color: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .fallback-card-meta { font-size: 11px; color: #94a3b8; }
@@ -102,7 +117,7 @@ ${stateRules}
   .fallback-card-status { font-size: 11px; padding: 2px 6px; border-radius: 3px; border: 1px solid; width: fit-content; font-weight: 600; }
 </style>
 </head>
-<body data-reduced-motion="${motion}">
+<body data-reduced-motion="${motion}" data-scout="${scout}">
   <div id="canvas-container"></div>
   <div id="overlay">
     <div class="hud-panel">
@@ -142,6 +157,18 @@ ${stateRules}
     <dl id="insp-rows"></dl>
     <button id="insp-open" type="button">Open file</button>
   </aside>
+
+  <aside id="ask" class="hud-panel collapsed" aria-label="Ask Scout">
+    <button id="ask-toggle" type="button" aria-expanded="false">🏮 Ask Scout</button>
+    <div class="ask-body">
+      <div id="ask-answer" role="status" aria-live="polite"></div>
+      <div id="ask-suggest" class="chips" aria-label="Suggested questions"></div>
+      <form id="ask-form"><input id="ask-input" type="text" maxlength="200" placeholder="Ask about CodeCraft…" aria-label="Your question"><button type="submit">Ask</button></form>
+      <p class="muted">Answers come from a built-in guide and the town; no model is called.</p>
+    </div>
+  </aside>
+
+  <div id="tip" class="hud-panel hidden" role="status" aria-live="polite"><span id="tip-text"></span><button id="tip-close" type="button" aria-label="Dismiss this tip">✕</button></div>
 
   <div id="tooltip" role="tooltip">
     <div class="title" id="tt-title"></div>

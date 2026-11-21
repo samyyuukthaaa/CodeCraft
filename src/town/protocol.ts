@@ -17,7 +17,7 @@ export type HostToTown =
   | { type: 'replay'; runId: string; base: SceneState; events: TownEvent[] }
   | { type: 'focus'; path: string }
   /** codecraft.townReducedMotion changed while the panel is open ('on' | 'off' | 'auto'). */
-  | { type: 'settings'; reducedMotion: 'on' | 'off' | 'auto' };
+  | { type: 'settings'; reducedMotion: 'on' | 'off' | 'auto'; scout: 'on' | 'muted' };
 
 /** A workspace-relative path: no traversal, not absolute (no drive letter, no leading slash), no control characters. */
 export function relativePath(raw: string): string | undefined {

@@ -83,6 +83,7 @@ window.addEventListener('load', () => {
   ${has('replay') ? `window.postMessage({ type: 'runs', runs: [{ runId: 'ab12ab12ab12ab12', request: 'Add a --env-file option', at: 1700000000000, status: 'done' }] }, '*'); setTimeout(() => document.getElementById('btn-replay').click(), 300);` : ''}
   ${arg('mode') ? `setTimeout(() => document.getElementById('mode-${arg('mode')}').click(), 100);` : ''}
   ${arg('inspect') ? `setTimeout(() => window.postMessage({ type: 'focus', path: ${JSON.stringify(arg('inspect'))} }, '*'), 150);` : ''}
+  ${arg('ask') ? `setTimeout(() => { document.getElementById('ask-toggle').click(); document.getElementById('ask-input').value = ${JSON.stringify(arg('ask'))}; document.getElementById('ask-form').requestSubmit(); }, 250);` : ''}
   const evs = window.__events; let i = 0;
   const step = () => { if (i < evs.length) { window.postMessage({ type: 'event', event: evs[i++] }, '*'); setTimeout(step, ${Number(arg('interval', '60'))}); } };
   setTimeout(step, 200);
