@@ -15,7 +15,13 @@ export type JournalEntry =
   | { t: 'provider_error'; runId: string; at: number; model: string; cls: string }
   | { t: 'provider_recovered'; runId: string; at: number; model: string }
   | { t: 'model_switched'; runId: string; at: number; from: string; to: string; reason: string }
-  | { t: 'run_finished'; runId: string; at: number; status: string };
+  | { t: 'run_finished'; runId: string; at: number; status: string }
+  | { t: 'tool_call'; runId: string; at: number; opId: string; tool: string; args: string }
+  | { t: 'turn_position'; runId: string; at: number; sessionId?: string; turnId: string; lastEventId?: string; reason: string }
+  | { t: 'fault_injected'; runId: string; at: number; fault: string };
+
+/** Every stored entry also carries a per-run sequence number. */
+export type StoredEntry = JournalEntry & { seq?: number };
 
 /** An entry as callers write it: the journal fills in `at` (and `runId` when omitted). Distributes over the union. */
 export type NewJournalEntry = JournalEntry extends infer E ? (E extends JournalEntry ? Omit<E, 'at' | 'runId'> & { runId?: string } : never) : never;
@@ -47,6 +53,7 @@ export class Journal {
   private entries: JournalEntry[] = [];
   private loaded = false;
   private writing: Promise<void> = Promise.resolve();
+  private readonly seqByRun = new Map<string, number>();
   /** The current run, set by the host at run start ('' outside a run). */
   runId = '';
 
@@ -59,7 +66,9 @@ export class Journal {
     if (this.loaded) return;
     for (const line of await this.sink.readAll()) {
       try {
-        this.entries.push(JSON.parse(line) as JournalEntry);
+        const parsed = JSON.parse(line) as StoredEntry;
+        this.entries.push(parsed);
+        if (typeof parsed.seq === 'number') this.seqByRun.set(parsed.runId, Math.max(this.seqByRun.get(parsed.runId) ?? 0, parsed.seq));
       } catch {
         // a torn last line from a crash is ignored; the journal stays append-only
       }
@@ -69,11 +78,23 @@ export class Journal {
 
   /** Appends (redacted) and returns once written. Writes are serialized so the order is preserved. */
   append(e: NewJournalEntry): Promise<void> {
-    const full = redactDeep({ ...e, runId: e.runId ?? this.runId, at: this.now() }) as unknown as JournalEntry;
+    const runId = e.runId ?? this.runId;
+    const seq = (this.seqByRun.get(runId) ?? 0) + 1;
+    this.seqByRun.set(runId, seq);
+    const full = redactDeep({ ...e, runId, at: this.now(), seq }) as unknown as JournalEntry;
     this.entries.push(full);
     const line = JSON.stringify(full);
     this.writing = this.writing.then(() => this.sink.append(line));
     return this.writing;
+  }
+
+  /** The last persisted stream position of a run (for resume after a restart). */
+  lastPosition(runId: string = this.runId): Extract<JournalEntry, { t: 'turn_position' }> | undefined {
+    for (let i = this.entries.length - 1; i >= 0; i--) {
+      const e = this.entries[i] as JournalEntry;
+      if (e.t === 'turn_position' && e.runId === runId) return e;
+    }
+    return undefined;
   }
 
   all(): readonly JournalEntry[] {

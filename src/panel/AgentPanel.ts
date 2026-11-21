@@ -9,6 +9,8 @@ export interface PanelHandlers {
   onPrompt: (text: string, post: Post) => Promise<void>;
   /** "Test providers" button. */
   onTestProviders?: (post: Post) => Promise<void>;
+  /** "Inject fault…" button (testing failover): the host asks which fault to arm for the next run. */
+  onInjectFault?: (post: Post) => Promise<void>;
   /** Called once the panel exists, e.g. to send the current provider health. */
   onReady?: (post: Post) => void;
 }
@@ -49,10 +51,11 @@ export class AgentPanel {
       const msg = parseWebviewMessage(raw);
       if (!msg || busy) return;
       busy = true;
-      post({ type: 'status', state: 'running', ...(msg.type === 'testProviders' ? { note: 'testing providers' } : {}) });
+      post({ type: 'status', state: 'running', ...(msg.type === 'testProviders' ? { note: 'testing providers' } : msg.type === 'injectFault' ? { note: 'choosing a fault' } : {}) });
       try {
         if (msg.type === 'prompt') await handlers.onPrompt(msg.text, post);
-        else await handlers.onTestProviders?.(post);
+        else if (msg.type === 'testProviders') await handlers.onTestProviders?.(post);
+        else await handlers.onInjectFault?.(post);
       } finally {
         busy = false;
         post({ type: 'status', state: 'idle' });

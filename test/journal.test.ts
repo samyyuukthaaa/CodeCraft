@@ -17,7 +17,7 @@ test('journal: append-only JSONL, redacted, reloadable; torn last line ignored',
   await j.append({ t: 'run_finished', status: 'done' });
   assert.equal(sink.lines.length, 2);
   assert.ok(!sink.lines.join('\n').includes(fake));
-  assert.deepEqual(JSON.parse(sink.lines[1]!), { t: 'run_finished', status: 'done', runId: 'r1', at: 42 });
+  assert.deepEqual(JSON.parse(sink.lines[1]!), { t: 'run_finished', status: 'done', runId: 'r1', at: 42, seq: 2 });
   sink.lines.push('{"t":"op_appl'); // crash mid-write
   const again = new Journal(sink);
   await again.load();

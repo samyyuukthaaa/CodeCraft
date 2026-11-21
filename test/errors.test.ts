@@ -42,7 +42,7 @@ test('failoverBanner: plain words, names both models, says the key was rejected,
   const b = failoverBanner('codecraft-test-badkey/gpt-oss-120b', 'google-gemini/gemini-3-5-flash-lite', `${OBSERVED.key401} (key ${dummy})`);
   assert.equal(
     b,
-    'The primary model codecraft-test-badkey/gpt-oss-120b stopped because its API key was rejected (HTTP 401). CodeCraft switched to the fallback model google-gemini/gemini-3-5-flash-lite automatically and is continuing your request.',
+    'Provider key rejected: update it in TrueForge Settings. The primary model codecraft-test-badkey/gpt-oss-120b was refused (HTTP 401); CodeCraft switched to the fallback model google-gemini/gemini-3-5-flash-lite automatically and is continuing your request.',
   );
   assert.ok(!b.includes(dummy));
   assert.match(failoverBanner('a', 'b', OBSERVED.demand503), /unavailable or timed out \(HTTP 503\)/);

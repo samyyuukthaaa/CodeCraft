@@ -37,7 +37,23 @@ export interface TurnDriver {
   resumePaused(turnId: string, approvals: ApprovalInput[], afterEventId: string | undefined, signal: AbortSignal): AsyncIterable<TurnEvent>;
   /** Starts a NEW turn carrying approval decisions (for a turn that ended with required actions). */
   newTurnWithApprovals(approvals: ApprovalInput[], signal: AbortSignal): AsyncIterable<TurnEvent>;
+  /** Continues a turn whose stream was cut, after the last event seen (live subscribe or persisted events). */
+  resumeStream?(turnId: string, afterEventId: string | undefined, signal: AbortSignal): AsyncIterable<TurnEvent>;
+  /** TrueForge session ID (persisted in the journal for resume). */
+  sessionId?: string;
 }
+
+/** Where a run is in TrueForge: persisted so a cut stream can be resumed. */
+export interface StreamPosition {
+  sessionId?: string;
+  turnId: string;
+  lastEventId?: string;
+  /** Why the position was recorded. */
+  at: 'paused' | 'done' | 'cut' | 'resumed';
+}
+
+/** A cut stream is resumed at most this many times per run. */
+export const MAX_STREAM_RESUMES = 2;
 
 export type RunOutcome =
   | { status: 'done'; text: string; rounds: number }
@@ -51,6 +67,8 @@ export interface RunOptions {
   onEvent?: (ev: TurnEvent) => void;
   signal?: AbortSignal;
   maxRounds?: number;
+  /** Persist session/turn/last event (journal) so a cut stream can be resumed. */
+  onPosition?: (p: StreamPosition) => void;
 }
 
 interface CallInfo {
@@ -97,6 +115,7 @@ export async function runWithApprovals(text: string, opts: RunOptions): Promise<
   const fragments = new Map<string, string>(); // `${messageId}:${index}` -> tool call id
   let turnId: string | undefined;
   let lastEventId: string | undefined;
+  let resumes = 0;
 
   const makeStream = (() => {
     let next: (signal: AbortSignal) => AsyncIterable<TurnEvent> = (s) => opts.driver.start(text, s);
@@ -154,12 +173,29 @@ export async function runWithApprovals(text: string, opts: RunOptions): Promise<
       }
     } catch (e) {
       if (opts.signal?.aborted) return { status: 'cancelled', rounds: round };
-      throw e;
+      // A stream that breaks mid-turn is treated like a cut stream (resumed below) when it can be resumed.
+      if (!(turnId && opts.driver.resumeStream && resumes < MAX_STREAM_RESUMES)) throw e;
     } finally {
       local.abort(); // close the HTTP stream
       opts.signal?.removeEventListener('abort', onAbort);
     }
     if (opts.signal?.aborted) return { status: 'cancelled', rounds: round };
+    const position = (at: StreamPosition['at']): void => {
+      if (turnId) opts.onPosition?.({ ...(opts.driver.sessionId ? { sessionId: opts.driver.sessionId } : {}), turnId, ...(lastEventId ? { lastEventId } : {}), at });
+    };
+    if (paused) position('paused');
+    if (done) position('done');
+
+    // Cut stream (no turn.done and no pause): resume the SAME turn after the last event seen.
+    if (!paused && !done && turnId && opts.driver.resumeStream && resumes < MAX_STREAM_RESUMES) {
+      resumes++;
+      position('cut');
+      const t = turnId;
+      const after = lastEventId;
+      const resume = opts.driver.resumeStream.bind(opts.driver);
+      makeStream.set((s) => resume(t, after, s));
+      continue;
+    }
 
     if (done?.status === 'error') return { status: 'error', message: redact(done.message), rounds: round };
     if (done?.status === 'cancelled') return { status: 'cancelled', rounds: round };

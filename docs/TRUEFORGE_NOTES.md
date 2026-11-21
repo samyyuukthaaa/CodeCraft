@@ -53,7 +53,42 @@ More real error texts observed on 2026-11-20 (all as `turn.done` with `state.sta
 
 Thrown at session creation (HTTP 422 from TrueForge, before any turn): `Unknown model "<ref>" — not configured on provider`, and `Reasoning effort "<x>" is not supported by model "<ref>"`.
 
-Not yet observed (UNVERIFIED, needed before P4's classifier): invalid or revoked key, rate limit (and any retry hint), bad output, context too large.
+### P4: error shapes captured on purpose (VERIFIED-RUN, 2026-11-21)
+`npm run capture-errors` (`test/scenarios/capture-errors.ts`) makes the provider side fail on purpose and saves every real `turn.done` error text to `test/fixtures/trueforge-errors.json` (39 samples, the dummy key masked). TrueForge itself is real; only the provider is a test-only stand-in. `test/fixture-errors.test.ts` runs the classifier against every sample. Again, no failure throws: each one ends the stream with `turn.done {state.status:"error", message}`.
+
+| Fault (how) | Exact TrueForge text | Time to `turn.done` | Class |
+|---|---|---|---|
+| Wrong key (dummy key, real Groq endpoint) | `[Model Error] Request failed (401): Invalid API Key` | < 1 s | invalid_or_revoked_key |
+| 429 with `Retry-After: 7` (mock) | `[Model Error] Request failed (429): Rate limit reached for requests. Please try again in 7s.` | ~3 s (TrueForge retried 3 times itself, see below) | rate_limit, hint 7 s |
+| Gemini per-minute quota (natural, history) | `... (429): You exceeded your current quota ... Generate content requests per minute limit exceeded on Free Tier ... Please retry in 25.296186508s.` | | rate_limit, hint 25.3 s |
+| 503 overloaded (mock) | `[Model Error] Request failed (503): The engine is currently overloaded, please try again later.` | ~3 s (retried by TrueForge) | unavailable_or_timeout |
+| 500 (mock) | `[Model Error] Request failed (500): The server had an error while processing your request.` | < 0.1 s (not retried by TrueForge) | unavailable_or_timeout |
+| Nothing listening on the port | `[Model Error] Cannot connect to API: connect ECONNREFUSED 127.0.0.1:8798` | < 0.1 s | unavailable_or_timeout |
+| Provider never answers (mock) | `[Model Error] Cannot connect to API: Headers Timeout Error` | **65 s** (TrueForge's fixed headers timeout) | unavailable_or_timeout |
+| Provider closes its stream mid-answer (mock) | `[Model Error] Request failed (200): Failed to process successful response: Failed to process successful response: terminated: other side closed` | < 1 s | unavailable_or_timeout |
+| Broken JSON in the stream (mock) | `[Model Error] JSON parsing failed: Text: {"id": "c1", ... Error message: SyntaxError: Unterminated string in JSON at position 52 ...` | < 0.1 s | bad_output |
+| Tool call with truncated arguments, every time (mock) | `You have reached iteration limit of 512, please request again` (no `[Model Error]` prefix) | ~20 s; TrueForge called the provider 512 times | bad_output |
+| Over the context window (mock, OpenAI-style 400) | `[Model Error] Request failed (400): This model's maximum context length is 8192 tokens. However, your messages resulted in 20000 tokens. ...` | < 0.1 s | context_too_large |
+| CodeCraft's editor MCP server not running (natural, history) | `[MCP Error] Failed to connect to remote MCP server 'codecraft-editor': failed to connect (tried streamable-http, sse): ... ECONNREFUSED 127.0.0.1:56336` | | editor_tools_unreachable (new: local, never fails over) |
+| Natural network errors (history) | `Cannot connect to API: read ECONNRESET`, `Connect Timeout Error (attempted addresses: ...)`, `getaddrinfo ENOTFOUND generativelanguage.googleapis.com`, `certificate has expired` | | unavailable_or_timeout; the last one tls_error |
+| Model not available (natural, history) | ``[Model Error] Request failed (404): The model `...` does not exist or you do not have access to it.`` | | unknown (shown as is, no retry, fails over) |
+
+Findings:
+- **TrueForge retries some failures itself before reporting them**: the mock provider saw 3 requests for one 429 turn and 3 for one 503 turn, but 1 for a 500 and 1 for the 400s. CodeCraft's own retries come on top (bounded by `RETRY_BUDGET`); the failure table shows the real totals.
+- **A tool call the model keeps getting wrong costs up to 512 provider calls** before TrueForge gives up (`iterationLimit` 512 for an inline agent; CodeCraft's own agents set 60).
+- **A hanging provider costs 65 s per attempt** before TrueForge reports it.
+- The `history_20` sample showed that an `[MCP Error]` was being classed as a provider outage, which would have retried, opened the provider's breaker and failed over to a model that needs the same dead MCP server. It now has its own local class (no retry, no failover, breaker untouched, "reload the window" message).
+- UNVERIFIED: a context-too-large error **from Gemini itself** (only the OpenAI-style text was produced, by the mock; Gemini's 1M-token window was never reached). The classifier also matches `exceeds the maximum` / `input is too long`, which are guesses.
+- UNVERIFIED: bad output **from a real model** (no real model produced unparseable output or a malformed tool call in our runs; both shapes come from the mock).
+- UNVERIFIED: a **revoked** (rather than wrong) key. A revoked Gemini key was not available; the shape is assumed to be the same 401/403.
+- UNVERIFIED: a **daily** quota text beyond the one Gemini free-tier text recorded earlier (`requests per day limit exceeded`).
+
+### P4: resuming a cut stream (VERIFIED-RUN, 2026-11-21)
+- The stream endpoints take `after_event_id` (SDK `afterEventId`). An `after_sequence_number` query parameter is NOT supported on the stream (observed while building P4), and SSE frames carry no `id:` lines, so CodeCraft keeps the last event ID itself and persists it in the journal (`turn_position` entries: session ID, turn ID, last event ID, per-run sequence number).
+- After the client's stream is cut, `subscribeToTurn(sessionId, turnId, {afterEventId})` returns exactly the events after that ID, **even when the turn has already finished** (probe: cut after `model.message`; the subscription returned only `turn.done`).
+- Fallback when the subscription fails: `GET /sessions/{id}/turns/{id}/events?order=asc` returns the persisted events of the turn (probe: `turn.created, model.message, turn.done`); CodeCraft replays those after the last seen ID.
+- Exercised end to end in `docs/FAILURE_TABLE.md` (row "Stream to CodeCraft cut"). A turn is resumed at most twice per run (`MAX_STREAM_RESUMES`).
+- The sessions list endpoint caps `limit` at 25 (`Too big: expected number to be <=25`).
 
 ## Fallback model history (why candidates were dropped)
 | Candidate | Status | Evidence |

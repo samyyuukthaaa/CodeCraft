@@ -30,6 +30,12 @@ function line(e: JournalEntry): string | undefined {
       return `- ${time(e.at)} switched model: ${e.from} -> ${e.to} (${e.reason.replace(/_/g, ' ')})`;
     case 'run_finished':
       return `- ${time(e.at)} run finished: ${e.status}`;
+    case 'tool_call':
+      return `- ${time(e.at)} tool ${e.tool} (${e.opId}) ${e.args}`;
+    case 'turn_position':
+      return e.reason === 'cut' ? `- ${time(e.at)} stream cut; resuming turn ${e.turnId} after event ${e.lastEventId ?? '(start)'}` : undefined;
+    case 'fault_injected':
+      return `- ${time(e.at)} **fault injected (test)**: ${e.fault}`;
   }
 }
 

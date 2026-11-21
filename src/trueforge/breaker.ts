@@ -5,7 +5,7 @@
 //   open      -> skipped until the cooldown ends (a fallback is used instead)
 //   half_open -> cooldown over: the next request (a run or a "Test providers" probe) is let through;
 //                success closes it and reports provider_recovered, failure re-opens it
-import { ErrorClass, classifyError, isDailyQuota } from './errors';
+import { ErrorClass, classifyError, isDailyQuota, isLocalError } from './errors';
 
 export type BreakerState = 'closed' | 'open' | 'half_open';
 
@@ -93,6 +93,7 @@ export class CircuitBreaker {
     const provider = providerOf(modelRef);
     const e = this.entry(provider, modelRef);
     const cls = classifyError(message).cls;
+    if (isLocalError(cls)) return this.state(provider); // not the provider's fault: the breaker is unchanged
     e.lastErrorClass = cls;
     e.lastErrorAt = this.now();
     e.consecutiveFailures++;
@@ -100,7 +101,7 @@ export class CircuitBreaker {
     if (cls === 'invalid_or_revoked_key') cooldown = COOLDOWN_MS.invalid_or_revoked_key;
     else if (cls === 'rate_limit') cooldown = isDailyQuota(message) ? COOLDOWN_MS.daily_quota : COOLDOWN_MS.rate_limit;
     else if (cls === 'unavailable_or_timeout') cooldown = COOLDOWN_MS.unavailable_or_timeout;
-    else if (cls !== 'tls_error' && e.consecutiveFailures >= OTHER_FAILURES_TO_OPEN) cooldown = COOLDOWN_MS.other;
+    else if (e.consecutiveFailures >= OTHER_FAILURES_TO_OPEN) cooldown = COOLDOWN_MS.other;
     if (cooldown !== undefined) {
       e.openedUntil = this.now() + cooldown;
       e.wasOpen = true;

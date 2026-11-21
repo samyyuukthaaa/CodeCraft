@@ -85,11 +85,15 @@ npm run scenario -- task1      # live end-to-end Task A against fixtures/flask (
 npm run scenario -- task2      # Task B
 npm run scenario -- task3      # Task C, both variants (uses a TEST-ONLY provider with a dummy key)
 npm run test:vscode            # runs the extension inside a separately downloaded VS Code
-npm run secret-scan            # staged files; -- --all for every tracked file
+npm run secret-scan            # staged files; -- --all for every tracked file (npm test also scans every tracked file)
+npm run capture-errors         # records real TrueForge error shapes into test/fixtures/trueforge-errors.json
+npm run failure-table          # every fault x3 end to end through TrueForge -> docs/FAILURE_TABLE.md (~20 min)
 ```
+The capture and failure-table scripts use only test-only providers: a local mock provider on 127.0.0.1:8799 that fails on purpose (`codecraft-test-mock`, `codecraft-test-mock-fallback`), a port with nothing listening (`codecraft-test-unreachable`) and the dummy-key provider below. To try failover by hand in the editor, use the panel's **Inject fault…** button (next run only) or the `codecraft.faultInjection` setting (every run; keep `none` normally).
 The three tasks are quoted word for word in [docs/TASKS.md](docs/TASKS.md); real run results are in [docs/RESULTS.md](docs/RESULTS.md). Task C's scenario creates a TrueForge provider named `codecraft-test-badkey` with the obvious dummy key `DUMMY-INVALID-KEY-FOR-CODECRAFT-TESTS` and an agent `codecraft-test-primary-badkey`; both are test-only and never defaults.
 
 ## 7. Documentation
+- [docs/FAILURE_TABLE.md](docs/FAILURE_TABLE.md): each fault, expected vs observed behaviour, from real runs
 - [docs/EDITOR_TOOLS.md](docs/EDITOR_TOOLS.md): tools, write gate, change sets, review flow
 - [docs/REPO_INDEX.md](docs/REPO_INDEX.md): index, context budget, `@file:` / `@symbol:`
 - [docs/TRUEFORGE_NOTES.md](docs/TRUEFORGE_NOTES.md): TrueForge API shapes and error texts verified live

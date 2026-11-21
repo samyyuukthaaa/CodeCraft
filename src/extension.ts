@@ -33,7 +33,16 @@ import { healthRows, probeProviders } from './trueforge/health';
 import { runWithApprovals } from './trueforge/run';
 import { classifyError, failoverBanner, failureMessage } from './trueforge/errors';
 import { AgentAttempt, runWithFailover } from './trueforge/failover';
+import { FAULT_MODES, FaultInjector, FaultMode } from './trueforge/faults';
+import type { TurnDriver } from './trueforge/run';
+import { toolArgsSummary } from './journal/toolArgs';
 import { redact } from './util/redact';
+
+/** The codecraft.faultInjection setting, validated ('none' for anything unexpected). */
+function faultSetting(): FaultMode | 'none' {
+  const v = vscode.workspace.getConfiguration('codecraft').get<string>('faultInjection', 'none');
+  return (FAULT_MODES as string[]).includes(v) ? (v as FaultMode) : 'none';
+}
 
 function readConfig(): CodeCraftConfig {
   const c = vscode.workspace.getConfiguration('codecraft');
@@ -82,6 +91,8 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
   const planStore = new PlanStore();
   // Per-provider circuit breaker for this VS Code session (health shown in the panel; never key values).
   const breaker = new CircuitBreaker();
+  // Fault injection for testing failover (setting codecraft.faultInjection, or the panel's "Inject fault…").
+  const faults = new FaultInjector(faultSetting);
 
   // Editor-tool host (created only when a folder is open). The index is persisted in VS Code's
   // workspace storage, never inside the repository.
@@ -123,6 +134,8 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
           },
           plan: planStore,
           onTests: (passed, exitCode) => void journal.append({ t: 'tests', passed, exitCode }),
+          // An operation ID is journaled (and written) before every tool call runs.
+          beforeTool: (tool, args) => journal.append({ t: 'tool_call', opId: randomBytes(6).toString('hex'), tool, args: toolArgsSummary(tool, args) }),
           onPlan: (pl) => {
             void journal.append({ t: 'plan', summary: pl.summary, files: pl.files.map((f) => ({ path: f.path, action: f.action })) });
             out.appendLine(`[plan] ${pl.summary} | ${pl.files.map((f) => `${f.action} ${f.path}: ${f.why}`).join(' | ')}`);
@@ -175,7 +188,7 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
     return client;
   }
 
-  function attemptFor(client: ReturnType<typeof createClient>, agent: string, model: string): AgentAttempt {
+  function attemptFor(client: ReturnType<typeof createClient>, agent: string, model: string, wrap?: (d: TurnDriver) => TurnDriver): AgentAttempt {
     return {
       agent,
       model,
@@ -187,9 +200,21 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
           out.appendLine(`Session ${sid} (agent ${agent}, model ${model})`);
         }
         activeSessionId = sid;
-        return sessionDriver(client, sid);
+        const d = sessionDriver(client, sid);
+        return wrap ? wrap(d) : d;
       },
     };
+  }
+
+  async function injectFault(post: (m: HostToWebview) => void): Promise<void> {
+    const pick = await vscode.window.showQuickPick(
+      FAULT_MODES.map((m) => ({ label: m.replace(/_/g, ' '), mode: m })),
+      { title: 'CodeCraft (testing): make the NEXT run fail on purpose', placeHolder: 'The primary model will see this real TrueForge failure once' },
+    );
+    if (!pick) return;
+    faults.arm(pick.mode);
+    out.appendLine(`[fault] armed for the next run: ${pick.mode}`);
+    post({ type: 'event', event: { type: 'fault.armed', summary: `Fault armed for the next run: ${pick.label} (testing)` } });
   }
 
   async function runPrompt(text: string, post: (m: HostToWebview) => void): Promise<void> {
@@ -228,9 +253,27 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
       }
 
       const depthAtStart = host ? host.gate.undoDepth : 0;
-      const attempts = [attemptFor(client, PRIMARY_AGENT_NAME, cfg.primaryModel), attemptFor(client, FALLBACK_AGENT_NAME, cfg.fallbackModel)];
+      // Fault injection (testing): the primary's first turn of this run fails with a real TrueForge error text.
+      const fault = faults.take();
+      const onInjected = (m: FaultMode): void => {
+        void host?.journal.append({ t: 'fault_injected', fault: m });
+        out.appendLine(`[fault] injected: ${m}`);
+        post({ type: 'event', event: { type: 'fault.injected', summary: `Injected fault (testing): ${m.replace(/_/g, ' ')}`, failed: true } });
+      };
+      const attempts = [
+        attemptFor(client, PRIMARY_AGENT_NAME, cfg.primaryModel, fault ? (d) => faults.wrap(d, fault, onInjected) : undefined),
+        attemptFor(client, FALLBACK_AGENT_NAME, cfg.fallbackModel),
+      ];
       const result = await runWithFailover(prompt, attempts, {
         signal: abort.signal,
+        // Persist where the run is in TrueForge (session, turn, last event) so a cut stream can be resumed.
+        onPosition: (p) => {
+          void host?.journal.append({ t: 'turn_position', ...(p.sessionId ? { sessionId: p.sessionId } : {}), turnId: p.turnId, ...(p.lastEventId ? { lastEventId: p.lastEventId } : {}), reason: p.at });
+          if (p.at === 'cut') {
+            out.appendLine(`[stream] cut; resuming turn ${p.turnId} after event ${p.lastEventId ?? '(start)'}`);
+            post({ type: 'event', event: { type: 'stream.resumed', summary: 'The connection to TrueForge dropped; resuming the same turn' } });
+          }
+        },
         trimPrompt: trimPrompt ? () => trimPrompt?.() : undefined,
         breaker,
         progressNote: () => host?.journal.completedSteps() ?? '',
@@ -350,7 +393,7 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
   context.subscriptions.push(
     vscode.commands.registerCommand('codecraft.openAgentPanel', () => {
       out.show(true);
-      AgentPanel.show(context, { onPrompt: runPrompt, onTestProviders: testProviders, onReady: (post) => postHealth(post) });
+      AgentPanel.show(context, { onPrompt: runPrompt, onTestProviders: testProviders, onInjectFault: injectFault, onReady: (post) => postHealth(post) });
     }),
     vscode.commands.registerCommand('codecraft.openCodeTown', () => {
       out.show(true);

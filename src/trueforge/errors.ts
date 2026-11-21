@@ -3,7 +3,22 @@
 // else is "unknown" and is shown as-is (redacted) rather than guessed at. Key values are never shown.
 import { redact } from '../util/redact';
 
-export type ErrorClass = 'tls_error' | 'invalid_or_revoked_key' | 'rate_limit' | 'unavailable_or_timeout' | 'bad_output' | 'context_too_large' | 'bad_request' | 'unknown';
+export type ErrorClass =
+  | 'tls_error'
+  | 'editor_tools_unreachable'
+  | 'invalid_or_revoked_key'
+  | 'rate_limit'
+  | 'unavailable_or_timeout'
+  | 'bad_output'
+  | 'context_too_large'
+  | 'bad_request'
+  | 'unknown';
+
+/**
+ * Local problems: another model would fail the same way, so they are never retried, never fail over and never
+ * count against a provider's circuit breaker.
+ */
+export const isLocalError = (cls: ErrorClass): boolean => cls === 'tls_error' || cls === 'editor_tools_unreachable';
 
 export interface Classified {
   cls: ErrorClass;
@@ -17,16 +32,23 @@ export function classifyError(message: string): Classified {
   const t = message.toLowerCase();
   // observed: "Cannot connect to API: certificate has expired" (a machine network/TLS problem, not the provider)
   if (/certificate has expired|cert_has_expired|self[- ]signed certificate|unable to verify the first certificate|unable to get local issuer certificate/.test(t)) return { cls: 'tls_error', status };
+  // observed: "[MCP Error] Failed to connect to remote MCP server 'codecraft-editor': failed to connect (tried
+  // streamable-http, sse) ... ECONNREFUSED 127.0.0.1:56336" (CodeCraft's own editor server was not running)
+  if (/^\s*\[mcp error\]/.test(t)) return { cls: 'editor_tools_unreachable', status };
   // observed: "(401): Invalid API Key"
   if (status === 401 || status === 403 || /invalid api key|api key not valid|api_key_invalid|unauthori[sz]ed|permission denied/.test(t)) return { cls: 'invalid_or_revoked_key', status };
   // observed: "(429): You exceeded your current quota ..."
   if (status === 429 || /quota|rate limit|too many requests/.test(t)) return { cls: 'rate_limit', status };
   // observed: "(503): ... high demand", "Cannot connect to API: Headers Timeout Error", "terminated: read ECONNRESET"
-  if ((status !== undefined && status >= 500) || /high demand|cannot connect to api|timeout|econnreset|econnrefused|unavailable/.test(t)) return { cls: 'unavailable_or_timeout', status };
+  // observed (mock provider through TrueForge): "(500): The server had an error", "(503): The engine is currently
+  // overloaded", "Cannot connect to API: connect ECONNREFUSED", "(200): Failed to process successful response ...
+  // terminated: other side closed" (stream cut by the provider)
+  if ((status !== undefined && status >= 500) || /high demand|overloaded|cannot connect to api|timeout|econnreset|econnrefused|unavailable|terminated: other side closed|socket hang up/.test(t)) return { cls: 'unavailable_or_timeout', status };
   if (/context (length|window)|maximum context|too many tokens|prompt is too long|input is too long|exceeds the maximum/.test(t)) return { cls: 'context_too_large', status };
-  // Output the agent loop could not use (malformed tool call JSON, empty or blocked response). Not observed
-  // live yet; patterns follow the common provider texts and are covered by unit tests only.
-  if (/invalid json|malformed|could not parse|failed to parse|unexpected token|empty (response|output|completion)|no candidates|finish_reason[^a-z]*(malformed|recitation)/.test(t)) return { cls: 'bad_output', status };
+  // Output the agent loop could not use. Observed (mock provider through TrueForge): "[Model Error] JSON parsing
+  // failed: ... SyntaxError: Unterminated string" (broken stream JSON) and, for a malformed tool call that the
+  // model kept repeating, "You have reached iteration limit of 512, please request again".
+  if (/json parsing failed|invalid json|malformed|could not parse|failed to parse|unexpected token|unterminated string|reached iteration limit|empty (response|output|completion)|no candidates|finish_reason[^a-z]*(malformed|recitation)/.test(t)) return { cls: 'bad_output', status };
   // observed: "(400): * GenerateContentRequest.generation_config.temperature: ...", "(400): Bad Request"
   if (status === 400) return { cls: 'bad_request', status };
   return { cls: 'unknown', status };
@@ -43,6 +65,7 @@ export function classifyError(message: string): Classified {
  */
 export const RETRY_BUDGET: Record<ErrorClass, number> = {
   tls_error: 0,
+  editor_tools_unreachable: 0,
   invalid_or_revoked_key: 0,
   bad_request: 0,
   unknown: 0,
@@ -59,7 +82,8 @@ const MAX_HINT_MS = 65_000;
 
 /** Server-provided wait: a Retry-After value (seconds) or the observed "Please retry in 59.38s." text. */
 export function retryAfterMs(message: string): number | undefined {
-  const m = /retry[-_ ]after["':\s]+([\d.]+)\s*(?:s|sec|secs|seconds)?\b/i.exec(message) ?? /retry in ([\d.]+)\s*s/i.exec(message);
+  // observed: Gemini "Please retry in 59.38s.", OpenAI-style "Please try again in 7s." (both through TrueForge)
+  const m = /retry[-_ ]after["':\s]+([\d.]+)\s*(?:s|sec|secs|seconds)?\b/i.exec(message) ?? /(?:retry|try again) in ([\d.]+)\s*s/i.exec(message);
   return m ? Math.ceil(Number(m[1]) * 1000) : undefined;
 }
 
@@ -95,6 +119,7 @@ export const isDailyQuota = (message: string): boolean => /per day|daily (limit|
 
 const WHAT: Record<ErrorClass, string> = {
   tls_error: 'the secure connection to the provider failed (TLS certificate error on this machine or network)',
+  editor_tools_unreachable: "TrueForge could not reach CodeCraft's editor tools",
   invalid_or_revoked_key: 'its API key was rejected',
   rate_limit: 'it hit a rate limit or used up its quota',
   unavailable_or_timeout: 'the provider was unavailable or timed out',
@@ -108,6 +133,8 @@ const WHAT: Record<ErrorClass, string> = {
 export function failoverBanner(fromModel: string, toModel: string, reason: string): string {
   const c = classifyError(reason);
   const code = c.status ? ` (HTTP ${c.status})` : '';
+  // Spec wording for a rejected key, then what happened next.
+  if (c.cls === 'invalid_or_revoked_key') return `Provider key rejected: update it in TrueForge Settings. The primary model ${fromModel} was refused${code}; CodeCraft switched to the fallback model ${toModel} automatically and is continuing your request.`;
   const what = c.cls === 'rate_limit' && isDailyQuota(reason) ? 'it used up its daily quota' : WHAT[c.cls];
   return `The primary model ${fromModel} stopped because ${what}${code}. CodeCraft switched to the fallback model ${toModel} automatically and is continuing your request.`;
 }
@@ -120,6 +147,8 @@ export function failureMessage(model: string, reason: string, appliedFiles: stri
   switch (c.cls) {
     case 'tls_error':
       return `Cannot reach ${model}: the secure (TLS) connection failed${code}. Check this machine's clock, proxy or network; retrying will not help.${filesNote}`;
+    case 'editor_tools_unreachable':
+      return `TrueForge could not reach CodeCraft's editor tools (the local MCP server), so ${model} could not read or change files. Run "Developer: Reload Window" and try again; another model would fail the same way.${filesNote}`;
     case 'invalid_or_revoked_key':
       return `Provider key rejected${code} for ${model}: update it in TrueForge Settings.${filesNote}`;
     case 'rate_limit':

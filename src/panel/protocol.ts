@@ -7,7 +7,7 @@ import type { HealthRow } from '../trueforge/health';
 
 export const MAX_PROMPT_CHARS = 8000;
 
-export type WebviewToHost = { type: 'prompt'; text: string } | { type: 'testProviders' };
+export type WebviewToHost = { type: 'prompt'; text: string } | { type: 'testProviders' } | { type: 'injectFault' };
 
 export type HostToWebview =
   | { type: 'event'; event: DisplayEvent }
@@ -27,5 +27,7 @@ export function parseWebviewMessage(raw: unknown): WebviewToHost | undefined {
   }
   // No parameters: the host decides which agents to probe.
   if (m.type === 'testProviders' && Object.keys(m).length === 1) return { type: 'testProviders' };
+  // No parameters: the fault is chosen in a host-side quick pick, never taken from the webview.
+  if (m.type === 'injectFault' && Object.keys(m).length === 1) return { type: 'injectFault' };
   return undefined;
 }

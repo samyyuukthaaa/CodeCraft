@@ -49,7 +49,7 @@ export function buildHtml(opts: { cspSource: string; nonce: string; scriptUri: s
     <h4 id="health-h">Provider health</h4>
     <p class="muted">Status of the configured models. Keys are managed in TrueForge Settings and are never shown here.</p>
     <table><thead><tr><th>Role</th><th>Model</th><th>Status</th><th>Last error</th><th>When</th></tr></thead><tbody id="health-rows"></tbody></table>
-    <div><button id="test-providers" type="button">Test providers</button> <span id="health-note" class="muted" role="status" aria-live="polite"></span></div>
+    <div><button id="test-providers" type="button">Test providers</button> <button id="inject-fault" type="button" title="Testing: make the next run fail on purpose to exercise retries and failover">Inject fault…</button> <span id="health-note" class="muted" role="status" aria-live="polite"></span></div>
   </section>
   <section id="plan" aria-labelledby="plan-h">
     <h4 id="plan-h">Plan</h4>

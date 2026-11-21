@@ -170,6 +170,30 @@ export async function* resumePausedTurn(
   for await (const ev of stream) yield ev;
 }
 
+/**
+ * Resumes a turn whose stream was cut: subscribes after the last event seen. Observed live: TrueForge refuses
+ * after_sequence_number on this stream ("Use from_event_id or after_event_id"), so the event ID is used. If
+ * subscribing fails, falls back to the turn's persisted events (GET .../turns/{id}/events, ascending).
+ */
+export async function* resumeTurnStream(client: TrueForge, sessionId: string, turnId: string, afterEventId: string | undefined, signal?: AbortSignal): AsyncGenerator<TurnEvent> {
+  let live: AsyncIterable<TurnEvent> | undefined;
+  try {
+    live = await client.sessions.subscribeToTurn(sessionId, turnId, afterEventId ? { afterEventId } : {}, { abortSignal: signal });
+  } catch {
+    live = undefined;
+  }
+  if (live) {
+    for await (const ev of live) yield ev;
+    return;
+  }
+  const page = await client.sessions.listTurnEvents(sessionId, turnId, { order: 'asc', limit: 500 }, { abortSignal: signal });
+  let after = afterEventId === undefined;
+  for await (const ev of page as unknown as AsyncIterable<TurnEvent>) {
+    if (after) yield ev;
+    else if ((ev as { id?: string }).id === afterEventId) after = true;
+  }
+}
+
 /** The TurnDriver used by runWithApprovals, bound to one session. */
 export function sessionDriver(client: TrueForge, sessionId: string) {
   return {
@@ -177,6 +201,8 @@ export function sessionDriver(client: TrueForge, sessionId: string) {
     resumePaused: (turnId: string, approvals: ApprovalInput[], afterEventId: string | undefined, signal: AbortSignal) =>
       resumePausedTurn(client, sessionId, turnId, approvals, afterEventId, signal),
     newTurnWithApprovals: (approvals: ApprovalInput[], signal: AbortSignal) => streamTurnInput(client, sessionId, approvals, signal),
+    resumeStream: (turnId: string, afterEventId: string | undefined, signal: AbortSignal) => resumeTurnStream(client, sessionId, turnId, afterEventId, signal),
+    sessionId,
   };
 }
 

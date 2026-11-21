@@ -12,7 +12,9 @@ if (vscodeTests) {
   await build({ ...common, entryPoints: ['test/vscode/suite.ts'], outfile: 'out/vscode/suite.js', platform: 'node', format: 'cjs', external: ['vscode'] });
   await build({ ...common, entryPoints: ['test/vscode/run.ts'], outfile: 'out/vscode/run.js', platform: 'node', format: 'cjs', external: ['vscode', '@vscode/test-electron'] });
 } else if (scenarios) {
-  await build({ ...common, entryPoints: ['test/scenarios/run.ts'], outfile: 'out/scenarios/run.js', platform: 'node', format: 'cjs', external: ['vscode'] });
+  for (const name of ['run', 'failure-table', 'capture-errors']) {
+    await build({ ...common, entryPoints: [`test/scenarios/${name}.ts`], outfile: `out/scenarios/${name}.js`, platform: 'node', format: 'cjs', external: ['vscode'] });
+  }
 } else if (tests) {
   const entries = readdirSync('test')
     .filter((f) => f.endsWith('.ts'))

@@ -96,6 +96,8 @@ export interface ToolDeps {
   index?: { get(): Promise<RepoIndex> };
   /** Called with every path the agent actually reads via read_file. */
   onRead?: (path: string) => void;
+  /** Awaited before every tool runs (journal: an operation ID is recorded before the call). */
+  beforeTool?: (tool: string, args: unknown) => Promise<void>;
   /** Called with every real test result (journal). */
   onTests?: (passed: boolean, exitCode: number | null) => void;
 }
@@ -183,7 +185,7 @@ export const schemas = {
 export function createHandlers(deps: ToolDeps) {
   const note = (s: string): void => deps.onActivity?.(redact(s));
 
-  return {
+  const base = {
     async read_file(a: { path: string; startLine?: number; endLine?: number }): Promise<ToolOutput> {
       let p: string;
       try {
@@ -356,6 +358,15 @@ export function createHandlers(deps: ToolDeps) {
       return ok({ exitCode: r.exitCode, passed: r.exitCode === 0, output: redact(r.output) });
     },
   };
+  // An operation ID is journaled before EVERY tool call: beforeTool is awaited first.
+  const wrapped = {} as typeof base;
+  for (const [name, fn] of Object.entries(base) as Array<[keyof typeof base, (a: never) => Promise<ToolOutput>]>) {
+    (wrapped as Record<string, unknown>)[name] = async (a: never) => {
+      await deps.beforeTool?.(name, a);
+      return fn.call(base, a);
+    };
+  }
+  return wrapped;
 }
 
 export type Handlers = ReturnType<typeof createHandlers>;

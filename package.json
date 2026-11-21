@@ -78,6 +78,12 @@
           "minimum": 0,
           "maximum": 65535,
           "description": "Loopback port for the CodeCraft editor-tools MCP server that TrueForge calls. If it is in use, a random free port is used."
+        },
+        "codecraft.faultInjection": {
+          "type": "string",
+          "default": "none",
+          "enum": ["none", "outage", "timeout", "malformed_tool_call", "cut_stream", "invalid_key", "rate_limit"],
+          "markdownDescription": "**Testing only.** Makes the primary model's first turn of EVERY run fail with a real TrueForge error of this kind, to exercise retries, failover and the circuit breaker. `cut_stream` drops the connection after the first model message and resumes the same turn. Use the panel's *Inject fault…* button for a single run. Keep `none` for normal use."
         }
       }
     }
@@ -85,12 +91,14 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p .",
     "build": "node esbuild.mjs",
-    "test": "node esbuild.mjs --tests && node --test --test-timeout=60000 \"out/test/*.test.js\"",
+    "test": "node esbuild.mjs --tests && node --test --test-timeout=60000 \"out/test/*.test.js\" && node scripts/secret-scan.mjs --all",
     "smoke": "node esbuild.mjs --tests && node out/test/smoke.js",
     "secret-scan": "node scripts/secret-scan.mjs",
     "live-mcp": "node esbuild.mjs --tests && node out/test/live-mcp.js",
     "perf-index": "node esbuild.mjs --tests && node out/test/perf-index.js",
     "scenario": "node esbuild.mjs --scenarios && node out/scenarios/run.js",
+    "failure-table": "node esbuild.mjs --scenarios && node out/scenarios/failure-table.js",
+    "capture-errors": "node esbuild.mjs --scenarios && node out/scenarios/capture-errors.js",
     "test:vscode": "node esbuild.mjs && node esbuild.mjs --vscode && node out/vscode/run.js",
     "writeup": "node scripts/writeup-pdf.mjs"
   },

@@ -23,6 +23,8 @@ testProviders.addEventListener('click', () => {
   healthNote.textContent = 'Testing...';
   vscode.postMessage({ type: 'testProviders' });
 });
+const injectFault = document.getElementById('inject-fault') as HTMLButtonElement;
+injectFault.addEventListener('click', () => vscode.postMessage({ type: 'injectFault' }));
 
 function cell(row: HTMLElement, text: string, cls?: string): void {
   const td = document.createElement('td');
@@ -43,6 +45,7 @@ window.addEventListener('message', (e: MessageEvent<HostToWebview>) => {
   if (m.type === 'status') {
     send.disabled = m.state === 'running';
     testProviders.disabled = m.state === 'running';
+    injectFault.disabled = m.state === 'running';
     status.textContent = m.note ? `${m.state}: ${m.note}` : m.state;
     return;
   }
