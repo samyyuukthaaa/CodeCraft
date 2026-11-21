@@ -34,6 +34,37 @@ export const TEST_VISUALS: Record<TestStatusName, Visual> = {
   failed: { color: '#ef4444', icon: '✗', label: 'Tests fail' },
 };
 
+/**
+ * Warm district palette (original): wall and rooftop colours. Every district gets one deterministically from its id,
+ * so the same workspace always looks the same. Idle buildings wear their district's colours; a building the agent
+ * touches switches to its state colour (plus icon and text), so states stay easy to tell apart.
+ */
+export const DISTRICT_PALETTE: ReadonlyArray<{ wall: string; roof: string; name: string }> = [
+  { name: 'terracotta', wall: '#c8734f', roof: '#7a2e1d' },
+  { name: 'mustard', wall: '#d9a53f', roof: '#8a5a12' },
+  { name: 'teal', wall: '#3f9e98', roof: '#16504c' },
+  { name: 'plum', wall: '#9a6bb0', roof: '#4c2a63' },
+  { name: 'coral', wall: '#e0806e', roof: '#8c3527' },
+  { name: 'sage', wall: '#86a86b', roof: '#3d5a2a' },
+  { name: 'sky', wall: '#5f9bd1', roof: '#1f4a78' },
+  { name: 'rose', wall: '#d27a9c', roof: '#7a2d4b' },
+  { name: 'apricot', wall: '#e3a06b', roof: '#8d4a1c' },
+  { name: 'mint', wall: '#6dbf9e', roof: '#22614a' },
+];
+
+/** The district's palette entry: a stable hash of its id (no randomness). */
+export function districtColors(id: string): { wall: string; roof: string; name: string } {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619) >>> 0;
+  return DISTRICT_PALETTE[h % DISTRICT_PALETTE.length]!;
+}
+
+/** Festival lantern colours over buildings whose change was applied or that recovered. */
+export const LANTERN_COLORS = ['#ff6b6b', '#ffd93d', '#6bcb77', '#4d96ff', '#ff9f45', '#c77dff'] as const;
+
+/** Rainbow accent for replays. */
+export const REPLAY_RAINBOW = ['#ff5e5b', '#ffb347', '#ffe66d', '#7bd389', '#4fb3ff', '#9d7bff'] as const;
+
 const CONTROL_NAMES = new Set([
   'pyproject.toml', 'setup.py', 'setup.cfg', 'tox.ini', 'manage.py', 'makefile', 'dockerfile', 'package.json', 'package-lock.json',
   'tsconfig.json', 'requirements.txt', 'requirements-dev.txt', '.flake8', '.editorconfig', '.pre-commit-config.yaml', 'noxfile.py', 'conftest.py',

@@ -15,12 +15,12 @@ export interface StateVisual {
 }
 
 export const STATE_VISUALS: Record<BuildingState, StateVisual> = {
-  idle: { color: '#475569', icon: '◻', label: 'Idle' },
+  idle: { color: '#7f8ea8', icon: '◻', label: 'Idle' },
   planned: { color: '#a78bfa', icon: '☐', label: 'Planned' },
   read: { color: '#0284c7', icon: '👁', label: 'Read' },
   proposed: { color: '#f59e0b', icon: '✏', label: 'Proposed' },
   applied: { color: '#16a34a', icon: '✔', label: 'Applied' },
-  rejected: { color: '#94a3b8', icon: '⊘', label: 'Rejected' },
+  rejected: { color: '#c4a98f', icon: '⊘', label: 'Rejected' },
   failed: { color: '#ef4444', icon: '⚠', label: 'Failed' },
   recovered: { color: '#14b8a6', icon: '↺', label: 'Recovered' },
 };

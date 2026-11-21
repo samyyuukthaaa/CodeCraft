@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { diffScenes } from '../../town/diff';
-import { KIND_VISUALS, POWER_VISUALS } from '../../town/grammar';
+import { KIND_VISUALS, LANTERN_COLORS, POWER_VISUALS, REPLAY_RAINBOW, districtColors } from '../../town/grammar';
 import { FOOTPRINT, Layout, layoutScene } from '../../town/layout';
 import type { Building, SceneState } from '../../town/types';
 import { ViewMode, journeyStops } from '../../town/view';
@@ -50,8 +50,18 @@ export const buildingHeight = (b: Building): number => 0.9 + b.height * 0.32;
 /** Body colour: idle buildings are a dark tint of their kind; any other state shows its state colour. */
 export function bodyColor(b: Building, mode: ViewMode = 'journey'): THREE.Color {
   if (mode === 'architecture') return new THREE.Color(KIND_VISUALS[b.kind].color).lerp(NAVY, 0.3);
-  return b.state === 'idle' ? new THREE.Color(KIND_VISUALS[b.kind].color).lerp(NAVY, 0.55) : new THREE.Color(b.color);
+  // idle: the district's warm wall colour, a little dimmed so touched buildings (state colours) stand out
+  return b.state === 'idle' ? new THREE.Color(districtColors(b.district).wall).lerp(NAVY, 0.38) : new THREE.Color(b.color);
 }
+
+/** Roof colour: the district's rooftop colour (kind colour in Architecture mode). */
+export function roofColor(b: Building, mode: ViewMode = 'journey'): THREE.Color {
+  return mode === 'architecture' ? new THREE.Color(KIND_VISUALS[b.kind].color).lerp(NAVY, 0.55) : new THREE.Color(districtColors(b.district).roof);
+}
+
+/** Buildings that earn festival lanterns: an applied change, or a test that passes again. */
+export const celebrates = (b: Building): boolean => b.state === 'applied' || b.state === 'recovered';
+const LANTERNS_PER_BUILDING = 3;
 
 export interface GraphStats {
   rebuilds: number;
@@ -72,6 +82,10 @@ export class TownGraph {
   // shared, created once
   private readonly boxGeo = this.own(new RoundedBoxGeometry(FOOTPRINT, 1, FOOTPRINT, 2, 0.22).translate(0, 0.5, 0));
   private readonly beaconGeo = this.own(new THREE.OctahedronGeometry(0.42, 0));
+  private readonly roofGeo = this.own(new RoundedBoxGeometry(FOOTPRINT + 0.25, 0.3, FOOTPRINT + 0.25, 2, 0.1));
+  private readonly lanternGeo = this.own(new THREE.SphereGeometry(0.34, 10, 8));
+  private readonly roofMat = this.own(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 }));
+  private readonly lanternMat = this.own(new THREE.MeshBasicMaterial({ color: 0xffffff }));
   private readonly slabGeo = this.own(new RoundedBoxGeometry(1, 0.3, 1, 2, 0.12).translate(0, -0.15, 0));
   private readonly bodyMat: THREE.MeshStandardMaterial;
   private readonly beaconMat = this.own(new THREE.MeshBasicMaterial({ color: 0xffffff }));
@@ -80,6 +94,9 @@ export class TownGraph {
   // per build
   private buildings: THREE.InstancedMesh | undefined;
   private beacons: THREE.InstancedMesh | undefined;
+  private roofs: THREE.InstancedMesh | undefined;
+  private lanterns: THREE.InstancedMesh | undefined;
+  private replay = false;
   private porch: THREE.Points | undefined;
   private stringLights: THREE.Points | undefined;
   private readonly idByIndex: string[] = [];
@@ -150,6 +167,17 @@ export class TownGraph {
     this.applyModeVisibility();
   }
 
+  /** Replay accent on or off (the path turns rainbow while a finished run is replayed). */
+  setReplay(on: boolean): void {
+    if (on === this.replay) return;
+    this.replay = on;
+    if (this.scene) this.updateJourney(this.scene);
+  }
+
+  get replaying(): boolean {
+    return this.replay;
+  }
+
   /** Highlights the inspected building (or none). */
   select(id: string | undefined): void {
     this.selected = id;
@@ -196,7 +224,17 @@ export class TownGraph {
     if (pts.length >= 6) {
       const g = this.build(new THREE.BufferGeometry());
       g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-      this.journeyLine = new THREE.Line(g, this.build(new THREE.LineBasicMaterial({ color: '#facc15', transparent: true, opacity: 0.95 })));
+      if (this.replay) {
+        // rainbow accent while replaying a finished run
+        const cols: number[] = [];
+        const n = pts.length / 3;
+        for (let k = 0; k < n; k++) {
+          const c = new THREE.Color(REPLAY_RAINBOW[Math.floor((k / Math.max(1, n - 1)) * (REPLAY_RAINBOW.length - 1))]!);
+          cols.push(c.r, c.g, c.b);
+        }
+        g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+      }
+      this.journeyLine = new THREE.Line(g, this.build(new THREE.LineBasicMaterial(this.replay ? { vertexColors: true, transparent: true, opacity: 0.95 } : { color: '#facc15', transparent: true, opacity: 0.95 })));
       this.journeyLine.name = 'journey';
       this.root.add(this.journeyLine);
     }
@@ -308,7 +346,13 @@ export class TownGraph {
     this.root.add(roads);
     const bulbGeo = this.build(new THREE.BufferGeometry());
     bulbGeo.setAttribute('position', new THREE.Float32BufferAttribute(bulbs, 3));
-    this.stringLights = new THREE.Points(bulbGeo, this.build(new THREE.PointsMaterial({ color: '#ffe7a3', size: 0.32, transparent: true, opacity: 0.75, depthWrite: false })));
+    const bulbColors: number[] = [];
+    for (let k = 0; k < bulbs.length / 3; k++) {
+      const c = new THREE.Color(LANTERN_COLORS[k % LANTERN_COLORS.length]!).lerp(new THREE.Color('#fff3c4'), 0.25);
+      bulbColors.push(c.r, c.g, c.b);
+    }
+    bulbGeo.setAttribute('color', new THREE.Float32BufferAttribute(bulbColors, 3));
+    this.stringLights = new THREE.Points(bulbGeo, this.build(new THREE.PointsMaterial({ vertexColors: true, size: 0.38, transparent: true, opacity: 0.85, depthWrite: false })));
     this.stringLights.name = 'string-lights';
     this.root.add(this.stringLights);
 
@@ -446,7 +490,7 @@ export class TownGraph {
   // ---------- buildings (instanced) ----------
   private rebuildBuildings(s: SceneState, counted = true): void {
     if (counted) this.counters.buildingRebuilds++;
-    for (const obj of [this.buildings, this.beacons]) {
+    for (const obj of [this.buildings, this.beacons, this.roofs, this.lanterns]) {
       if (!obj) continue;
       this.root.remove(obj);
       this.release(obj);
@@ -464,6 +508,10 @@ export class TownGraph {
     this.buildings.name = 'buildings';
     this.beacons = this.build(new THREE.InstancedMesh(this.beaconGeo, this.beaconMat, capacity));
     this.beacons.name = 'beacons';
+    this.roofs = this.build(new THREE.InstancedMesh(this.roofGeo, this.roofMat, capacity));
+    this.roofs.name = 'roofs';
+    this.lanterns = this.build(new THREE.InstancedMesh(this.lanternGeo, this.lanternMat, capacity * LANTERNS_PER_BUILDING));
+    this.lanterns.name = 'lanterns';
     const porchGeo = this.build(new THREE.BufferGeometry());
     porchGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(capacity * 3), 3));
     porchGeo.setDrawRange(0, 0);
@@ -476,10 +524,16 @@ export class TownGraph {
       this.beacons.setMatrixAt(i, zero);
       this.buildings.setColorAt(i, NAVY);
       this.beacons.setColorAt(i, NAVY);
+      this.roofs.setMatrixAt(i, zero);
+      this.roofs.setColorAt(i, NAVY);
+      for (let k = 0; k < LANTERNS_PER_BUILDING; k++) {
+        this.lanterns.setMatrixAt(i * LANTERNS_PER_BUILDING + k, zero);
+        this.lanterns.setColorAt(i * LANTERNS_PER_BUILDING + k, new THREE.Color(LANTERN_COLORS[k % LANTERN_COLORS.length]!));
+      }
     }
     for (const id of ids) this.placeBuilding(s.buildings[id]!, this.allocate(id));
     this.flush();
-    this.root.add(this.buildings, this.beacons, this.porch);
+    this.root.add(this.buildings, this.beacons, this.roofs, this.lanterns, this.porch);
   }
 
   private allocate(id: string): number {
@@ -501,6 +555,20 @@ export class TownGraph {
     this.tmp.compose(new THREE.Vector3(lot.x, h + 0.7, lot.z), new THREE.Quaternion(), new THREE.Vector3().setScalar(showBeacon ? 1 : 0));
     this.beacons.setMatrixAt(i, this.tmp);
     this.beacons.setColorAt(i, new THREE.Color(b.color));
+    if (this.roofs) {
+      this.tmp.compose(new THREE.Vector3(lot.x, h + 0.05, lot.z), new THREE.Quaternion(), new THREE.Vector3(footprint, 1, footprint));
+      this.roofs.setMatrixAt(i, this.tmp);
+      this.roofs.setColorAt(i, roofColor(b, this.mode));
+    }
+    if (this.lanterns) {
+      // festival lanterns over a success: fixed spots around the roof (no randomness)
+      const on = celebrates(b) && this.mode === 'journey';
+      for (let k = 0; k < LANTERNS_PER_BUILDING; k++) {
+        const a = (k / LANTERNS_PER_BUILDING) * Math.PI * 2 + 0.6;
+        this.tmp.compose(new THREE.Vector3(lot.x + Math.cos(a) * 1.6, h + 1.6 + (k % 2) * 0.45, lot.z + Math.sin(a) * 1.6), new THREE.Quaternion(), new THREE.Vector3().setScalar(on ? 1 : 0));
+        this.lanterns.setMatrixAt(i * LANTERNS_PER_BUILDING + k, this.tmp);
+      }
+    }
     const pos = this.porch.geometry.getAttribute('position') as THREE.BufferAttribute;
     pos.setXYZ(i, lot.x, 0.35, lot.z + FOOTPRINT / 2 + 0.25);
     pos.needsUpdate = true;
@@ -513,6 +581,11 @@ export class TownGraph {
     if (this.buildings.instanceColor) this.buildings.instanceColor.needsUpdate = true;
     this.beacons.instanceMatrix.needsUpdate = true;
     if (this.beacons.instanceColor) this.beacons.instanceColor.needsUpdate = true;
+    for (const m of [this.roofs, this.lanterns]) {
+      if (!m) continue;
+      m.instanceMatrix.needsUpdate = true;
+      if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    }
   }
 
   // ---------- active building and power plant ----------
@@ -561,6 +634,7 @@ export class TownGraph {
     if (this.stringLights) (this.stringLights.material as THREE.PointsMaterial).opacity = 0.6 + 0.2 * Math.sin(t * 1.7);
     if (this.powerGlow) this.powerGlow.rotation.y = t * 0.6;
     if (this.shaft?.visible) (this.shaft.material as THREE.MeshBasicMaterial).opacity = 0.11 + 0.04 * Math.sin(t * 2.4);
+    if (this.lanterns) this.lanterns.position.y = Math.sin(t * 1.3) * 0.12; // the lanterns bob gently together
   }
 
   dispose(): void {

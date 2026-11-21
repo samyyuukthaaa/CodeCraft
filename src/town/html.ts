@@ -28,7 +28,7 @@ export function buildTownHtml(opts: { cspSource: string; nonce: string; scriptUr
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CodeCraft: Code Town</title>
 <style nonce="${nonce}">
-  :root { --night-sky: #0a1330; --night-card: rgba(12, 21, 48, 0.86); --border-color: rgba(255, 255, 255, 0.14); --warm: #facc15; }
+  :root { --night-sky: #0b1638; --night-card: rgba(12, 21, 48, 0.86); --border-color: rgba(255, 255, 255, 0.14); --warm: #facc15; }
   * { box-sizing: border-box; }
   body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: var(--night-sky); color: #e2e8f0;
     font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif); user-select: none; }
@@ -109,9 +109,11 @@ ${stateRules}
   #replay-bar { position: absolute; left: 50%; transform: translateX(-50%); bottom: 12px; z-index: 11; display: flex; align-items: center; gap: 8px; font-size: 12px; }
   #replay-bar select, #replay-bar input { background: rgba(30, 41, 59, 0.92); color: #e2e8f0; border: 1px solid var(--border-color); border-radius: 6px; padding: 4px 6px; font-size: 12px; }
   #replay-bar button, #replay-bar label { white-space: nowrap; }
+  /* rainbow accent for replays */
+  #replay-bar { border: 2px solid transparent; background: linear-gradient(rgba(12, 21, 48, 0.92), rgba(12, 21, 48, 0.92)) padding-box, linear-gradient(90deg, #ff5e5b, #ffb347, #ffe66d, #7bd389, #4fb3ff, #9d7bff) border-box; }
   #rp-pos { width: 220px; padding: 0; accent-color: #facc15; }
   #rp-text { min-width: 150px; font-variant-numeric: tabular-nums; }
-  .replay-tag { display: none; color: #0a1330; background: #facc15; border-radius: 4px; padding: 1px 6px; font-weight: 800; font-size: 11px; }
+  .replay-tag { display: none; color: #0a1330; background: linear-gradient(90deg, #ff5e5b, #ffb347, #ffe66d, #7bd389, #4fb3ff, #9d7bff); border-radius: 4px; padding: 1px 6px; font-weight: 800; font-size: 11px; }
   body.replaying .replay-tag { display: inline; }
   body.replaying #legend { bottom: 64px; }
   .fallback-card-status { font-size: 11px; padding: 2px 6px; border-radius: 3px; border: 1px solid; width: fit-content; font-weight: 600; }

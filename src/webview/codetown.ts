@@ -535,6 +535,7 @@ function schedule(): void {
 }
 
 function startReplay(runId: string, base: SceneState, events: TownEvent[]): void {
+  graph?.setReplay(true);
   player = setSpeed(play(createPlayer(runId, base, events)), Number(rpSpeed.value));
   display(player.scene, true); // the town before the run: one rebuild, then increments
   renderReplayBar();
@@ -542,6 +543,7 @@ function startReplay(runId: string, base: SceneState, events: TownEvent[]): void
 }
 
 function stopReplay(): void {
+  graph?.setReplay(false);
   if (replayTimer) clearTimeout(replayTimer);
   replayTimer = undefined;
   player = undefined;
