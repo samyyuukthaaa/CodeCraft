@@ -8,7 +8,7 @@ CodeCraft is a VS Code extension that puts a TrueForge coding agent inside the e
 - **Failover and recovery.** A primary and a fallback agent with identical instructions. Temporary provider errors (rate limit, 503, timeout) are retried with capped backoff; an invalid key fails over at once, with a plain-words banner. Without a fallback you get a clear message ("Provider key rejected ... update it in TrueForge Settings").
 - **Repository context.** A Python / TypeScript / JavaScript index (symbols, imports, related tests), `@file:` and `@symbol:` references, your editor selection, and a token budget that shows what was included and why.
 
-Status and honest limits: see [docs/RESULTS.md](docs/RESULTS.md) and the write-up. Code Town (3D view) is **not built**.
+Status and honest limits: see [docs/RESULTS.md](docs/RESULTS.md) and the write-up ([docs/WRITEUP.md](docs/WRITEUP.md), draft). Code Town, a 3D view of the workspace fed from the journal, is built: **CodeCraft: Open Code Town** ([docs/CODETOWN.md](docs/CODETOWN.md)).
 
 ---
 
