@@ -10,6 +10,7 @@
 // and a new per-hunk decision for every write, so accepted changes stay applied and are re-proposed only if
 // the agent reads the current file and proposes something different.
 import { redact } from '../util/redact';
+import { CircuitBreaker, providerOf } from './breaker';
 import { ErrorClass, MAX_RATE_LIMIT_WAITS, classifyError, retryDelayMs } from './errors';
 import { RunOptions, RunOutcome, TurnDriver, runWithApprovals } from './run';
 
@@ -28,6 +29,15 @@ export interface SwitchInfo {
   fromModel: string;
   toModel: string;
   reason: string;
+  /** True when the first agent was skipped because its provider's circuit breaker is open. */
+  circuitOpen?: boolean;
+}
+
+export interface ProviderErrorInfo {
+  agent: string;
+  model: string;
+  cls: ErrorClass;
+  message: string;
 }
 
 export interface RetryInfo {
@@ -80,6 +90,12 @@ export async function runWithFailover(
      * undefined when nothing can be trimmed. The retry then runs once in a fresh session.
      */
     trimPrompt?: (prompt: string) => string | undefined | Promise<string | undefined>;
+    /** Per-provider circuit breaker: open providers are skipped (unless no other agent is left). */
+    breaker?: CircuitBreaker;
+    /** Every provider error (event provider_error{class}). */
+    onProviderError?: (e: ProviderErrorInfo) => void;
+    /** A provider whose breaker had been open succeeded again (event provider_recovered). */
+    onProviderRecovered?: (agent: string, model: string) => void;
     /** Injectable for tests. */
     delay?: (ms: number, signal?: AbortSignal) => Promise<void>;
     rand?: () => number;
@@ -92,6 +108,14 @@ export async function runWithFailover(
   let last: FailoverResult | undefined;
   for (let i = 0; i < attempts.length; i++) {
     const a = attempts[i] as AgentAttempt;
+    const nextAgent = attempts[i + 1];
+    if (opts.breaker && nextAgent && !opts.breaker.allow(a.model)) {
+      const h = opts.breaker.snapshot().find((p) => p.provider === providerOf(a.model));
+      const s: SwitchInfo = { from: a.agent, to: nextAgent.agent, fromModel: a.model, toModel: nextAgent.model, reason: `circuit open after ${h?.lastErrorClass ?? 'errors'}`, circuitOpen: true };
+      switches.push(s);
+      opts.onSwitch?.(s);
+      continue;
+    }
     let outcome: RunOutcome;
     let prompt = i === 0 ? text : `${text}\n\n${FAILOVER_NOTE}`;
     let driver: TurnDriver | undefined;
@@ -119,6 +143,7 @@ export async function runWithFailover(
       }
       if (outcome.status !== 'error') break;
       const cls = classifyError(outcome.message).cls;
+      opts.onProviderError?.({ agent: a.agent, model: a.model, cls, message: outcome.message });
       let delayMs: number | undefined;
       if (cls === 'rate_limit') {
         rateStreak = progress > 0 ? 0 : rateStreak;
@@ -151,6 +176,10 @@ export async function runWithFailover(
       }
     }
     last = { outcome, agent: a.agent, switches, retries };
+    if (opts.breaker) {
+      if (outcome.status === 'error') opts.breaker.recordFailure(a.model, outcome.message);
+      else if (outcome.status === 'done' && opts.breaker.recordSuccess(a.model)) opts.onProviderRecovered?.(a.agent, a.model);
+    }
     if (outcome.status !== 'error') return last;
     // A TLS failure is a local network problem: another model behind the same network would fail the same way.
     if (classifyError(outcome.message).cls === 'tls_error') return last;

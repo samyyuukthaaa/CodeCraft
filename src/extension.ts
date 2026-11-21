@@ -23,6 +23,7 @@ import {
 } from './trueforge/client';
 import { CodeCraftConfig, FALLBACK_AGENT_NAME, PRIMARY_AGENT_NAME, validateConfig } from './trueforge/config';
 import { toDisplay } from './trueforge/events';
+import { CircuitBreaker, circuitOpenBanner, providerOf } from './trueforge/breaker';
 import { classifyError, failoverBanner, failureMessage } from './trueforge/errors';
 import { AgentAttempt, runWithFailover } from './trueforge/failover';
 import { redact } from './util/redact';
@@ -72,6 +73,8 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
   let postReads: (() => void) | undefined;
   let postPlan: ((p: Plan) => void) | undefined;
   const planStore = new PlanStore();
+  // Per-provider circuit breaker for this VS Code session (health shown in the panel; never key values).
+  const breaker = new CircuitBreaker();
 
   // Editor-tool host (created only when a folder is open). The index is persisted in VS Code's
   // workspace storage, never inside the repository.
@@ -213,8 +216,19 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
       const result = await runWithFailover(prompt, attempts, {
         signal: abort.signal,
         trimPrompt: trimPrompt ? () => trimPrompt?.() : undefined,
+        breaker,
+        onProviderError: (e) => {
+          out.appendLine(`[provider_error] ${e.model}: ${e.cls}`);
+          post({ type: 'event', event: { type: 'provider_error', summary: `${e.model}: ${e.cls.replace(/_/g, ' ')}`, failed: true } });
+        },
+        onProviderRecovered: (_a, model) => {
+          out.appendLine(`[provider_recovered] ${model}`);
+          post({ type: 'event', event: { type: 'provider_recovered', summary: `${model} is working again` } });
+        },
         onSwitch: (s) => {
-          const banner = failoverBanner(s.fromModel, s.toModel, s.reason);
+          const banner = s.circuitOpen
+            ? circuitOpenBanner(s.fromModel, s.toModel, breaker.snapshot().find((h) => h.provider === providerOf(s.fromModel)))
+            : failoverBanner(s.fromModel, s.toModel, s.reason);
           out.appendLine(`[failover] ${banner} (detail: ${redact(s.reason).slice(0, 300)})`);
           post({ type: 'event', event: { type: 'model.switched', summary: banner, failed: false } });
           void vscode.window.showInformationMessage(`CodeCraft: ${banner}`);
