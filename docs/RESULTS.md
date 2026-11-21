@@ -206,3 +206,9 @@ A stopped 3-run batch of task1 kept running in the background (only its shell wr
 | scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
 |---|---|---|---|---|---|---|---|---|---|---|
 | task2 | 1 | FAIL | codecraft-fallback (failover x1) | docs/cli.rst<br>src/flask/cli.py<br>tests/test_cli.py | src/flask/app.py<br>src/flask/cli.py<br>src/flask/config.py<br>docs/cli.rst<br>docs/config.rst<br>tests/test_async.py<br>tests/test_cli.py<br>tests/test_config.py<br>tests/test_testing.py<br>src/flask/__init__.py | 5/234 | 1146054 | 682 s | 28 ms | plan shown before proposing, listing src/flask/cli.py, a tests/ file and docs/cli.rst to change |
+
+### task2: 3 run(s), 2026-11-21T11:45:08.641Z
+
+| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| task2 | 1 | FAIL | codecraft-fallback (failover x1) | docs/cli.rst<br>src/flask/cli.py<br>tests/test_config_cli.py | src/flask/app.py<br>src/flask/cli.py<br>src/flask/config.py<br>docs/cli.rst<br>docs/config.rst<br>tests/test_async.py<br>tests/test_cli.py<br>tests/test_config.py<br>tests/test_testing.py<br>src/flask/__init__.py | 5/234 | 2140010 | 986 s | 28 ms | plan shown before proposing, listing src/flask/cli.py, a tests/ file and docs/cli.rst to change |
