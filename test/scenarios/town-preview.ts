@@ -105,7 +105,9 @@ window.addEventListener('load', () => {
   const browser = browsers.find((b) => fs.existsSync(b));
   if (!browser) throw new Error('no Edge/Chrome found');
   const size = arg('size', '1400,900');
-  const common = ['--headless=new', '--hide-scrollbars', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--enable-precise-memory-info', `--window-size=${size}`, '--allow-file-access-from-files', `--user-data-dir=${path.join(dir, 'profile')}`];
+  // --nowebgl: a browser without WebGL, to check the 2D fallback
+  const gl = has('nowebgl') ? ['--disable-webgl', '--disable-webgl2', '--disable-3d-apis'] : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
+  const common = ['--headless=new', '--hide-scrollbars', ...gl, '--enable-precise-memory-info', `--window-size=${size}`, '--allow-file-access-from-files', `--user-data-dir=${path.join(dir, 'profile')}`];
   const url = `file:///${page.replace(/\\/g, '/')}`;
   const budget = arg('budget', measure ? String(Number(arg('window', '5000')) + 4000) : '6000');
   if (measure) {

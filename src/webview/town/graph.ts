@@ -99,7 +99,7 @@ export class TownGraph {
 
   constructor(
     private readonly textures: TextureFactory,
-    private readonly reducedMotion = false,
+    private reducedMotion = false,
   ) {
     const windows = textures.windows();
     this.bodyMat = this.own(
@@ -476,6 +476,15 @@ export class TownGraph {
     this.powerCaption.position.set(L.power.x, 11.5, L.power.z);
     this.powerCaption.name = 'power-caption';
     this.root.add(this.powerCaption);
+  }
+
+  setReducedMotion(on: boolean): void {
+    this.reducedMotion = on;
+    if (!on) return;
+    // settle every animated value at its resting state
+    if (this.stringLights) (this.stringLights.material as THREE.PointsMaterial).opacity = 0.75;
+    if (this.shaft) (this.shaft.material as THREE.MeshBasicMaterial).opacity = 0.13;
+    if (this.powerGlow) this.powerGlow.rotation.y = 0;
   }
 
   /** Per-frame animation (skipped entirely with reduced motion). Never allocates. */

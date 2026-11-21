@@ -58,6 +58,20 @@ it('Code Town: opens, builds the town from the index, and follows the journal li
   assert.equal(api.town()!.stats.failed, 0, 'a provider error never marks a building failed');
 });
 
+it('Code Town: closing the panel leaves no journal listener behind (clean shutdown)', async () => {
+  const api = vscode.extensions.getExtension('codecraft-dev.codecraft')!.exports as { journal?: { listenerCount: number }; town(): unknown };
+  const tab = vscode.window.tabGroups.all.flatMap((g) => g.tabs).find((t) => t.label === 'CodeCraft: Code Town');
+  assert.ok(tab, 'the Code Town panel is open from the previous test');
+  assert.equal(api.journal!.listenerCount, 1);
+  await vscode.window.tabGroups.close(tab!);
+  for (let i = 0; i < 30 && api.town() !== undefined; i++) await new Promise((r) => setTimeout(r, 100));
+  assert.equal(api.town(), undefined, 'the panel is gone');
+  assert.equal(api.journal!.listenerCount, 0, 'its journal listener was removed');
+  await vscode.commands.executeCommand('codecraft.openCodeTown');
+  for (let i = 0; i < 30 && api.journal!.listenerCount === 0; i++) await new Promise((r) => setTimeout(r, 100));
+  assert.equal(api.journal!.listenerCount, 1, 'reopening subscribes exactly once');
+});
+
 it('CodeCraft: Undo Last Change with nothing to undo does not throw', async () => {
   await vscode.commands.executeCommand('codecraft.undoLastChange');
 });
@@ -112,9 +126,11 @@ it('Stop Run while the review quick pick is open closes it via its cancellation 
   const reg = vscode.workspace.registerTextDocumentContentProvider(`${PROPOSED_SCHEME}-stop`, provider);
   const original = vscode.window.showQuickPick;
   let sawCancel = false;
+  let shown = false;
   // A quick pick that stays open until its cancellation token fires, like a real user who has not chosen yet.
   (vscode.window as { showQuickPick: unknown }).showQuickPick = (_items: unknown, _opts: unknown, token?: vscode.CancellationToken) =>
     new Promise((resolve) => {
+      shown = true;
       token?.onCancellationRequested(() => {
         sawCancel = true;
         resolve(undefined);
@@ -124,7 +140,9 @@ it('Stop Run while the review quick pick is open closes it via its cancellation 
     const gate = new WriteGate(new NodeReadFs(root().fsPath), new VsCodeApplier(root()), new VsCodeReviewer(root(), provider));
     gate.recordRead('stop.txt', ORIGINAL);
     const pending = gate.propose('stop.txt', PROPOSED, 'r');
-    await new Promise((r) => setTimeout(r, 300));
+    // press Stop while the review is really open (opening the diff takes longer with other editors open)
+    for (let i = 0; i < 100 && !shown; i++) await new Promise((r) => setTimeout(r, 50));
+    assert.ok(shown, 'the review quick pick opened');
     gate.stop();
     const r = await pending;
     assert.equal(sawCancel, true, 'the quick pick received the cancellation');

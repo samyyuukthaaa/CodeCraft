@@ -130,18 +130,17 @@ export class TrustSession {
     this.postGroups();
   }
 
-  private setTestStatus(s: TestStatus): void {
+  /** Records the real test status and re-rates the applied groups with it (the status can only lower a tag). */
+  private async setTestStatus(s: TestStatus): Promise<void> {
     this.testStatus = s;
-    // Re-rate the groups with the real test result (the status can only lower a tag).
     const plan = this.deps.plan();
-    void this.deps.index().then((index) => {
-      for (const g of this.groups) {
-        if (g.view.status !== 'applied') continue;
-        const n = noteFor(g.group, plan, index, s, g.planSummary);
-        Object.assign(g.view, { confidence: n.confidence, why: n.why, tests: n.tests });
-      }
-      this.postGroups();
-    });
+    const index = await this.deps.index();
+    for (const g of this.groups) {
+      if (g.view.status !== 'applied') continue;
+      const n = noteFor(g.group, plan, index, s, g.planSummary);
+      Object.assign(g.view, { confidence: n.confidence, why: n.why, tests: n.tests });
+    }
+    this.postGroups();
   }
 
   private postGroups(): void {
@@ -168,7 +167,7 @@ export class TrustSession {
     await this.deps.journal.append({ t: 'tests', phase: 'agent', passed, exitCode, failing: failingTests(run) });
     const base = await this.baseline;
     const cmp = compareRuns(base, run);
-    this.setTestStatus(cmp.regressed.length ? 'regressed' : passed ? 'passed' : 'failed');
+    await this.setTestStatus(cmp.regressed.length ? 'regressed' : passed ? 'passed' : 'failed');
   }
 
   /**
@@ -181,17 +180,17 @@ export class TrustSession {
     const base = await this.baseline;
     const after = await this.testRun('after', 'CodeCraft runs the tests AFTER the changes were applied.');
     if (!after) {
-      this.setTestStatus('could not run');
+      await this.setTestStatus('could not run');
       return;
     }
     const cmp = compareRuns(base, after);
     const summary = after.exitCode === 0 ? 'all tests pass' : `${failingTests(after).length} failing${cmp.stillFailing.length && cmp.baselineKnown ? ` (${cmp.stillFailing.length} already failed before the change)` : ''}`;
     this.deps.post({ type: 'event', event: { type: 'tests.after', summary: `Tests after the changes: ${summary}${cmp.baselineKnown ? '' : '; the run before the change is unknown, so no test counts as newly broken'}`, failed: after.exitCode !== 0 } });
     if (!cmp.regressed.length) {
-      this.setTestStatus(after.exitCode === 0 ? 'passed' : 'failed');
+      await this.setTestStatus(after.exitCode === 0 ? 'passed' : 'failed');
       return;
     }
-    this.setTestStatus('regressed');
+    await this.setTestStatus('regressed');
     await this.deps.journal.append({ t: 'regression', tests: cmp.regressed });
     this.deps.post({ type: 'event', event: { type: 'tests.regressed', summary: `Tests that passed before now fail: ${cmp.regressed.join(', ')}. Trying ONE automatic fix.`, failed: true } });
     if (this.fixAttempted) return; // exactly one automatic fix per run
@@ -206,18 +205,18 @@ export class TrustSession {
     const again = await this.testRun('after_fix', 'CodeCraft runs the tests again after the automatic fix.');
     if (!again) {
       await this.deps.journal.append({ t: 'autofix', status: 'still_failing', detail: 'the tests could not be run after the fix' });
-      this.setTestStatus('could not run');
+      await this.setTestStatus('could not run');
       return;
     }
     const cmp2 = compareRuns(base, again);
     if (cmp2.regressed.length) {
       await this.deps.journal.append({ t: 'autofix', status: 'still_failing', detail: cmp2.regressed.join(', ') });
       this.deps.post({ type: 'event', event: { type: 'autofix', summary: `Automatic fix applied, but these still fail: ${cmp2.regressed.join(', ')}. No further automatic fix.`, failed: true } });
-      this.setTestStatus('regressed');
+      await this.setTestStatus('regressed');
     } else {
       await this.deps.journal.append({ t: 'autofix', status: 'fixed', detail: `${cmp.regressed.join(', ')} pass again` });
       this.deps.post({ type: 'event', event: { type: 'autofix', summary: `Automatic fix worked: ${cmp.regressed.join(', ')} pass again${again.exitCode === 0 ? '; all tests pass' : ''}.` } });
-      this.setTestStatus(again.exitCode === 0 ? 'passed' : 'failed');
+      await this.setTestStatus(again.exitCode === 0 ? 'passed' : 'failed');
     }
   }
 

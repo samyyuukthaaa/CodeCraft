@@ -2,8 +2,9 @@
 // nonce'd stylesheet; dynamic colours are set through the CSSOM, which CSP allows), no remote resources.
 import { STATE_VISUALS } from './types';
 
-export function buildTownHtml(opts: { cspSource: string; nonce: string; scriptUri: string }): string {
+export function buildTownHtml(opts: { cspSource: string; nonce: string; scriptUri: string; reducedMotion?: 'on' | 'off' | 'auto' }): string {
   const { cspSource, nonce, scriptUri } = opts;
+  const motion = opts.reducedMotion ?? 'auto';
   const csp = [
     "default-src 'none'",
     `style-src 'nonce-${nonce}'`,
@@ -58,6 +59,9 @@ ${stateRules}
   #fallback-view { position: absolute; top: 96px; left: 12px; right: 12px; bottom: 12px; background: var(--night-card); border: 1px solid var(--border-color);
     border-radius: 10px; padding: 16px; overflow-y: auto; z-index: 5; display: none; }
   #fallback-view.show { display: block; }
+  /* 2D: the list starts right of the legend, and the 3D-only camera button is hidden */
+  body.flat #fallback-view { left: 330px; }
+  body.flat #btn-reset-cam { display: none; }
   .fallback-intro { margin-bottom: 12px; font-size: 12px; color: #cbd5e1; }
   .fallback-district { margin-bottom: 18px; }
   .fallback-district-name { font-weight: 700; font-size: 13px; color: #ffffff; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
@@ -96,7 +100,7 @@ ${stateRules}
   .fallback-card-status { font-size: 11px; padding: 2px 6px; border-radius: 3px; border: 1px solid; width: fit-content; font-weight: 600; }
 </style>
 </head>
-<body>
+<body data-reduced-motion="${motion}">
   <div id="canvas-container"></div>
   <div id="overlay">
     <div class="hud-panel">
@@ -144,7 +148,7 @@ ${stateRules}
   </div>
 
   <div id="fallback-view">
-    <div class="fallback-intro">2D town view (click a building to open the file)</div>
+    <div class="fallback-intro">2D town view: click a building to inspect it (the inspector can open the file)</div>
     <div id="fallback-content"></div>
   </div>
 

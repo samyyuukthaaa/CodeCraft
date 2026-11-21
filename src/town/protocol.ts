@@ -13,7 +13,9 @@ export type HostToTown =
   | { type: 'runs'; runs: RunSummary[] }
   /** A run to replay: the town before the run (index only) and the run's events from the journal. */
   | { type: 'replay'; runId: string; base: SceneState; events: TownEvent[] }
-  | { type: 'focus'; path: string };
+  | { type: 'focus'; path: string }
+  /** codecraft.townReducedMotion changed while the panel is open ('on' | 'off' | 'auto'). */
+  | { type: 'settings'; reducedMotion: 'on' | 'off' | 'auto' };
 
 /** Run IDs are 16 hex characters (src/extension.ts). */
 const RUN_ID = /^[0-9a-f]{16}$/;

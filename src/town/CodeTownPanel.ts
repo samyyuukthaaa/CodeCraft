@@ -7,6 +7,12 @@ import { SceneState, TownEvent, TownFileInput } from './types';
 import { foldEvents, initialSceneState, sceneReducer } from './reducer';
 import { finishedRuns, townEventsFor, townEventsFromJournal } from './fromJournal';
 
+/** codecraft.townReducedMotion: 'auto' follows the OS; 'on' / 'off' override it. */
+function motionSetting(): 'on' | 'off' | 'auto' {
+  const v = vscode.workspace.getConfiguration('codecraft').get<string>('townReducedMotion', 'auto');
+  return v === 'on' || v === 'off' ? v : 'auto';
+}
+
 export interface TownSources {
   /** The repository index (layout). */
   loadFiles: () => Promise<TownFileInput[]>;
@@ -51,7 +57,11 @@ export class CodeTownPanel {
     this.panel = panel;
     const nonce = crypto.randomBytes(16).toString('base64');
     const scriptUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(mediaRoot, 'codetown.js')).toString();
-    panel.webview.html = buildTownHtml({ cspSource: panel.webview.cspSource, nonce, scriptUri });
+    panel.webview.html = buildTownHtml({ cspSource: panel.webview.cspSource, nonce, scriptUri, reducedMotion: motionSetting() });
+    const cfg = vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('codecraft.townReducedMotion')) this.post({ type: 'settings', reducedMotion: motionSetting() });
+    });
+    this.disposables.push(() => cfg.dispose());
 
     // Live: every new journal entry is projected and applied (after the initial scene is built).
     this.disposables.push(sources.journal.onAppend((e) => this.onJournal(e)));

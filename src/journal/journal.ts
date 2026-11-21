@@ -109,6 +109,11 @@ export class Journal {
     return this.writing;
   }
 
+  /** Number of live listeners (a closed Code Town panel must leave none behind). */
+  get listenerCount(): number {
+    return this.listeners.size;
+  }
+
   /** Called with every new (redacted) entry, e.g. to update Code Town live. Returns the unsubscribe function. */
   onAppend(listener: (e: JournalEntry) => void): () => void {
     this.listeners.add(listener);

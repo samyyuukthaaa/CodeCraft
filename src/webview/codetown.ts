@@ -15,6 +15,13 @@ declare function acquireVsCodeApi(): { postMessage(msg: TownToHost): void };
 const vscode = acquireVsCodeApi();
 
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+/** codecraft.townReducedMotion: 'on' / 'off', or 'auto' (follow the OS setting). Changeable while open. */
+const motionSetting = (v: string | undefined): boolean => (v === 'on' ? true : v === 'off' ? false : prefersReducedMotion);
+let reducedMotion = motionSetting(document.body.dataset.reducedMotion);
+/** With reduced motion nothing animates, so a frame is drawn only when something changed. */
+let dirty = true;
+let renderedFrames = 0;
+let frames = 0;
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const canvasContainer = $('canvas-container');
@@ -112,16 +119,21 @@ let camera: THREE.PerspectiveCamera | undefined;
 let graph: TownGraph | undefined;
 const cameraTarget = new THREE.Vector3();
 const listeners: Array<() => void> = [];
+// Every listener goes through on(): it is removed again on shutdown, and any input or message marks the frame dirty.
 const on = (t: EventTarget, type: string, f: (e: never) => void, opts?: AddEventListenerOptions): void => {
-  t.addEventListener(type, f as EventListener, opts);
-  listeners.push(() => t.removeEventListener(type, f as EventListener, opts));
+  const g = ((e: never) => {
+    dirty = true;
+    f(e);
+  }) as EventListener;
+  t.addEventListener(type, g, opts);
+  listeners.push(() => t.removeEventListener(type, g, opts));
 };
 
 function starfield(): THREE.Points {
   // deterministic sky: a small LCG instead of Math.random, so every reload looks the same
   let seed = 7;
   const rnd = (): number => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
-  const n = prefersReducedMotion ? 500 : 900;
+  const n = reducedMotion ? 500 : 900;
   const pos = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) {
     const th = rnd() * Math.PI * 2;
@@ -151,9 +163,16 @@ function init3D(): void {
   ground.position.y = -0.32;
   scene3.add(ground, starfield());
 
-  graph = new TownGraph(textures, prefersReducedMotion);
+  graph = new TownGraph(textures, reducedMotion);
   scene3.add(graph.root);
   setupControls(renderer.domElement);
+  // If the GPU drops the WebGL context (driver reset, too many contexts), fall back to the 2D view.
+  on(renderer.domElement, 'webglcontextlost', (e: Event) => {
+    e.preventDefault();
+    webglLost = true;
+    setMode3D(false);
+    btnToggleView.classList.add('hidden');
+  });
   on(window, 'resize', () => {
     if (!renderer || !camera) return;
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -166,12 +185,32 @@ function init3D(): void {
 
 let frame = 0;
 const clock = new THREE.Clock();
+let webglLost = false;
 function loop(): void {
   frame = requestAnimationFrame(loop);
-  if (!renderer || !scene3 || !camera || !is3D) return;
+  frames++;
+  if (!renderer || !scene3 || !camera || !is3D || webglLost) return;
+  if (reducedMotion && !dirty) return; // render on demand only
+  dirty = false;
   graph?.tick(clock.getElapsedTime());
   renderer.render(scene3, camera);
+  renderedFrames++;
 }
+
+/** Read-only numbers for the frame-rate and memory check (never sent anywhere). */
+(window as unknown as { __townStats?: () => unknown }).__townStats = () => ({
+  frames,
+  renderedFrames,
+  reducedMotion,
+  is3D,
+  geometries: renderer?.info.memory.geometries ?? 0,
+  textures: renderer?.info.memory.textures ?? 0,
+  drawCalls: renderer?.info.render.calls ?? 0,
+  triangles: renderer?.info.render.triangles ?? 0,
+  graph: graph?.stats(),
+  listeners: listeners.length,
+  buildings: Object.keys(current.buildings).length,
+});
 
 function resetCamera(): void {
   if (!camera) return;
@@ -399,6 +438,7 @@ function openInspector(id: string): void {
 }
 
 function show(next: SceneState): void {
+  dirty = true;
   const prev = current;
   current = next;
   updateHud(next);
@@ -408,7 +448,8 @@ function show(next: SceneState): void {
 }
 
 function setMode3D(want: boolean): void {
-  is3D = want && hasWebGL;
+  is3D = want && hasWebGL && !webglLost;
+  document.body.classList.toggle('flat', !is3D);
   btnToggleView.textContent = is3D ? 'Switch to 2D' : 'Switch to 3D';
   fallbackView.classList.toggle('show', !is3D);
   canvasContainer.classList.toggle('hidden', !is3D);
@@ -543,7 +584,12 @@ on(window, 'message', (event: MessageEvent<HostToTown>) => {
   } else if (m.type === 'replay') {
     if (rpRun.value !== m.runId) rpRun.value = m.runId;
     startReplay(m.runId, m.base, m.events);
-  } else if (m.type === 'focus' && typeof m.path === 'string') openInspector(m.path);
+  } else if (m.type === 'focus' && typeof m.path === 'string') {
+    openInspector(m.path);
+  } else if (m.type === 'settings') {
+    reducedMotion = motionSetting(m.reducedMotion);
+    graph?.setReducedMotion(reducedMotion);
+  }
 });
 
 // Clean shutdown: stop the loop and timers, remove every listener, free GPU resources.

@@ -87,6 +87,13 @@
           "maximum": 65535,
           "description": "Loopback port for the CodeCraft editor-tools MCP server that TrueForge calls. If it is in use, a random free port is used."
         },
+        "codecraft.townReducedMotion": {
+          "type": "string",
+          "default": "auto",
+          "enum": ["auto", "on", "off"],
+          "enumDescriptions": ["Follow the operating system's reduced-motion setting", "No animation in Code Town; frames are drawn only when something changes", "Animate Code Town (string lights, light shafts, power plant)"],
+          "description": "Reduced motion for Code Town. Applies immediately to an open Code Town panel."
+        },
         "codecraft.faultInjection": {
           "type": "string",
           "default": "none",
@@ -109,6 +116,7 @@
     "capture-errors": "node esbuild.mjs --scenarios && node out/scenarios/capture-errors.js",
     "ask-user": "node esbuild.mjs --scenarios && node out/scenarios/ask-user.js",
     "town-preview": "node esbuild.mjs && node esbuild.mjs --scenarios && node out/scenarios/town-preview.js",
+    "town-perf": "node esbuild.mjs && node esbuild.mjs --scenarios && node out/scenarios/town-perf.js",
     "test:vscode": "node esbuild.mjs && node esbuild.mjs --vscode && node out/vscode/run.js",
     "writeup": "node scripts/writeup-pdf.mjs"
   },
