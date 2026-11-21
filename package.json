@@ -36,6 +36,10 @@
       {
         "command": "codecraft.showJournal",
         "title": "CodeCraft: Show Edit Journal"
+      },
+      {
+        "command": "codecraft.scanSecrets",
+        "title": "CodeCraft: Scan Workspace for Secrets"
       }
     ],
     "configuration": {

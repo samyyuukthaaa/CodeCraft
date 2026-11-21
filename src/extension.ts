@@ -6,6 +6,8 @@ import { IndexService } from './index/service';
 import { FileSink } from './journal/fileSink';
 import { Journal } from './journal/journal';
 import { renderJournal } from './journal/render';
+import { renderScan, scanWorkspace } from './util/secretScan';
+import * as nodeFs from 'node:fs/promises';
 import { WriteGate } from './mcp/gate';
 import { NodeReadFs } from './mcp/nodeFs';
 import { RunningServer, startMcpServer } from './mcp/server';
@@ -373,6 +375,19 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
         },
       );
     }),
+    vscode.commands.registerCommand('codecraft.scanSecrets', async () => {
+      if (!host || !folder) return void vscode.window.showWarningMessage('CodeCraft: open a folder first.');
+      const index = await host.index.get();
+      const envFiles = await findEnvFiles(folder.uri.fsPath);
+      // Read directly (not through the agent path policy) so the scan sees every indexed file; values never leave this function.
+      const report = await scanWorkspace(Object.keys(index.files), async (p) => nodeFs.readFile(path.join(folder.uri.fsPath, p), 'utf8'), envFiles);
+      const doc = await vscode.workspace.openTextDocument({ language: 'markdown', content: renderScan(report) });
+      await vscode.window.showTextDocument(doc, { preview: true });
+      out.appendLine(`[secret scan] ${report.scannedFiles} files, ${report.findings.length} possible secret(s), ${report.envFiles.length} env file(s)`);
+      void (report.findings.length
+        ? vscode.window.showWarningMessage(`CodeCraft: ${report.findings.length} possible secret(s) found; see the report (values are not shown).`)
+        : vscode.window.showInformationMessage(`CodeCraft: no key-shaped values found in ${report.scannedFiles} file(s).`));
+    }),
     vscode.commands.registerCommand('codecraft.showJournal', async () => {
       if (!host) return void vscode.window.showWarningMessage('CodeCraft: open a folder first.');
       await host.journal.load();
@@ -406,6 +421,27 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
   );
   // Handle for the VS Code integration test (test/vscode). Not a public API.
   return { gate: host?.gate, fs: host?.fs };
+}
+
+/** .env-style files in the workspace (two levels deep, skipping dependency and VCS folders). */
+async function findEnvFiles(root: string): Promise<string[]> {
+  const out: string[] = [];
+  const skip = new Set(['node_modules', '.git', '.venv', 'venv', 'out', 'dist']);
+  const walk = async (rel: string, depth: number): Promise<void> => {
+    let entries: import('node:fs').Dirent[];
+    try {
+      entries = await nodeFs.readdir(path.join(root, rel), { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const p = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isFile() && /^.env(..+)?$/i.test(e.name)) out.push(p);
+      else if (e.isDirectory() && depth < 2 && !skip.has(e.name)) await walk(p, depth + 1);
+    }
+  };
+  await walk('', 0);
+  return out.sort();
 }
 
 export function deactivate(): void {}

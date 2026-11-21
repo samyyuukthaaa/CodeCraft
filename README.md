@@ -52,7 +52,7 @@ Open the folder in VS Code and press **F5** ("Run CodeCraft Extension (opens fix
 
 The agents are **registered for you**: on the first request CodeCraft starts its local MCP server, registers it with TrueForge as `codecraft-editor`, and creates or updates two TrueForge agents, `codecraft-primary` and `codecraft-fallback` (identical instructions, the models from your settings). Nothing needs to be created by hand in TrueForge besides the provider key.
 
-Commands: **CodeCraft: Open Agent Panel**, **CodeCraft: Undo Last Change** (reverts the last applied change set if the files are still exactly what CodeCraft wrote), **CodeCraft: Stop Run**.
+Commands: **CodeCraft: Open Agent Panel** (prompt, plan, context used, provider health with **Test providers**), **CodeCraft: Undo Last Change** (reverts the last applied change set if the files are still exactly what CodeCraft wrote), **CodeCraft: Stop Run**, **CodeCraft: Show Edit Journal**, **CodeCraft: Scan Workspace for Secrets**. Self-healing and trust features: [docs/TRUST.md](docs/TRUST.md).
 
 ### Settings (example)
 Copy into your VS Code `settings.json` to change the defaults (also in [config.example.json](config.example.json)). No keys here:
