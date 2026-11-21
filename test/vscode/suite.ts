@@ -33,9 +33,13 @@ it('extension activates and registers its commands', async () => {
 
 it('CodeCraft: Open Agent Panel opens the webview panel', async () => {
   await vscode.commands.executeCommand('codecraft.openAgentPanel');
-  await new Promise((r) => setTimeout(r, 500));
-  const tabs = vscode.window.tabGroups.all.flatMap((g) => g.tabs.map((t) => t.label));
-  assert.ok(tabs.includes('CodeCraft Agent'), `tabs: ${tabs.join(', ')}`);
+  // Wait until the tab really appears (up to 15 s; a fixed 500 ms was too short on a slow start), then assert.
+  const tabs = () => vscode.window.tabGroups.all.flatMap((g) => g.tabs.map((t) => t.label));
+  const started = Date.now();
+  while (!tabs().includes('CodeCraft Agent') && Date.now() - started < 15_000) await new Promise((r) => setTimeout(r, 100));
+  const groups = vscode.window.tabGroups.all.map((g, i) => `group ${i + 1}${g.isActive ? ' (active)' : ''}: [${g.tabs.map((t) => t.label).join(', ')}]`).join('; ');
+  assert.ok(tabs().includes('CodeCraft Agent'), `after ${Date.now() - started} ms the Agent tab is missing; tab state: ${groups || '(no tab groups)'}`);
+  console.log(`        (Agent tab appeared after ${Date.now() - started} ms)`);
 });
 
 it('Code Town: opens, builds the town from the index, and follows the journal live (provider errors only on the power plant)', async () => {
