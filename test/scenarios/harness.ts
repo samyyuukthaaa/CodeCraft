@@ -26,7 +26,9 @@ import { DiskApplier, acceptAll, rejectAll } from '../helpers';
 
 export const FIXTURE_COMMIT = '22d924701a6ae2e4cd01e9a15bbaf3946094af65';
 // Canonical path (upper-case drive letter on Windows): Flask's CLI tests compare paths case-sensitively.
-export const ROOT = fs.realpathSync.native(path.resolve('fixtures/flask'));
+// (Resolved only when the fixture exists, so modules that import the harness still load in a fresh clone.)
+const FIXTURE_DIR = path.resolve('fixtures/flask');
+export const ROOT = fs.existsSync(FIXTURE_DIR) ? fs.realpathSync.native(FIXTURE_DIR) : FIXTURE_DIR;
 export const PY = path.join(ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
 
 export interface Proc {
