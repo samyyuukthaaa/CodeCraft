@@ -15,6 +15,7 @@ import type { Building, SceneState } from '../../town/types';
 import { ViewMode, journeyStops } from '../../town/view';
 import type { ScoutPlace } from '../../town/scout';
 import { SCOUT_SCALE, ScoutFigure } from './scout3d';
+import { Confetti } from './confetti';
 import { Pt, frontOf, patrolStops, plantStop, plaza, route } from '../../town/patrol';
 import { DEFAULT_THEME, THEMES, ThemePalette, TownTheme } from '../../town/theme';
 
@@ -75,7 +76,9 @@ export function roofColor(b: Building, mode: ViewMode = 'journey', theme: TownTh
 
 /** Buildings that earn festival lanterns: an applied change, or a test that passes again. */
 export const celebrates = (b: Building): boolean => b.state === 'applied' || b.state === 'recovered';
-const LANTERNS_PER_BUILDING = 3;
+export const LANTERNS_PER_BUILDING = 5;
+/** String light spacing along roads, and the bulbs per garland over each district's front edge. */
+export const BULB_SPACING = 1.6;
 
 export interface GraphStats {
   rebuilds: number;
@@ -143,6 +146,9 @@ export class TownGraph {
   private patrolling = false;
   private pauseUntil = 0;
   private nameTag: THREE.Sprite | undefined;
+  // confetti over an applied change: one pooled Points object, created once (renderer only)
+  private readonly confetti = new Confetti((x) => this.own(x));
+  private clockT = 0;
 
   private readonly counters = { rebuilds: 0, buildingRebuilds: 0, incremental: 0 };
   private readonly tmp = new THREE.Matrix4();
@@ -352,6 +358,7 @@ export class TownGraph {
       for (const id of d.changed) {
         const i = this.indexById.get(id);
         if (i !== undefined) this.placeBuilding(next.buildings[id]!, i);
+        this.celebrate(id, next);
       }
       this.flush();
     }
@@ -361,6 +368,20 @@ export class TownGraph {
     if (this.scene?.journey !== next.journey) this.updateJourney(next);
     this.updateScout(next);
     this.scene = next;
+  }
+
+  /** Confetti when a change is newly applied (Journey view, motion on). Renderer only. */
+  private celebrate(id: string, next: SceneState): void {
+    const b = next.buildings[id];
+    const lot = this.layout?.buildings[id];
+    if (!b || !lot || b.state !== 'applied' || this.scene?.buildings[id]?.state === 'applied') return;
+    if (this.reducedMotion || this.mode !== 'journey') return;
+    this.confetti.burst(lot.x, buildingHeight(b) + 0.8, lot.z, this.clockT);
+  }
+
+  /** Confetti particles in flight. */
+  get confettiActive(): number {
+    return this.confetti.active;
   }
 
   // ---------- full build (init only) ----------
@@ -391,7 +412,16 @@ export class TownGraph {
         const [bx, bz] = r.points[k + 1]!;
         roadPts.push(ax, 0.04, az, bx, 0.04, bz);
         const len = Math.hypot(bx - ax, bz - az);
-        for (let t = 1.5; t < len; t += 2.5) bulbs.push(ax + ((bx - ax) * t) / len, 1.1, az + ((bz - az) * t) / len);
+        for (let t = 1.2; t < len; t += BULB_SPACING) bulbs.push(ax + ((bx - ax) * t) / len, 1.1, az + ((bz - az) * t) / len);
+      }
+    }
+    // festive garlands: a sagging string of bulbs over the front edge of every district
+    for (const id of ids) {
+      const d = L.districts[id]!;
+      const n = Math.max(4, Math.round(d.w / 1.2));
+      for (let k = 0; k <= n; k++) {
+        const u = k / n;
+        bulbs.push(d.x - d.w / 2 + u * d.w, 1.9 - 0.6 * Math.sin(Math.PI * u), d.z + d.d / 2 + 0.2);
       }
     }
     const roadGeo = this.build(new THREE.BufferGeometry());
@@ -446,6 +476,8 @@ export class TownGraph {
     this.select(this.selected && s.buildings[this.selected] ? this.selected : undefined);
     this.updateJourney(s);
     this.root.add(this.scout.root);
+    this.confetti.clear();
+    this.root.add(this.confetti.points);
     this.scoutMove = -1;
     this.anchor = undefined;
     this.onRoof = undefined;
@@ -806,12 +838,15 @@ export class TownGraph {
     if (this.stringLights) (this.stringLights.material as THREE.PointsMaterial).opacity = 0.75;
     if (this.shaft) (this.shaft.material as THREE.MeshBasicMaterial).opacity = 0.13;
     if (this.powerGlow) this.powerGlow.rotation.y = 0;
+    this.confetti.clear();
   }
 
   /** Per-frame animation (skipped entirely with reduced motion). Never allocates. */
   tick(t: number): void {
+    this.clockT = t;
     this.stepScout(t); // Scout moves even with reduced motion (as a short fade); the patrol needs motion
     if (this.reducedMotion) return;
+    this.confetti.tick(t);
     if (this.stringLights) (this.stringLights.material as THREE.PointsMaterial).opacity = 0.6 + 0.2 * Math.sin(t * 1.7);
     if (this.powerGlow) this.powerGlow.rotation.y = t * 0.6;
     if (this.shaft?.visible) (this.shaft.material as THREE.MeshBasicMaterial).opacity = 0.11 + 0.04 * Math.sin(t * 2.4);

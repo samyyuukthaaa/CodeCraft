@@ -51,8 +51,9 @@ export const THEMES: Record<TownTheme, ThemePalette> = {
     slab: '#141e3a',
     road: '#2b4a7a',
     dim: '#0b1430',
-    dimAmount: 0.38,
-    saturate: 0,
+    // playful night: district colours more saturated and less dimmed
+    dimAmount: 0.26,
+    saturate: 0.16,
     lighten: 0,
     windows: 0.9,
     stars: true,

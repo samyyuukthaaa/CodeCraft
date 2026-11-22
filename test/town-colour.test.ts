@@ -58,8 +58,11 @@ test('idle buildings wear their district colours with coloured roofs; touched bu
   const ids = Object.keys(s.buildings).sort();
   const i = ids.indexOf('docs/cli.rst');
   assert.equal(colorAt(mesh(g, 'buildings'), i), bodyColor(s.buildings['docs/cli.rst']!).getHexString());
-  assert.equal(colorAt(mesh(g, 'roofs'), i), new THREE.Color(districtColors('docs').roof).getHexString());
-  assert.equal(roofColor(s.buildings['docs/cli.rst']!).getHexString(), new THREE.Color(districtColors('docs').roof).getHexString());
+  assert.equal(colorAt(mesh(g, 'roofs'), i), roofColor(s.buildings['docs/cli.rst']!).getHexString());
+  // the district's rooftop colour, a little more saturated at night (same hue)
+  const base = new THREE.Color(districtColors('docs').roof).getHSL({ h: 0, s: 0, l: 0 });
+  const roof = roofColor(s.buildings['docs/cli.rst']!).getHSL({ h: 0, s: 0, l: 0 });
+  assert.ok(Math.abs(roof.h - base.h) < 0.01 && roof.s >= base.s);
   s = sceneReducer(s, { type: 'hunk_proposed', path: 'docs/cli.rst', intent: 'i', hunks: 1, at: 1 });
   g.sync(s);
   assert.equal(colorAt(mesh(g, 'buildings'), i), new THREE.Color(STATE_VISUALS.proposed.color).getHexString());
@@ -74,16 +77,16 @@ test('festival lanterns appear only over successes (applied, recovered), not in 
   s = sceneReducer(s, { type: 'file_written', path: 'src/flask/cli.py', opId: 'o', accepted: 1, rejected: 0, created: false, at: 1 });
   s = sceneReducer(s, { type: 'file_read', path: 'src/flask/app.py', at: 2 });
   g.sync(s);
-  assert.equal(g.lanternsOver('src/flask/cli.py'), 3);
+  assert.equal(g.lanternsOver('src/flask/cli.py'), 5);
   assert.equal(g.lanternsOver('src/flask/app.py'), 0);
-  assert.equal(g.lanternsDrawn, 3, 'one celebrating building: 3 lanterns drawn, not 3 per building');
+  assert.equal(g.lanternsDrawn, 5, 'one celebrating building: 5 lanterns drawn, not 5 per building');
   const lit = [0, 1, 2].map((k) => scaleAt(mesh(g, 'lanterns'), k));
   assert.deepEqual(lit, [1, 1, 1]);
   g.setMode('architecture');
   assert.equal(g.lanternsOver('src/flask/cli.py'), 0, 'Architecture shows kinds, not celebrations');
   assert.equal(g.lanternsDrawn, 0);
   g.setMode('journey');
-  assert.equal(g.lanternsOver('src/flask/cli.py'), 3);
+  assert.equal(g.lanternsOver('src/flask/cli.py'), 5);
   s = sceneReducer(s, { type: 'file_reverted', path: 'src/flask/cli.py', opId: 'o', at: 3 });
   g.sync(s);
   assert.equal(g.lanternsDrawn, 0, 'a reverted change frees its lanterns');
