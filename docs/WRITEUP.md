@@ -37,31 +37,31 @@
 - **Plan before edits:** the agent must call `submit_plan` (files to edit or create, and why) before any proposal. The plan and a warn-before-edit list (planned files, tests that might break) are shown before the first write.
 
 ## 5. Model setup
-- **Final primary:** TODO (until the last runs finish). Currently configured: `google-gemini/gemini-3-5-flash`.
-- **Final fallback:** TODO. Currently configured: `google-gemini/gemini-3-5-flash-lite`.
+- **Final primary:** TODO (after the teammates' 3-in-a-row runs). Currently configured: `google-gemini/gemini-3-5-flash-lite`, with `codecraft.preloadTools` on (TrueForge loads the editor tools into the model).
+- **Final fallback:** TODO. Currently configured: `google-gemini/gemini-3-1-flash-lite`. It was the primary until live runs showed it wrapping `call_tool` arguments wrongly, which TrueForge rejected (`docs/RESULTS.md`).
 - **Switching models:** set `codecraft.primaryModel` or `codecraft.fallbackModel` in VS Code Settings to any model reference TrueForge lists. On the next run the TrueForge agents are updated; no code change is needed. Keys stay in TrueForge Settings.
 - **Approximate cost:** $0 on the Google Gemini free tier used for all recorded runs. The free tier allows 15 requests per minute, 250k input tokens per minute and 500 requests per day per model, but only 20 requests per day for `gemini-3-5-flash`. Recorded token use per run was about 60k–1.3M for Task A and 0.87M–4.2M for Task B (`docs/RESULTS.md`). Paid pricing was not measured.
 
 ## 6. Scorecard
-The rubric wording for A1–C2 is not in the repository yet. **Assumption:** they follow the verification steps of Tasks A–C in `docs/TASKS.md` (3 + 4 + 2). Replace each criterion with the rubric text if it differs.
+One honest line per criterion, with proof and gaps, is in `docs/RUBRIC_AUDIT.md`. Final model results: TODO.
 
-| Criterion | Claim (from `docs/RESULTS.md`) | Video |
+| Criterion | Claim (evidence) | Video |
 |---|---|---|
-| A1 | The selected `get_debug_flag` gets a diff for "off"/"n" as false (Task A, 3 of 3 passes on `53fdb7a`) | TODO |
-| A2 | The diff is reviewed and accepted per hunk; only accepted hunks are written, as one undo step | TODO |
-| A3 | `FLASK_DEBUG=off` prints `False`, checked by real commands in every passing Task A run | TODO |
-| B1 | With no files named, the agent finds `cli.py`, `docs/cli.rst` and `tests/test_cli.py` and plans them before editing | TODO |
-| B2 | The hunks are reviewed and accepted; the TrueForge session is recorded per run | TODO |
-| B3 | `pytest tests/test_cli.py` and the masked JSON passed in some runs, but **not 3 in a row** (see section 8) | TODO |
-| B4 | Passing Task B runs touched three files (code, test, docs) | TODO |
-| C1 | The editor stays responsive: maximum event-loop lag 12–19 ms in the final Task C batch (`53fdb7a`) | TODO |
-| C2 | Invalid key: the fallback takes over automatically or a clear message appears; git status clean (3 of 3, both variants, `53fdb7a`) | TODO |
+| A1 Inline edit, per-hunk accept/reject | Selection-based request; diff with per-hunk review; only accepted hunks written (`test/gate.test.ts`; Task A 3/3 on `53fdb7a`). Gap: no in-editor inline widget | TODO |
+| A2 Agent mode finds 3+ files | Plan of cli.py, docs/cli.rst, tests/test_cli.py before any edit; Task B passed on the primary (`9f4e8de`). 3 in a row: TODO | TODO |
+| A3 Streaming, immediate cancel | Live text streaming, stream resume (3/3), Stop Run cancels the session. Gap: cancel not verified live | TODO |
+| B1 Context with a visible budget | 6,000-token budget, included and left-out files with reasons, budget meter in the panel | TODO |
+| B2 Per-hunk review, working undo | Per-hunk gate, Undo Last Change, roll back to checkpoint (unit-tested) | TODO |
+| B3 Resilience, fallback, clean git | 16 faults 3/3 (`docs/FAILURE_TABLE.md`); Task C 3/3 both variants on `53fdb7a`, git clean | TODO |
+| B4 TrueForge depth, context engineering | Agents, sessions, approvals, MCP tools, preloadTools; history compaction configured. Gap: compaction not yet seen live | TODO |
+| C1 Video | TODO | TODO |
+| C2 Write-up with scorecard | This document | n/a |
 
 ## 7. Tools used
 Claude Code, Antigravity, TrueForge, VS Code.
 
 ## 8. Known limitations and what I would do with another month
-- **Task B does not pass 3 in a row.** Free-tier "lite" models wrote a `flask config` command that could not JSON-encode some values and then looped (up to 4.2M tokens). The stronger primary has only 20 free requests per day, so recent runs finished on the lite fallback with one failing test.
+- **Task B is not yet 3 in a row.** Free-tier lite models looped, or wrapped `call_tool` wrongly. With `preloadTools`, a per-run read budget and automatic answers to questions, it passed once on the primary in 22 requests (`9f4e8de`). The 3-in-a-row proof is pending (`docs/RUNBOOK.md`).
 - **Free-tier quotas** shaped most failures: per-minute 429s and daily limits. Both models use the same provider, so a provider-wide outage or a revoked key takes out both.
 - **Not verified live:** history compaction, and TrueForge's ask-user question with a real Gemini model (verified only with a test-only mock model).
 - **No sandbox on Windows:** TrueForge's sandbox isn't available there, so `run_tests` runs on the machine after a confirmation.
