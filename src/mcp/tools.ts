@@ -5,7 +5,8 @@ import { redact } from '../util/redact';
 import { ReadBudget, isBudgeted, resultSummary } from './budget';
 import { ReadFs, WriteGate } from './gate';
 import { isDenied, normalizeRelPath } from './paths';
-import { Edit, applyEdits, matchEol, pageOf } from './text';
+import { Edit, applyEdits, decodeOverEscaped, matchEol, pageOf } from './text';
+import { SyntaxCheck, isPython } from './pySyntax';
 import { listRelated, searchSymbols } from '../index/query';
 import type { RepoIndex } from '../index/types';
 
@@ -112,6 +113,8 @@ export interface ToolDeps {
   beforeTool?: (tool: string, args: unknown) => Promise<void>;
   /** Per-run read budget (caps, identical-repeat cache); reset by the caller at the start of every run. */
   budget?: ReadBudget;
+  /** Python syntax check of each proposed .py file, in memory, before review (nothing is written on an error). */
+  syntaxCheck?: SyntaxCheck;
   /** Called with every real test result (journal); `output` is the real (tail of the) test output. */
   onTests?: (passed: boolean, exitCode: number | null, output?: string) => void;
 }
@@ -200,6 +203,14 @@ export const schemas = {
 
 export function createHandlers(deps: ToolDeps) {
   const note = (s: string): void => deps.onActivity?.(redact(s));
+  /** A refusal message if a proposed Python file does not compile (checked in memory, never written). */
+  const syntaxError = async (path: string, content: string): Promise<string | undefined> => {
+    if (!deps.syntaxCheck || !isPython(path)) return undefined;
+    const e = await deps.syntaxCheck(path, content);
+    if (!e) return undefined;
+    note(`syntax check ${path}: ${e}`);
+    return `${path}: the proposed file has a Python syntax error: ${e}. Nothing was written. Fix it (use real newlines, never the two characters backslash and n) and propose again.`;
+  };
 
   const base = {
     async read_file(a: { path: string; startLine?: number; endLine?: number }): Promise<ToolOutput> {
@@ -269,7 +280,10 @@ export function createHandlers(deps: ToolDeps) {
       } catch {
         current = undefined; // the gate reports the path error
       }
-      const r = await deps.gate.propose(a.path, matchEol(current, a.newContent), a.reason);
+      const content = matchEol(current, decodeOverEscaped(a.path, a.newContent));
+      const bad = await syntaxError(a.path, content);
+      if (bad) return err(bad);
+      const r = await deps.gate.propose(a.path, content, a.reason);
       note(`propose_write ${a.path} -> ${r.status}`);
       deps.plan?.noteOutcome(r.status);
       // Honest wording: a proposal is not a write. Only "applied"/"partially_applied" mean the file changed.
@@ -328,12 +342,14 @@ export function createHandlers(deps: ToolDeps) {
           }
           if (f.edits) {
             if (current === undefined) return err(`${f.path}: file does not exist; use newContent to create it`);
-            const r = applyEdits(current, f.edits);
+            const r = applyEdits(current, f.edits, f.path);
             if (!r.ok) return err(`${f.path}: ${r.error}`);
             files.push({ path: f.path, newContent: r.text });
           } else {
-            files.push({ path: f.path, newContent: matchEol(current, f.newContent as string) });
+            files.push({ path: f.path, newContent: matchEol(current, decodeOverEscaped(f.path, f.newContent as string)) });
           }
+          const bad = await syntaxError(f.path, files[files.length - 1]!.newContent);
+          if (bad) return err(bad);
         }
         groups.push({ intent: g.intent, ...(g.reason ? { reason: redact(g.reason) } : {}), ...(g.plain ? { plain: redact(g.plain) } : {}), files });
       }

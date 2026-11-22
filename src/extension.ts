@@ -1,6 +1,14 @@
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
 import * as path from 'node:path';
+import { existsSync } from 'node:fs';
+import { pythonSyntaxCheck } from './mcp/pySyntax';
+
+/** The workspace's own Python (.venv) if there is one, else python on PATH. */
+function workspacePython(root: string): string {
+  const venv = path.join(root, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  return existsSync(venv) ? venv : 'python';
+}
 import { EditorSelection, composePrompt, selectContext } from './index/context';
 import { IndexService } from './index/service';
 import { FileSink } from './journal/fileSink';
@@ -140,6 +148,8 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
           },
           plan: planStore,
           budget: readBudget,
+          // proposed .py files must compile (checked in memory with the workspace venv's Python, else python on PATH)
+          syntaxCheck: pythonSyntaxCheck(workspacePython(folder.uri.fsPath), (why) => out.appendLine(`[syntax check] Python not available, check skipped: ${why}`)),
           onTests: (passed, exitCode, output) => void (trust ? trust.onAgentTests(passed, exitCode, output) : journal.append({ t: 'tests', phase: 'agent', passed, exitCode })),
           // An operation ID is journaled (and written) before every tool call runs.
           beforeTool: (tool, args) => journal.append({ t: 'tool_call', opId: randomBytes(6).toString('hex'), tool, args: toolArgsSummary(tool, args) }),

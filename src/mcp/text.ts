@@ -67,6 +67,20 @@ export function unescapeOnce(s: string): string {
   return s.replace(/\\([ntr\\"'])/g, (_m, c: string) => ({ n: '\n', t: '\t', r: '\r', '\\': '\\', '"': '"', "'": "'" })[c] as string);
 }
 
+/** File types whose proposed text is decoded when a model over-escaped it (code, docs, config). */
+export const DECODE_EXT = /\.(py|pyi|rst|md|txt|cfg|ini|toml|ya?ml|json)$/i;
+
+/**
+ * Replacement or new-file text that a model over-escaped: no real newline at all, but at least two literal
+ * backslash-n sequences (a single one may be an intentional "\n" inside a string). Observed live (task2 on c7c390b,
+ * gemini-3-5-flash-lite): every replacement came as one line with literal \n, so tests/test_cli.py got a
+ * SyntaxError. Decoded once, only for code, docs and config files.
+ */
+export function decodeOverEscaped(path: string, text: string): string {
+  if (!DECODE_EXT.test(path) || text.includes('\n') || (text.match(/\\n/g) ?? []).length < 2) return text;
+  return unescapeOnce(text);
+}
+
 const count = (hay: string, needle: string): number => {
   let n = 0;
   for (let i = hay.indexOf(needle); i >= 0; i = hay.indexOf(needle, i + 1)) n++;
@@ -74,7 +88,7 @@ const count = (hay: string, needle: string): number => {
 };
 
 /** Applies find/replace edits; each `find` must occur exactly once (compared with \n line endings). */
-export function applyEdits(current: string, edits: Edit[]): { ok: true; text: string } | { ok: false; error: string } {
+export function applyEdits(current: string, edits: Edit[], path?: string): { ok: true; text: string } | { ok: false; error: string } {
   const eol = eolOf(current);
   let work = toLf(current);
   for (const [i, e] of edits.entries()) {
@@ -91,6 +105,8 @@ export function applyEdits(current: string, edits: Edit[]): { ok: true; text: st
         if (!replace.includes('\n')) replace = unescapeOnce(replace);
       }
     }
+    // The find matched as written, but the replacement may still be over-escaped (see decodeOverEscaped).
+    if (path) replace = decodeOverEscaped(path, replace);
     const n = count(work, find);
     if (n === 0) return { ok: false, error: `edit ${i + 1}: "find" text not found (it must match the current file exactly, including indentation, with real newlines): ${JSON.stringify(find.slice(0, 80))}` };
     if (n > 1) return { ok: false, error: `edit ${i + 1}: "find" text occurs more than once; include more surrounding lines so it is unique` };
