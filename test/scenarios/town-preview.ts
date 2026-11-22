@@ -68,7 +68,7 @@ async function talkCheck(c: { send: (m: string, p?: object) => Promise<{ result?
   };
   const ask = (q: string) =>
     ev(`(() => { const t = document.getElementById('ask-toggle'); if (t.getAttribute('aria-expanded') !== 'true') t.click(); document.getElementById('ask-input').value = ${JSON.stringify(q)}; document.getElementById('ask-form').requestSubmit(); })()`);
-  const box = async () => JSON.parse(String(await ev("JSON.stringify((() => { const b = document.getElementById('scout-talk'); const r = b.getBoundingClientRect(); return { visible: !b.classList.contains('hidden') && r.height > 0, left: Math.round(r.left), top: Math.round(r.top), bottom: Math.round(r.bottom), height: Math.round(r.height), vh: innerHeight, more: !document.getElementById('talk-more').classList.contains('hidden'), text: document.getElementById('talk-text').textContent, kw: document.querySelector('#talk-text .kw')?.textContent, panel: document.getElementById('ask-answer').textContent.length }; })())")));
+  const box = async () => JSON.parse(String(await ev("JSON.stringify((() => { const b = document.getElementById('scout-talk'); const r = b.getBoundingClientRect(); return { visible: !b.classList.contains('hidden') && r.height > 0, left: Math.round(r.left), top: Math.round(r.top), bottom: Math.round(r.bottom), height: Math.round(r.height), vh: innerHeight, more: !document.getElementById('talk-more').classList.contains('hidden'), text: document.getElementById('talk-text').textContent, kw: document.querySelector('#talk-text .kw')?.textContent, panel: document.getElementById('ask-answer').textContent.length, panelShown: document.getElementById('ask-answer').getBoundingClientRect().width > 2, history: document.querySelectorAll('#ask-history-list li').length }; })())")));
   const out: Record<string, unknown> = {};
   await wait(6000); // the patrol is under way
   const before = (await stats()).scout?.at;
@@ -98,6 +98,9 @@ async function talkCheck(c: { send: (m: string, p?: object) => Promise<{ result?
   await ev("document.getElementById('talk-close').click()");
   await wait(300);
   out.close2d = { open: (await stats()).talk.open, held: (await stats()).talk.held };
+  await ev("document.getElementById('ask-history').open = true");
+  await wait(200);
+  out.history = { entries: await ev("document.querySelectorAll('#ask-history-list li').length"), shot: await shot('history') };
   await ev("window.postMessage({ type: 'settings', reducedMotion: 'off', scout: 'muted', askCamera: true }, '*')");
   await wait(300);
   await ask('How can I undo that?');

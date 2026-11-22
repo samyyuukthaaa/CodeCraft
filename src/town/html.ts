@@ -99,6 +99,14 @@ ${stateRules}
   .ask-body { margin-top: 8px; }
   #ask-answer { white-space: pre-wrap; line-height: 1.45; color: #ffffff; margin-bottom: 8px; }
   #ask-answer:empty { display: none; }
+  /* the answer is shown on Scout; here it is only read out (screen readers). Muted: no bubble, so it shows here */
+  body:not(.scout-muted) #ask-answer { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  #ask-history { margin-bottom: 8px; }
+  #ask-history summary { cursor: pointer; color: #cbd5e1; font-weight: 700; }
+  #ask-history ol { list-style: none; margin: 6px 0 0; padding: 0 4px 0 0; max-height: 220px; overflow-y: auto; user-select: text; }
+  #ask-history li { margin-bottom: 8px; line-height: 1.45; white-space: pre-wrap; }
+  #ask-history .h-q { color: #facc15; font-weight: 700; }
+  #ask-history .h-a { color: #ffffff; }
   .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
   .chips button { font-size: 11px; padding: 3px 8px; border-radius: 12px; }
   #ask-form { display: flex; gap: 6px; }
@@ -218,6 +226,7 @@ ${stateRules}
     <button id="ask-toggle" type="button" aria-expanded="false">🏮 Ask Scout</button>
     <div class="ask-body">
       <div id="ask-answer" role="status" aria-live="polite"></div>
+      <details id="ask-history" class="hidden"><summary>Chat history (<span id="ask-history-count">0</span>)</summary><ol id="ask-history-list" aria-label="Questions and Scout's answers"></ol></details>
       <div id="ask-suggest" class="chips" aria-label="Suggested questions"></div>
       <form id="ask-form"><input id="ask-input" type="text" maxlength="200" placeholder="Ask about CodeCraft…" aria-label="Your question"><button type="submit">Ask</button></form>
       <p class="muted">Answers come from a built-in guide and the town; no model is called.</p>

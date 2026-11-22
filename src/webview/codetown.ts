@@ -814,9 +814,32 @@ function renderSuggestions(qs: string[]): void {
 function answer(q: string): void {
   const r = askScout(q, current);
   askInput.value = q;
-  askAnswer.textContent = r.answer; // the full answer always stays here (screen readers, copy and paste)
+  // shown on Scout; the panel keeps it for screen readers (visually hidden unless muted) and in the chat history
+  askAnswer.textContent = r.answer;
+  addHistory(q, r.answer);
   renderSuggestions(r.suggestions);
   sayAnswer(q, r.answer, answerKeywords(r.topic));
+}
+
+/** Chat history: every question and answer of this panel (renderer memory only, newest last, at most 30). */
+const historyBox = $('ask-history');
+const historyList = $('ask-history-list');
+const historyCount = $('ask-history-count');
+const HISTORY_MAX = 30;
+function addHistory(q: string, a: string): void {
+  const li = document.createElement('li');
+  const qe = document.createElement('div');
+  qe.className = 'h-q';
+  qe.textContent = `You: ${q}`;
+  const ae = document.createElement('div');
+  ae.className = 'h-a';
+  ae.textContent = `Scout: ${a}`;
+  li.append(qe, ae);
+  historyList.append(li);
+  while (historyList.children.length > HISTORY_MAX) historyList.firstElementChild?.remove();
+  historyCount.textContent = String(historyList.children.length);
+  historyBox.classList.remove('hidden');
+  historyList.scrollTop = historyList.scrollHeight;
 }
 
 // ---------------------------------------------------------------------------
@@ -830,6 +853,7 @@ const talkNext = $('talk-next');
 const talkMore = $<HTMLButtonElement>('talk-more');
 const headPos = new THREE.Vector3();
 const hudBar = $('overlay');
+const askPanel = $('ask');
 let talkTimer: ReturnType<typeof setInterval> | undefined;
 const nowS = (): number => performance.now() / 1000;
 /** Only a walk to a target counts (in 2D he is docked and never walks). */
@@ -906,10 +930,14 @@ function positionTalk(): void {
   graph.scoutHead(headPos).project(camera);
   const w = window.innerWidth;
   const half = Math.min(180, (w - 24) / 2);
-  const x = Math.max(12 + half, Math.min(w - 12 - half, ((headPos.x + 1) / 2) * w));
+  let x = Math.max(12 + half, Math.min(w - 12 - half, ((headPos.x + 1) / 2) * w));
   // never over the top bar: the bubble (drawn above its anchor) starts below the HUD
   const hud = hudBar.getBoundingClientRect().bottom;
   const y = Math.max(hud + talkBox.offsetHeight + 24, ((1 - headPos.y) / 2) * window.innerHeight);
+  // never under or over the Ask Scout panel: slide left of it when they would meet
+  const a = askPanel.getBoundingClientRect();
+  const top = y - talkBox.offsetHeight - 24;
+  if (a.height > 0 && x + half > a.left - 8 && y > a.top && top < a.bottom) x = Math.max(12 + half, a.left - 12 - half);
   talkBox.style.left = `${Math.round(x)}px`;
   talkBox.style.top = `${Math.round(y)}px`;
 }

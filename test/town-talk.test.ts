@@ -195,7 +195,10 @@ test('html: the bubble (close, Show more), 2D placement above the docked Scout, 
   assert.match(html, /#scout-talk\.expanded \.talk-text \{ max-height: min\(38vh, 260px\); overflow-y: auto;/, 'scrollable, never the whole town');
   assert.match(html, /body\.flat #scout-talk \{ left: 12px; top: auto; bottom: 96px; transform: none; \}/, '2D: above the docked Scout');
   assert.match(html, /body\.scout-muted #scout-talk, body\.scout-muted #tip/, 'muted: no bubble');
-  assert.match(html, /<div id="ask-answer" role="status" aria-live="polite">/, 'the full answer stays in the panel for screen readers');
+  assert.match(html, /<div id="ask-answer" role="status" aria-live="polite">/, 'the answer is still read out to screen readers');
+  assert.match(html, /body:not\(\.scout-muted\) #ask-answer \{ position: absolute; width: 1px; height: 1px;/, 'shown on Scout only (visually hidden in the panel unless muted)');
+  assert.match(html, /<details id="ask-history" class="hidden"><summary>Chat history \(<span id="ask-history-count">0<\/span>\)<\/summary><ol id="ask-history-list"/, 'expandable chat history');
+  assert.match(html, /#ask-history ol \{[^}]*max-height: 220px; overflow-y: auto; user-select: text;/, 'scrollable, copyable');
   assert.match(html, /data-ask-camera="on"/);
   assert.match(buildTownHtml({ cspSource: 'x', nonce: 'N', scriptUri: 'a.js', askCamera: false }), /data-ask-camera="off"/);
   const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')) as { contributes: { configuration: { properties: Record<string, { default: unknown }> } } };
