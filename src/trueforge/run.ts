@@ -44,6 +44,12 @@ export interface ClientToolCall {
 /** Answers client-side tool calls; for ask_user_question, the user's answer. */
 export interface Responder {
   answer(call: ClientToolCall): Promise<string>;
+  /**
+   * Non-interactive responders only: called for each ask-user question before it is answered; a message stops the
+   * run (status "unsupported", which never fails over). It counts across retries and failover within one run. The
+   * interactive panel has none.
+   */
+  stopBeforeAnswer?(): string | undefined;
 }
 
 export const ASK_USER_TOOL = 'ask_user_question';
@@ -283,6 +289,11 @@ export async function runWithApprovals(text: string, opts: RunOptions): Promise<
       const name = resolveCall(c?.name ?? '', c?.args ?? '').tool || 'unknown_tool';
       let content: string;
       if (name === ASK_USER_TOOL && opts.responder) {
+        const stop = opts.responder.stopBeforeAnswer?.();
+        if (stop) {
+          await opts.driver.cancel?.().catch(() => undefined);
+          return { status: 'unsupported', message: stop, rounds: round };
+        }
         const input = resolveCall(c?.name ?? '', c?.args ?? '').input ?? {};
         const question = typeof input.question === 'string' ? redact(input.question).slice(0, 500) : '(the agent asked a question without text)';
         const options = Array.isArray(input.options) ? input.options.filter((o): o is string => typeof o === 'string').slice(0, 5).map((o) => redact(o).slice(0, 200)) : [];

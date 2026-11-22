@@ -18,6 +18,7 @@ import { agentsApi, cancelSession, createClient, createSession, describeError, e
 import type { TrueForge } from '@truefoundry/trueforge-sdk';
 import { CodeCraftConfig, FALLBACK_AGENT_NAME, PRIMARY_AGENT_NAME, validateConfig } from '../../src/trueforge/config';
 import { failoverBanner, failureMessage } from '../../src/trueforge/errors';
+import { autoResponder } from '../../src/trueforge/autoAnswer';
 import { AgentAttempt, SwitchInfo, runWithFailover } from '../../src/trueforge/failover';
 import type { RunOutcome } from '../../src/trueforge/run';
 import { redact } from '../../src/util/redact';
@@ -112,6 +113,8 @@ export interface RunRecord {
   atSwitch: Array<{ changed: string[]; approvalsBefore: number; reviewsBefore: number }>;
   /** What the user sees when the run fails with no fallback left. */
   failureMessage?: string;
+  /** Ask-user questions answered automatically (non-interactive run): the question and the fixed reply. */
+  autoAnswers?: Array<{ question: string; reply: string }>;
   checks: Check[];
   pass: boolean;
 }
@@ -215,6 +218,7 @@ export async function runScenario(s: Scenario, runNo: number, log: (l: string) =
   let totalFiles = 0;
   const banners: string[] = [];
   const retries: string[] = [];
+  const autoAnswers: Array<{ question: string; reply: string }> = [];
   const atSwitch: Array<Promise<RunRecord['atSwitch'][number]>> = [];
   let attemptsUsed: AgentAttempt[] = [];
   try {
@@ -248,6 +252,11 @@ export async function runScenario(s: Scenario, runNo: number, log: (l: string) =
     }, RUN_LIMIT_MS);
     const result = await runWithFailover(composePrompt(ctx.contextText, s.prompt), attempts, {
       signal: ac.signal,
+      // nobody can answer the agent's questions here: a fixed reply, logged; the third question stops the run
+      responder: autoResponder((q, reply, n) => {
+        autoAnswers.push({ question: q.question ?? '', reply });
+        log(`AUTO-ANSWER #${n}: "${(q.question ?? '').slice(0, 200)}" -> "${reply}"`);
+      }),
       approver: {
         async approve(call) {
           approvals.push(`${call.name}: ${call.summary}`);
@@ -313,6 +322,7 @@ export async function runScenario(s: Scenario, runNo: number, log: (l: string) =
     retries,
     atSwitch: await Promise.all(atSwitch),
     ...(failMsg ? { failureMessage: failMsg } : {}),
+    ...(autoAnswers.length ? { autoAnswers } : {}),
   };
   let checks: Check[];
   try {

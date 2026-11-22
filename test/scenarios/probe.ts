@@ -16,6 +16,7 @@ import { agentsApi, cancelSession, createClient, createSession, describeError, e
 import { FALLBACK_AGENT_NAME, PRIMARY_AGENT_NAME, validateConfig } from '../../src/trueforge/config';
 import { classifyError } from '../../src/trueforge/errors';
 import { runWithApprovals } from '../../src/trueforge/run';
+import { autoResponder } from '../../src/trueforge/autoAnswer';
 import { redact } from '../../src/util/redact';
 import { DiskApplier, rejectAll } from '../helpers';
 import { ROOT, changedFiles } from './harness';
@@ -72,6 +73,7 @@ async function main(): Promise<void> {
     const outcome = await runWithApprovals(PROMPT, {
       driver: sessionDriver(client, sessionId),
       approver: { approve: async () => ({ allow: false, reason: 'tool probe: no changes' }) },
+      responder: autoResponder((q, reply, n) => console.log(`probe: AUTO-ANSWER #${n}: "${(q.question ?? '').slice(0, 160)}" -> "${reply}"`)),
       signal: ac.signal,
       maxRounds: 3,
       onEvent: (ev) => {
