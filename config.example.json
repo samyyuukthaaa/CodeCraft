@@ -1,8 +1,8 @@
 {
   "_comment": "Documents the VS Code settings CodeCraft reads. Copy these into settings.json. There are no keys here: provider keys are configured only in TrueForge Settings.",
   "codecraft.baseUrl": "http://localhost:8790",
-  "codecraft.primaryModel": "google-gemini/gemini-3-1-flash-lite",
-  "codecraft.fallbackModel": "google-gemini/gemini-3-5-flash-lite",
+  "codecraft.primaryModel": "google-gemini/gemini-3-5-flash-lite",
+  "codecraft.fallbackModel": "google-gemini/gemini-3-1-flash-lite",
   "codecraft.contextBudget": 6000,
   "codecraft.testCommand": "npm test",
   "codecraft.mcpPort": 8791

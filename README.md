@@ -36,8 +36,8 @@ Open http://localhost:8790 -> **Settings -> Model providers** and add a provider
 
 | Role | Model reference (as listed by TrueForge) |
 |---|---|
-| Primary | `google-gemini/gemini-3-1-flash-lite` |
-| Fallback | `google-gemini/gemini-3-5-flash-lite` |
+| Primary | `google-gemini/gemini-3-5-flash-lite` |
+| Fallback | `google-gemini/gemini-3-1-flash-lite` |
 
 Any model reference that TrueForge lists under `GET http://localhost:8790/api/v1/models` works, from any provider. Never put keys anywhere in this repository.
 
@@ -59,8 +59,8 @@ Copy into your VS Code `settings.json` to change the defaults (also in [config.e
 ```json
 {
   "codecraft.baseUrl": "http://localhost:8790",
-  "codecraft.primaryModel": "google-gemini/gemini-3-1-flash-lite",
-  "codecraft.fallbackModel": "google-gemini/gemini-3-5-flash-lite",
+  "codecraft.primaryModel": "google-gemini/gemini-3-5-flash-lite",
+  "codecraft.fallbackModel": "google-gemini/gemini-3-1-flash-lite",
   "codecraft.contextBudget": 6000,
   "codecraft.testCommand": "npm test",
   "codecraft.mcpPort": 8791

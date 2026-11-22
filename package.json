@@ -60,12 +60,12 @@
         },
         "codecraft.primaryModel": {
           "type": "string",
-          "default": "google-gemini/gemini-3-1-flash-lite",
+          "default": "google-gemini/gemini-3-5-flash-lite",
           "description": "Model name for the primary agent, as registered in TrueForge. Keys are configured only in TrueForge."
         },
         "codecraft.fallbackModel": {
           "type": "string",
-          "default": "google-gemini/gemini-3-5-flash-lite",
+          "default": "google-gemini/gemini-3-1-flash-lite",
           "description": "Model name for the fallback agent, as registered in TrueForge (any provider). Used when a run on the primary agent fails. Change it here to swap providers; no code change needed."
         },
         "codecraft.testCommand": {
