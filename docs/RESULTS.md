@@ -2,12 +2,22 @@
 
 All runs: 2026-11-20, against pallets/flask 3.1.3 (`22d92470`) in `fixtures/flask`, real TrueForge 0.185.1, real models (primary `google-gemini/gemini-3-1-flash-lite`, fallback `google-gemini/gemini-3-5-flash-lite`, both on the Gemini free tier), the real MCP server, and real verification commands (python, pytest, flask CLI). Only the human is scripted (tool approval and hunk review). Commands: `npm run scenario -- task1|task2|task3-fallback|task3-nofallback`. Full per-run JSON: `docs/results/`.
 
-## Current status (2026-11-22, honest)
+## Overall result (2026-11-22, final, honest)
 
-- **Setup:** primary `google-gemini/gemini-3-5-flash-lite`, fallback `google-gemini/gemini-3-1-flash-lite`, `codecraft.preloadTools` on (TrueForge loads the editor tools into the model), per-run read budget, failover on repeated "not found in tool mapping", automatic answers to ask-user questions in non-interactive runs.
-- **Task B (task2): passed once on the primary with no failover** (`9f4e8de`): 22 requests, 321k tokens, 101 s, all checks passed. It has **not** yet passed 3 in a row on one commit.
-- **Task A (task1) and Task C (task3, both variants):** passed 3 in a row on `53fdb7a` with the earlier models; **not yet re-run** on the current setup.
-- **The 3-in-a-row proof on one commit is pending the teammates' run** ([RUNBOOK.md](RUNBOOK.md)). No `submission-safe` tag exists yet.
+Every recorded live run in `docs/results/`: pallets/flask 3.1.3 (`22d92470`), real TrueForge 0.185.1, real Google Gemini free-tier models, the real MCP server and real verification commands. Only the human is scripted (tool approval and hunk review).
+
+| Task | Runs | Passed | Causes of the failures |
+|---|---|---|---|
+| Task A (task1) | 17 | 13 | A check that was too strict (it also refused the agent's added tests; fixed); runs that overlapped on one fixture and one quota; the free-tier daily limit while the machine slept; one process exit with no output. Passed 3 in a row on `53fdb7a`. |
+| Task B (task2) | 24 | 8 | Free-tier per-minute and daily quotas. DNS and TLS outages on this machine. Lite models looping on a `flask config` that could not JSON-encode some values (up to 4.2M tokens). A question to the user with no one to answer it (fixed: automatic answer). `gemini-3-1-flash-lite` calling the editor tools by name or wrapping `call_tool` wrongly (fixed: models swapped, `preloadTools`). Over-escaped edit text giving a SyntaxError (fixed: decoding plus an in-memory compile check). The agent's own test using the wrong runner, or the command registered on the wrong group, with the right fix cut off by the 2-failed-test-runs limit (now 3). **Never 3 in a row.** |
+| Task C, fallback (task3-fallback) | 13 | 7 | Fallback out of retries on per-minute 429s; a DNS outage blocking the provider host; the fallback re-proposing after each rejection (fixed); 503 "high demand". Passed 3 in a row on `7176115` and on `53fdb7a`. |
+| Task C, no fallback (task3-nofallback) | 18 | 17 | One failure during the DNS outage. Passed 3 in a row on several commits. |
+
+**Final commit `143e5b8`, each scenario run once:** task1 PASS (5 model calls), task3-fallback PASS (the invalid key was refused, `gemini-3-1-flash-lite` took over automatically, git clean), task3-nofallback PASS (clear message in 1 s), task2 PASS on the primary with no failover (28 requests: 26 model calls, one 429 and one 503 waited out; one question auto-answered).
+
+**Task B on the primary without failover:** passed twice, on `9f4e8de` in 22 requests and on `143e5b8` in 28 requests.
+
+**The 3-in-a-row proof on one commit was not achieved.** Task A and both Task C variants passed 3 in a row on earlier commits. Task B never did: within the Gemini free tier (15 requests per minute, 500 per day per model) and with the lite models' reliability, its runs kept failing for new reasons, each fixed in turn. The current setup is primary `google-gemini/gemini-3-5-flash-lite`, fallback `google-gemini/gemini-3-1-flash-lite`, `preloadTools` on, a per-run read budget, the failed-test-run limit at 3, automatic answers in non-interactive runs, and an honest final message when tests still fail.
 
 ## Earlier status as of 2026-11-21 12:40 UTC (3-in-a-row goal)
 
@@ -319,3 +329,24 @@ Root cause of the task2 failure on `7ed63a3` (session `01m81j0mfyyv7q6hnr5pd5c1y
 | task2 | 1 | FAIL | codecraft-primary | docs/cli.rst<br>src/flask/cli.py<br>tests/test_cli.py | src/flask/app.py<br>src/flask/cli.py<br>src/flask/config.py<br>docs/cli.rst<br>docs/config.rst<br>tests/test_async.py<br>tests/test_cli.py<br>tests/test_config.py<br>tests/test_testing.py<br>src/flask/__init__.py | 3/234 | 605397 | 155 s | 15 ms | TASKS.md: pytest tests/test_cli.py -q passes; full Flask test suite passes (0 failed) |
 
 Root cause of the task2 failure on `3910d54` (session `01m81jrdqx31mt64g2xbsa65bv`, primary `gemini-3-5-flash-lite`, 31 model calls + 2 per-minute 429s, 605k tokens, 155 s, no failover): the honest final message worked ("Tests are still failing: tests/test_cli.py::TestConfigCommand::test_config") and the agent copied an existing test pattern (a FlaskGroup `invoke` fixture). The real `flask config` worked (masked JSON, in `--help`), but `config` was registered only on the module-level `cli` group, so a FlaskGroup created in the test did not have it (exit 2). The agent's third attempt (adding the command in `FlaskGroup.__init__`) came after 2 failed test runs and was refused by the limit. The loop stopped at run 1.
+
+### task1: 1 run(s), 2026-11-22T12:19:19.525Z
+
+| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| task1 | 1 | PASS | codecraft-primary | src/flask/helpers.py<br>tests/test_helpers.py | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 2/234 | 39032 | 17 s | 14 ms | - |
+
+### task3-fallback, task3-nofallback: 1 run(s), 2026-11-22T12:20:03.446Z
+
+| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| task3-fallback | 1 | PASS | codecraft-fallback (failover x1) | (none) | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 1/234 | 193721 | 29 s | 27 ms | - |
+| task3-nofallback | 1 | PASS | codecraft-test-primary-badkey | (none) | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 0/234 | n/a | 1 s | 13 ms | - |
+
+### task2: 1 run(s), 2026-11-22T12:22:39.586Z
+
+| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| task2 | 1 | PASS | codecraft-primary | docs/cli.rst<br>src/flask/cli.py<br>tests/test_cli.py | src/flask/app.py<br>src/flask/cli.py<br>src/flask/config.py<br>docs/cli.rst<br>docs/config.rst<br>tests/test_async.py<br>tests/test_cli.py<br>tests/test_config.py<br>tests/test_testing.py<br>src/flask/__init__.py | 3/234 | 461616 | 141 s | 15 ms | - |
+
+Auto-answered ask-user questions (non-interactive run, fixed reply): task2 run 1: "What should the new CLI command name be?"
