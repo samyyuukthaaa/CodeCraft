@@ -13,7 +13,7 @@ import { NodeReadFs } from '../../src/mcp/nodeFs';
 import { startMcpServer } from '../../src/mcp/server';
 import { PlanStore, createHandlers } from '../../src/mcp/tools';
 import { agentsApi, cancelSession, createClient, createSession, describeError, ensureAgents, registerEditorServer, sessionDriver } from '../../src/trueforge/client';
-import { PRIMARY_AGENT_NAME, validateConfig } from '../../src/trueforge/config';
+import { FALLBACK_AGENT_NAME, PRIMARY_AGENT_NAME, validateConfig } from '../../src/trueforge/config';
 import { classifyError } from '../../src/trueforge/errors';
 import { runWithApprovals } from '../../src/trueforge/run';
 import { redact } from '../../src/util/redact';
@@ -23,7 +23,7 @@ import { ROOT, changedFiles } from './harness';
 export const MAX_REQUESTS = 6;
 const PROBE_PORT = 8793;
 const PROMPT =
-  'Tool probe (no code changes): call the codecraft-editor tool list_files once with no prefix, through call_tool, ' +
+  'Tool probe (no code changes): call the codecraft-editor tool list_files once with no prefix, ' +
   'then reply with one line: the number of files it returned. Do not read, search, plan or change anything else.';
 
 function token(): string {
@@ -40,7 +40,11 @@ function token(): string {
 }
 
 async function main(): Promise<void> {
-  const cfg = validateConfig({});
+  // --agent primary|fallback (default primary), --preload on|off (default: the codecraft.preloadTools default)
+  const argOf = (n: string): string | undefined => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? process.argv[i + 1] : undefined; };
+  const agentName = argOf('agent') === 'fallback' ? FALLBACK_AGENT_NAME : PRIMARY_AGENT_NAME;
+  const preload = argOf('preload');
+  const cfg = validateConfig(preload ? { preloadTools: preload === 'on' } : {});
   const client = createClient(cfg);
   const fsRead = new NodeReadFs(ROOT);
   const gate = new WriteGate(fsRead, new DiskApplier(ROOT), { review: async (req) => rejectAll(req) });
@@ -63,8 +67,8 @@ async function main(): Promise<void> {
   try {
     await registerEditorServer(client, server.url, token());
     await ensureAgents(agentsApi(client), cfg);
-    sessionId = await createSession(client, PRIMARY_AGENT_NAME);
-    console.log(`probe: agent ${PRIMARY_AGENT_NAME}, model ${cfg.primaryModel}, session ${sessionId}`);
+    sessionId = await createSession(client, agentName);
+    console.log(`probe: agent ${agentName}, model ${agentName === PRIMARY_AGENT_NAME ? cfg.primaryModel : cfg.fallbackModel}, preloadTools ${cfg.preloadTools ? 'on' : 'off'}, session ${sessionId}`);
     const outcome = await runWithApprovals(PROMPT, {
       driver: sessionDriver(client, sessionId),
       approver: { approve: async () => ({ allow: false, reason: 'tool probe: no changes' }) },

@@ -56,6 +56,7 @@ function readConfig(): CodeCraftConfig {
     baseUrl: c.get<string>('baseUrl'),
     primaryModel: c.get<string>('primaryModel'),
     fallbackModel: c.get<string>('fallbackModel'),
+    preloadTools: c.get<boolean>('preloadTools'),
   } as Partial<CodeCraftConfig>);
 }
 

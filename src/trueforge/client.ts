@@ -1,10 +1,10 @@
 // Thin wrapper over @truefoundry/trueforge-sdk. TrueForge owns the agent loop and all model calls;
 // this module only registers agents, creates sessions and streams turn events.
 import { TrueForge, TrueForgeApi, TrueForgeError } from '@truefoundry/trueforge-sdk';
-import { APPROVAL_TOOLS, EDITOR_SERVER_NAME } from '../mcp/constants';
+import { APPROVAL_TOOLS, EDITOR_SERVER_NAME, EDITOR_TOOLS } from '../mcp/constants';
 import {
   AGENT_DESCRIPTION,
-  AGENT_INSTRUCTIONS,
+  instructionsFor,
   CodeCraftConfig,
   FALLBACK_AGENT_NAME,
   PRIMARY_AGENT_NAME,
@@ -25,12 +25,13 @@ export function createClient(cfg: CodeCraftConfig): TrueForge {
   return new TrueForge({ baseUrl: v.baseUrl });
 }
 
-export function manifestFor(model: string): TrueForgeApi.AgentSpec {
+/** `preloadTools`: TrueForge loads every editor tool into the model up front (no call_tool discovery). */
+export function manifestFor(model: string, opts: { preloadTools?: boolean } = {}): TrueForgeApi.AgentSpec {
   return {
     model: { name: model },
-    instructions: AGENT_INSTRUCTIONS,
+    instructions: instructionsFor(opts.preloadTools === true),
     // propose_write, propose_changes and run_tests make TrueForge pause the turn for approval before they run.
-    mcpServers: [{ name: EDITOR_SERVER_NAME, requireApprovalForTools: [...APPROVAL_TOOLS] }],
+    mcpServers: [{ name: EDITOR_SERVER_NAME, requireApprovalForTools: [...APPROVAL_TOOLS], ...(opts.preloadTools ? { preloadTools: [...EDITOR_TOOLS] } : {}) }],
     config: AGENT_RUNTIME_CONFIG,
   };
 }
@@ -87,13 +88,13 @@ export function manifestMatches(stored: TrueForgeApi.AgentSpec, wanted: TrueForg
   const trig = (s: TrueForgeApi.AgentSpec) => JSON.stringify(s.config?.contextManagement?.compaction?.trigger ?? null);
   if ((stored.config?.contextManagement?.compaction?.enabled ?? true) !== (wanted.config?.contextManagement?.compaction?.enabled ?? true) || trig(stored) !== trig(wanted)) return false;
   const pick = (s: TrueForgeApi.AgentSpec) =>
-    (s.mcpServers ?? []).map((x) => ({ name: x.name, approvals: [...(x.requireApprovalForTools ?? [])].sort() })).sort((a, b) => a.name.localeCompare(b.name));
+    (s.mcpServers ?? []).map((x) => ({ name: x.name, approvals: [...(x.requireApprovalForTools ?? [])].sort(), preload: [...(x.preloadTools ?? [])].map(String).sort() })).sort((a, b) => a.name.localeCompare(b.name));
   return JSON.stringify(pick(stored)) === JSON.stringify(pick(wanted));
 }
 
 /** Registers (or reconciles) one agent by name. Idempotent. */
-export async function ensureAgent(api: AgentsApi, name: string, model: string): Promise<EnsureOutcome> {
-  const manifest = manifestFor(model);
+export async function ensureAgent(api: AgentsApi, name: string, model: string, preloadTools = false): Promise<EnsureOutcome> {
+  const manifest = manifestFor(model, { preloadTools });
   let existing: TrueForgeApi.Agent | undefined;
   for await (const a of await api.list({ agentName: name, limit: 50 })) {
     if (a.name === name) {
@@ -115,8 +116,8 @@ export async function ensureAgents(
   cfg: CodeCraftConfig,
 ): Promise<Record<string, EnsureOutcome>> {
   return {
-    [PRIMARY_AGENT_NAME]: await ensureAgent(api, PRIMARY_AGENT_NAME, cfg.primaryModel),
-    [FALLBACK_AGENT_NAME]: await ensureAgent(api, FALLBACK_AGENT_NAME, cfg.fallbackModel),
+    [PRIMARY_AGENT_NAME]: await ensureAgent(api, PRIMARY_AGENT_NAME, cfg.primaryModel, cfg.preloadTools),
+    [FALLBACK_AGENT_NAME]: await ensureAgent(api, FALLBACK_AGENT_NAME, cfg.fallbackModel, cfg.preloadTools),
   };
 }
 

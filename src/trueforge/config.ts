@@ -3,22 +3,35 @@ export interface CodeCraftConfig {
   baseUrl: string;
   primaryModel: string;
   fallbackModel: string;
+  /**
+   * codecraft.preloadTools: TrueForge loads the editor tools' schemas into the model up front (preloadTools), so the
+   * model calls them directly instead of through the call_tool wrapper. Default off.
+   */
+  preloadTools: boolean;
 }
 
 export const DEFAULT_CONFIG: CodeCraftConfig = {
   baseUrl: 'http://localhost:8790',
   primaryModel: 'google-gemini/gemini-3-5-flash-lite',
   fallbackModel: 'google-gemini/gemini-3-1-flash-lite',
+  preloadTools: false,
 };
 
 export const PRIMARY_AGENT_NAME = 'codecraft-primary';
 export const FALLBACK_AGENT_NAME = 'codecraft-fallback';
 
+/** How the editor tools are reached: through TrueForge's call_tool wrapper (default) ... */
+export const CALL_TOOL_LINE =
+  'Call the codecraft-editor tools (read_file, list_files, search_text, search_symbols, list_related, submit_plan, propose_changes, propose_write, run_tests) ONLY through the call_tool tool with {"mcp_server": "codecraft-editor", "tool_name": "<tool>", "input": {...}}; never call them by name directly, because direct calls are not found.';
+/** ... or, with codecraft.preloadTools, directly by name (TrueForge has loaded them into the model). */
+export const PRELOADED_TOOLS_LINE =
+  'The codecraft-editor tools (read_file, list_files, search_text, search_symbols, list_related, submit_plan, propose_changes, propose_write, run_tests) are loaded for you: call them directly by name with their arguments.';
+
 /** Identical for both agents so a failover never changes behaviour, only the model. */
 export const AGENT_INSTRUCTIONS = [
   'You are the CodeCraft coding agent running inside a VS Code extension, working on the open workspace through the codecraft-editor tools.',
   'Be concise. Never ask for or repeat API keys or other secrets.',
-  'Call the codecraft-editor tools (read_file, list_files, search_text, search_symbols, list_related, submit_plan, propose_changes, propose_write, run_tests) ONLY through the call_tool tool with {"mcp_server": "codecraft-editor", "tool_name": "<tool>", "input": {...}}; never call them by name directly, because direct calls are not found.',
+  CALL_TOOL_LINE,
   'If the request is unclear or ambiguous (you cannot tell which code, behaviour or name is meant), do not edit anything: call ask_user_question ONCE with one short question (and up to 4 options when the choices are clear), then continue with the answer. Do not ask when the request and the code already make the answer clear.',
   'For every change group in propose_changes, give "reason" (why this change is needed, one sentence) and "plain" (one plain-English sentence a beginner could understand, no jargon).',
   'Workflow:',
@@ -30,6 +43,9 @@ export const AGENT_INSTRUCTIONS = [
   '6. Before you declare the task done, verify it: if you added or changed a command or feature, make sure a test actually runs it (for a CLI command, invoke it through the CLI test runner and check its real output), then call run_tests. Values you print or serialize may have types that a plain encoder cannot handle; prefer the project\'s own helpers for that. Never claim a change was made or that tests passed unless a tool result confirms it.',
   '7. If run_tests still fails after 2 fix attempts, stop: do not keep editing. Reply with what fails (test name and error) and what you tried. CodeCraft refuses further proposals in that run after 2 failed test runs.',
 ].join('\n');
+
+/** The instructions for a setup: only the line on how to reach the editor tools differs with preloadTools. */
+export const instructionsFor = (preloadTools: boolean): string => (preloadTools ? AGENT_INSTRUCTIONS.replace(CALL_TOOL_LINE, PRELOADED_TOOLS_LINE) : AGENT_INSTRUCTIONS);
 
 export const AGENT_DESCRIPTION = 'CodeCraft agent (managed by the CodeCraft VS Code extension)';
 
@@ -54,6 +70,7 @@ export function validateConfig(raw: Partial<CodeCraftConfig>): CodeCraftConfig {
   const defined = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== undefined));
   const cfg: CodeCraftConfig = { ...DEFAULT_CONFIG, ...defined };
   cfg.baseUrl = validateBaseUrl(cfg.baseUrl);
+  cfg.preloadTools = cfg.preloadTools === true;
   for (const key of ['primaryModel', 'fallbackModel'] as const) {
     if (!MODEL_NAME.test(cfg[key])) throw new Error(`codecraft.${key} is not a valid TrueForge model name`);
   }
