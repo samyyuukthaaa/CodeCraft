@@ -28,7 +28,23 @@ it('extension activates and registers its commands', async () => {
   assert.ok(ext, 'extension codecraft-dev.codecraft not found');
   await ext.activate();
   const cmds = await vscode.commands.getCommands(true);
-  for (const c of ['codecraft.openAgentPanel', 'codecraft.undoLastChange', 'codecraft.stopRun']) assert.ok(cmds.includes(c), `missing command ${c}`);
+  for (const c of ['codecraft.openAgentPanel', 'codecraft.undoLastChange', 'codecraft.stopRun', 'codecraft.inlineEdit']) assert.ok(cmds.includes(c), `missing command ${c}`);
+});
+
+it('CodeCraft: Inline Edit Selection shows an error message if no code is selected', async () => {
+  const original = vscode.window.showInformationMessage;
+  const messages: string[] = [];
+  (vscode.window as { showInformationMessage: unknown }).showInformationMessage = async (msg: string) => {
+    messages.push(msg);
+    return undefined;
+  };
+  try {
+    await vscode.commands.executeCommand('codecraft.inlineEdit');
+    assert.ok(messages.length > 0, 'no message was shown');
+    assert.ok(messages[0]!.includes('selection'), `unexpected message: ${messages[0]}`);
+  } finally {
+    (vscode.window as { showInformationMessage: unknown }).showInformationMessage = original;
+  }
 });
 
 it('CodeCraft: Open Agent Panel opens the webview panel', async () => {

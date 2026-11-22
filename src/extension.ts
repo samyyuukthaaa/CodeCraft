@@ -581,6 +581,29 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
       out.appendLine('Stop requested: no further changes will be written; changes you already accepted stay applied.');
       void vscode.window.showInformationMessage('CodeCraft: run stopped. Nothing more will be written; changes you already accepted stay applied (use Undo Last Change to revert).');
     }),
+    vscode.commands.registerCommand('codecraft.inlineEdit', async () => {
+      if (!lastSelection) {
+        return void vscode.window.showInformationMessage('CodeCraft: please select code first (Ctrl+Alt+K requires a selection).');
+      }
+      if (!host) return void vscode.window.showWarningMessage('CodeCraft: open a folder first.');
+      const instruction = await vscode.window.showInputBox({
+        title: 'CodeCraft: Inline Edit',
+        prompt: `Edit ${lastSelection.path}:${lastSelection.startLine}-${lastSelection.endLine}`,
+        placeHolder: 'Enter your editing instruction (e.g., "add error handling")',
+        ignoreFocusOut: true,
+      });
+      if (instruction === undefined) return; // cancelled
+      out.appendLine(`[inline edit] ${lastSelection.path}:${lastSelection.startLine}-${lastSelection.endLine}: ${instruction}`);
+      // Create a minimal post callback that sends events to the user (message boxes, not a webview panel)
+      const post = (msg: HostToWebview) => {
+        if (msg.type === 'event') {
+          const e = msg.event;
+          if (e.failed) void vscode.window.showErrorMessage(`CodeCraft: ${e.summary}`);
+          else if (e.type === 'run.done') void vscode.window.showInformationMessage(`CodeCraft: ${e.summary}`);
+        }
+      };
+      await runPrompt(instruction, post);
+    }),
     { dispose: () => void server?.close() },
   );
   // Handle for the VS Code integration test (test/vscode). Not a public API.

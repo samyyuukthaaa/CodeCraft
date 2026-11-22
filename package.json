@@ -48,8 +48,28 @@
       {
         "command": "codecraft.exportReport",
         "title": "CodeCraft: Export Run Report"
+      },
+      {
+        "command": "codecraft.inlineEdit",
+        "title": "CodeCraft: Inline Edit Selection"
       }
     ],
+    "keybindings": [
+      {
+        "command": "codecraft.inlineEdit",
+        "key": "ctrl+alt+k",
+        "when": "editorHasSelection && editorTextFocus"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "codecraft.inlineEdit",
+          "group": "1_modification",
+          "when": "editorHasSelection && editorTextFocus"
+        }
+      ]
+    },
     "configuration": {
       "title": "CodeCraft",
       "properties": {
