@@ -330,7 +330,8 @@ test('fix mode: the plan is kept, stop counters cleared, exactly one reviewed pr
   p.set({ summary: 's', files: [{ path: 'a.py', action: 'edit', why: 'w' }] });
   p.noteTests(false);
   p.noteTests(false);
-  assert.match(p.check(['a.py'])!, /tests failed 2 times/);
+  p.noteTests(false);
+  assert.match(p.check(['a.py'])!, /tests failed 3 times/);
   p.startFix(1);
   assert.equal(p.check(['a.py']), undefined);
   p.noteOutcome('refused');

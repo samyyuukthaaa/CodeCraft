@@ -120,9 +120,13 @@ test('plan: after 2 failed run_tests in a run, further proposals are refused wit
     const fix = { plan: 'p', groups: [{ intent: 'fix', files: [{ path: 'src/cli.py', edits: [{ find: 'print("x")', replace: 'print("y")' }] }] }] };
     assert.equal(JSON.parse((await h.propose_changes(fix)).text).status, 'applied', 'one failed test run still allows a fix');
     await h.run_tests();
+    // up to MAX_FAILED_TEST_RUNS - 1 failed runs still allow a fix
+    const fix2 = { plan: 'p', groups: [{ intent: 'fix', files: [{ path: 'src/cli.py', edits: [{ find: 'print("y")', replace: 'print("z")' }] }] }] };
+    assert.equal(JSON.parse((await h.propose_changes(fix2)).text).status, 'applied', 'two failed test runs still allow a fix (limit 3)');
+    await h.run_tests();
     const third = await h.propose_changes(fix);
     assert.equal(third.isError, true);
-    assert.match(third.text, /tests failed 2 times in this run; do not propose more changes/);
+    assert.match(third.text, /tests failed 3 times in this run; do not propose more changes/);
     exitCode = 0;
     assert.equal(JSON.parse((await h.run_tests()).text).passed, true, 'run_tests itself is still allowed (to report)');
     plan.reset();

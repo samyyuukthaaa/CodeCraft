@@ -51,8 +51,8 @@ test('wiring: the panel shows the honest final message; the scenario run output 
   assert.match(h, /finalMessage = honestSummary\(outcome\.text, lastTests\);\s+log\(`FINAL MESSAGE: /);
 });
 
-test('instruction line: copy an existing test\'s pattern and helpers (generic); the 2-failed-test-runs limit is unchanged', () => {
+test('instruction line: copy an existing test\'s pattern and helpers (generic); the failed-test-run limit is the configured one', () => {
   assert.ok(AGENT_INSTRUCTIONS.includes('Before writing a test, read an existing test for the same kind of thing in the same test file and copy its pattern and helpers.'));
   assert.doesNotMatch(AGENT_INSTRUCTIONS, /test_cli_runner/, 'no Flask-specific hint');
-  assert.equal(MAX_FAILED_TEST_RUNS, 2);
+  assert.equal(MAX_FAILED_TEST_RUNS, 3);
 });

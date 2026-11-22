@@ -17,6 +17,13 @@ export const DEFAULT_CONFIG: CodeCraftConfig = {
   preloadTools: true,
 };
 
+/**
+ * After this many failed run_tests in one run, CodeCraft refuses further proposals and the agent must stop and report.
+ * Raised from 2 to 3 on 2026-11-22 (project owner's decision): live Task B runs showed a correct fix arriving on the
+ * third attempt. Generic: it applies to every task.
+ */
+export const MAX_FAILED_TEST_RUNS = 3;
+
 export const PRIMARY_AGENT_NAME = 'codecraft-primary';
 export const FALLBACK_AGENT_NAME = 'codecraft-fallback';
 
@@ -44,7 +51,7 @@ export const AGENT_INSTRUCTIONS = [
   '4. Propose with propose_changes, grouping files by intent (for example "implement", "update callers", "add test", "fix tests", "docs"). For existing files prefer edits: [{find, replace}], where find is the exact current text (including indentation) and occurs exactly once; use newContent only for new files or small files. Use real newline characters (never the two characters backslash and n). Keep every unrelated line exactly as it was. Use propose_write only for a single small file.',
   '5. Proposals are not writes: the user accepts or rejects whole groups or single hunks. Report exactly what the tool result says was applied, per file. If the user rejects a proposal, do not propose the same change again: end your turn with a short summary of what you proposed and why.',
   '6. Before you declare the task done, verify it: if you added or changed a command or feature, make sure a test actually runs it (for a CLI command, invoke it through the CLI test runner and check its real output), then call run_tests. Values you print or serialize may have types that a plain encoder cannot handle; prefer the project\'s own helpers for that. Never claim a change was made or that tests passed unless a tool result confirms it.',
-  '7. If run_tests still fails after 2 fix attempts, stop: do not keep editing. Reply with what fails (test name and error) and what you tried. CodeCraft refuses further proposals in that run after 2 failed test runs.',
+  `7. If run_tests has failed ${MAX_FAILED_TEST_RUNS} times in this run, stop: do not keep editing. Reply with what fails (test name and error) and what you tried. CodeCraft refuses further proposals in that run after ${MAX_FAILED_TEST_RUNS} failed test runs.`,
 ].join('\n');
 
 /** The instructions for a setup: only the line on how to reach the editor tools differs with preloadTools. */

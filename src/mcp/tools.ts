@@ -40,8 +40,9 @@ export interface Plan {
  * exists, and only files the plan lists as "edit" or "create" may be proposed. Reset at the start of a run.
  */
 export const MAX_REJECTED_IN_A_ROW = 2;
-/** After this many failed run_tests in one run, no more proposals: the agent must stop and report. */
-export const MAX_FAILED_TEST_RUNS = 2;
+/** After this many failed run_tests in one run, no more proposals (defined in the configuration). */
+import { MAX_FAILED_TEST_RUNS } from '../trueforge/config';
+export { MAX_FAILED_TEST_RUNS };
 
 export class PlanStore {
   private plan: Plan | undefined;
