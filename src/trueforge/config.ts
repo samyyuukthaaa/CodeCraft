@@ -7,7 +7,7 @@ export interface CodeCraftConfig {
 
 export const DEFAULT_CONFIG: CodeCraftConfig = {
   baseUrl: 'http://localhost:8790',
-  primaryModel: 'google-gemini/gemini-3-5-flash',
+  primaryModel: 'google-gemini/gemini-3-1-flash-lite',
   fallbackModel: 'google-gemini/gemini-3-5-flash-lite',
 };
 
