@@ -20,6 +20,7 @@ import type { TrueForge } from '@truefoundry/trueforge-sdk';
 import { CodeCraftConfig, FALLBACK_AGENT_NAME, PRIMARY_AGENT_NAME, validateConfig } from '../../src/trueforge/config';
 import { failoverBanner, failureMessage } from '../../src/trueforge/errors';
 import { autoResponder } from '../../src/trueforge/autoAnswer';
+import { TestOutcome, honestSummary } from '../../src/trueforge/summary';
 import { AgentAttempt, SwitchInfo, runWithFailover } from '../../src/trueforge/failover';
 import type { RunOutcome } from '../../src/trueforge/run';
 import { redact } from '../../src/util/redact';
@@ -116,6 +117,8 @@ export interface RunRecord {
   atSwitch: Array<{ changed: string[]; approvalsBefore: number; reviewsBefore: number }>;
   /** What the user sees when the run fails with no fallback left. */
   failureMessage?: string;
+  /** The run's final message as shown to the user (honest: it starts with "Tests are still failing" if they are). */
+  finalMessage?: string;
   /** Ask-user questions answered automatically (non-interactive run): the question and the fixed reply. */
   autoAnswers?: Array<{ question: string; reply: string }>;
   checks: Check[];
@@ -190,10 +193,12 @@ export async function runScenario(s: Scenario, runNo: number, log: (l: string) =
     async run(): Promise<TestResult> {
       const r = await pytest();
       activity.push(`run_tests: ${r.summary}`);
+      lastTests = { passed: r.proc.code === 0, output: (r.proc.stdout + r.proc.stderr).slice(-8000) };
       return { ran: true, exitCode: r.proc.code, output: (r.proc.stdout + r.proc.stderr).slice(-8000) };
     },
   };
   const planStore = new PlanStore();
+  let lastTests: TestOutcome | undefined; // the agent's last run_tests result in this run
   const plans: Array<{ plan: Plan; reviewsBefore: number }> = [];
   const handlers = createHandlers({
     fs: fsRead,
@@ -216,6 +221,7 @@ export async function runScenario(s: Scenario, runNo: number, log: (l: string) =
   const approvals: string[] = [];
   let tokens = 0;
   let outcome: RunOutcome = { status: 'error', message: 'not started', rounds: 0 };
+  let finalMessage: string | undefined;
   let finalAgent = '';
   let switches: SwitchInfo[] = [];
   let context: ContextReport = { budgetTokens: BUDGET, usedTokens: 0, totalFiles: 0, items: [], unresolved: [] };
@@ -290,6 +296,10 @@ export async function runScenario(s: Scenario, runNo: number, log: (l: string) =
     });
     clearTimeout(limit);
     outcome = result.outcome;
+    if (outcome.status === 'done') {
+      finalMessage = honestSummary(outcome.text, lastTests);
+      log(`FINAL MESSAGE: ${finalMessage.replace(/\s+/g, ' ').slice(0, 400)}`);
+    }
     finalAgent = result.agent;
     switches = result.switches;
   } catch (e) {
@@ -327,6 +337,7 @@ export async function runScenario(s: Scenario, runNo: number, log: (l: string) =
     atSwitch: await Promise.all(atSwitch),
     ...(failMsg ? { failureMessage: failMsg } : {}),
     ...(autoAnswers.length ? { autoAnswers } : {}),
+    ...(finalMessage !== undefined ? { finalMessage } : {}),
   };
   let checks: Check[];
   try {

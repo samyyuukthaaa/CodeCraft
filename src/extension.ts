@@ -51,6 +51,7 @@ import { latestRunId, renderRunReport } from './journal/report';
 import { checkpoints, latestRunWithChanges, planRollback } from './trust/rollback';
 import { NO_ANSWER, TrustSession } from './trust/session';
 import { redact } from './util/redact';
+import { TestOutcome, honestSummary } from './trueforge/summary';
 
 /** The codecraft.faultInjection setting, validated ('none' for anything unexpected). */
 function faultSetting(): FaultMode | 'none' {
@@ -101,6 +102,8 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
 
   // Paths the agent read with read_file during the current run ("files read versus total").
   const readThisRun = new Set<string>();
+  // The agent's last run_tests result in the current run (the final message must not claim passing tests).
+  let lastAgentTests: TestOutcome | undefined;
   let postReads: (() => void) | undefined;
   let postPlan: ((p: Plan) => void) | undefined;
   // Per-run read budget of the editor tools (reset at the start of every run, shown in the panel).
@@ -150,7 +153,10 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
           budget: readBudget,
           // proposed .py files must compile (checked in memory with the workspace venv's Python, else python on PATH)
           syntaxCheck: pythonSyntaxCheck(workspacePython(folder.uri.fsPath), (why) => out.appendLine(`[syntax check] Python not available, check skipped: ${why}`)),
-          onTests: (passed, exitCode, output) => void (trust ? trust.onAgentTests(passed, exitCode, output) : journal.append({ t: 'tests', phase: 'agent', passed, exitCode })),
+          onTests: (passed, exitCode, output) => {
+            lastAgentTests = { passed, output: output ?? '' }; // for the honest final message
+            void (trust ? trust.onAgentTests(passed, exitCode, output) : journal.append({ t: 'tests', phase: 'agent', passed, exitCode }));
+          },
           // An operation ID is journaled (and written) before every tool call runs.
           beforeTool: (tool, args) => journal.append({ t: 'tool_call', opId: randomBytes(6).toString('hex'), tool, args: toolArgsSummary(tool, args) }),
           onPlan: (pl) => {
@@ -262,6 +268,7 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
           return composePrompt(small.contextText, text);
         };
         readThisRun.clear();
+        lastAgentTests = undefined;
         host.journal.runId = randomBytes(8).toString('hex');
         await host.journal.load();
         await host.journal.append({ t: 'run_started', request: text.slice(0, 300) });
@@ -392,6 +399,14 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
       } else if (outcome.status === 'cancelled') {
         post({ type: 'event', event: { type: 'run.cancelled', summary: 'stopped' } });
       } else {
+        // the final message, honest whatever the model said: failing tests are named first
+        const final = honestSummary(outcome.text, lastAgentTests);
+        post({ type: 'final', text: final });
+        if (final !== outcome.text) {
+          const head = final.split('\n')[0]!;
+          out.appendLine(`[final] ${head}`);
+          post({ type: 'event', event: { type: 'run.tests_failing', summary: head, failed: true } });
+        }
       }
     } catch (e) {
       const raw = describeError(e);

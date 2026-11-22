@@ -254,6 +254,10 @@ window.addEventListener('message', (e: MessageEvent<HostToWebview>) => {
     reads.textContent = `Files read by the agent: ${m.read} of ${m.total}` + (m.paths.length ? ` (${m.paths.slice(0, 8).join(', ')}${m.paths.length > 8 ? ', ...' : ''})` : '');
     return;
   }
+  if (m.type === 'final') {
+    answer.textContent = m.text; // replaces the streamed text with the honest final message
+    return;
+  }
   if (m.type === 'event') {
     const ev = m.event;
     if (ev.delta) {

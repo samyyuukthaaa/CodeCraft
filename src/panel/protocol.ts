@@ -58,7 +58,9 @@ export type HostToWebview =
   | { type: 'groups'; groups: GroupView[] }
   | { type: 'question'; question: string; options: string[] }
   | { type: 'questionDone' }
-  | { type: 'metrics'; metrics: MetricsView };
+  | { type: 'metrics'; metrics: MetricsView }
+  /** The run's final message (honest: "Tests are still failing: ..." first when the last tests failed). */
+  | { type: 'final'; text: string };
 
 /** Validates untrusted input from the webview. Returns undefined for anything unexpected. */
 export function parseWebviewMessage(raw: unknown): WebviewToHost | undefined {
