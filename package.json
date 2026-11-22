@@ -124,6 +124,7 @@
     "live-mcp": "node esbuild.mjs --tests && node out/test/live-mcp.js",
     "perf-index": "node esbuild.mjs --tests && node out/test/perf-index.js",
     "scenario": "node esbuild.mjs --scenarios && node out/scenarios/run.js",
+    "probe": "node esbuild.mjs --scenarios && node out/scenarios/probe.js",
     "failure-table": "node esbuild.mjs --scenarios && node out/scenarios/failure-table.js",
     "capture-errors": "node esbuild.mjs --scenarios && node out/scenarios/capture-errors.js",
     "ask-user": "node esbuild.mjs --scenarios && node out/scenarios/ask-user.js",
