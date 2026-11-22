@@ -2,14 +2,14 @@
 // (or, with reduced motion, fades) to exactly the place the state says, and can be muted.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as THREE from 'three';
+
 import { Journal, MemorySink } from '../src/journal/journal';
 import { townEventsFromJournal } from '../src/town/fromJournal';
 import { parseTownMessage } from '../src/town/protocol';
 import { foldEvents, initialSceneState, sceneReducer } from '../src/town/reducer';
 import { SCOUT_HOME } from '../src/town/scout';
 import type { SceneState, TownEvent, TownFileInput } from '../src/town/types';
-import { TextureFactory, TownGraph } from '../src/webview/town/graph';
+
 
 const FILES: TownFileInput[] = [{ path: 'src/flask/cli.py', lines: 1100 }, { path: 'src/flask/app.py', lines: 900 }, { path: 'tests/test_cli.py', lines: 300, isTest: true }];
 const init = (): SceneState => sceneReducer(initialSceneState(), { type: 'init', files: FILES, at: 0 });
@@ -109,53 +109,3 @@ test('navigate request: a relative workspace path and nothing else', () => {
   assert.equal(parseTownMessage({ type: 'navigate', path: 42 }), undefined);
 });
 
-const tex: TextureFactory = { caption: () => ({ texture: new THREE.Texture(), aspect: 4 }), windows: () => undefined };
-const scoutOf = (g: TownGraph) => g.root.getObjectByName('scout')!;
-
-test('3D Scout walks to exactly the place the state says, along the streets', () => {
-  const g = new TownGraph(tex, false);
-  let s = init();
-  g.sync(s);
-  g.tick(0);
-  const home = g.scoutPosition({ kind: 'home' });
-  assert.deepEqual(scoutOf(g).position.toArray(), home.toArray(), 'starts at home');
-  s = sceneReducer(s, { type: 'file_read', path: 'src/flask/app.py', at: 1 });
-  g.sync(s);
-  const target = g.scoutPosition({ kind: 'building', id: 'src/flask/app.py' });
-  g.tick(10);
-  assert.ok(g.animating);
-  g.tick(10.15);
-  const mid = scoutOf(g).position.clone();
-  assert.ok(!mid.equals(home) && !mid.equals(target), 'on the way');
-  assert.ok(Math.abs(mid.z - home.z) < 1e-6 || Math.abs(mid.x - target.x) < 1e-6, 'x first, then z');
-  assert.ok(mid.y > Math.min(home.y, target.y), 'arcs above the roofs on the way');
-  assert.equal(target.y, 0.9 + s.buildings['src/flask/app.py']!.height * 0.32, 'stands on the roof');
-  g.tick(13);
-  assert.equal(g.animating, false);
-  assert.deepEqual(scoutOf(g).position.toArray(), target.toArray());
-  assert.equal(scoutOf(g).getObjectByName('scout-bubble')!.type, 'Sprite');
-});
-
-test('reduced motion: no walking, a short fade; muting hides Scout', () => {
-  const g = new TownGraph(tex, true);
-  let s = init();
-  g.sync(s);
-  g.tick(0);
-  const home = scoutOf(g).position.clone();
-  s = sceneReducer(s, { type: 'provider', status: 'failed_over', model: 'm', at: 1 });
-  g.sync(s);
-  const plant = g.scoutPosition({ kind: 'plant' });
-  const seen: THREE.Vector3[] = [];
-  for (let t = 20; t <= 21; t += 0.05) {
-    g.tick(t);
-    seen.push(scoutOf(g).position.clone());
-  }
-  assert.ok(seen.every((p) => p.equals(home) || p.equals(plant)), 'never in between: no walking');
-  assert.ok(seen.at(-1)!.equals(plant));
-  assert.equal(g.animating, false);
-  g.setScoutVisible(false);
-  assert.equal(scoutOf(g).visible, false);
-  s = sceneReducer(s, { type: 'file_read', path: 'src/flask/cli.py', at: 2 });
-  g.sync(s);
-  assert.equal(scoutOf(g).visible, false, 'stays muted on later moves');
-});

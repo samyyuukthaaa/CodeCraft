@@ -91,6 +91,20 @@ const textures: TextureFactory = {
     texture.colorSpace = THREE.SRGBColorSpace;
     return { texture, aspect: c.width / c.height };
   },
+  glow() {
+    // a soft round warm glow (Scout's lantern)
+    const c = document.createElement('canvas');
+    c.width = 64;
+    c.height = 64;
+    const ctx = c.getContext('2d')!;
+    const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.35, 'rgba(255,230,170,0.6)');
+    g.addColorStop(1, 'rgba(255,200,120,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  },
   windows() {
     const c = document.createElement('canvas');
     c.width = 64;
@@ -213,6 +227,7 @@ function loop(): void {
   triangles: renderer?.info.render.triangles ?? 0,
   graph: graph?.stats(),
   listeners: listeners.length,
+  scout: graph ? { mode: graph.scoutMode, animating: graph.animating, at: graph.scoutWorldPosition(new THREE.Vector3()).toArray().map((v) => Math.round(v * 10) / 10) } : undefined,
   buildings: Object.keys(current.buildings).length,
 });
 

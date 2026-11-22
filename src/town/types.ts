@@ -135,6 +135,8 @@ export interface SceneState {
   aggregated: boolean;
   /** The run the scene shows. */
   runId?: string;
+  /** True between run_started and run_finished (Scout follows the agent; otherwise he patrols). */
+  running: boolean;
   /** Scout, the guide: derived only from events (src/town/scout.ts). */
   scout: Scout;
   /** The path the agent took through the town in this run (Agent Journey mode), in order. */

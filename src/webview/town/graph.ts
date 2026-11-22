@@ -14,7 +14,8 @@ import { FOOTPRINT, Layout, layoutScene } from '../../town/layout';
 import type { Building, SceneState } from '../../town/types';
 import { ViewMode, journeyStops } from '../../town/view';
 import type { ScoutPlace } from '../../town/scout';
-import { ScoutFigure } from './scout3d';
+import { SCOUT_SCALE, ScoutFigure } from './scout3d';
+import { Pt, frontOf, patrolStops, plantStop, plaza, route } from '../../town/patrol';
 
 export interface CaptionPart {
   text: string;
@@ -26,6 +27,8 @@ export interface CaptionPart {
 export interface TextureFactory {
   caption(parts: CaptionPart[]): { texture: THREE.Texture; aspect: number };
   windows(): THREE.Texture | undefined;
+  /** Soft round glow (Scout's lantern); optional. */
+  glow?(): THREE.Texture | undefined;
 }
 
 const NAVY = new THREE.Color('#0b1430');
@@ -120,6 +123,14 @@ export class TownGraph {
   private scoutBubble: THREE.Sprite | undefined;
   private scoutMove = -1;
   private scoutVisible = true;
+  // Scout's director: reducer moves (agent, clicks) and the renderer-only seeded patrol
+  private anchor: Pt | undefined; // the street point Scout belongs to right now
+  private onRoof: string | undefined; // the building whose roof he stands on, if any
+  private stops: string[] = [];
+  private stopIndex = 0;
+  private patrolling = false;
+  private pauseUntil = 0;
+  private nameTag: THREE.Sprite | undefined;
 
   private readonly counters = { rebuilds: 0, buildingRebuilds: 0, incremental: 0 };
   private readonly tmp = new THREE.Matrix4();
@@ -127,10 +138,11 @@ export class TownGraph {
   constructor(
     private readonly textures: TextureFactory,
     private reducedMotion = false,
+    opts: { scoutBuild?: () => THREE.BufferGeometry; log?: (msg: string, err: unknown) => void } = {},
   ) {
     const windows = textures.windows();
-    this.scout = new ScoutFigure((x) => this.own(x));
-    this.scout.root.scale.setScalar(2.2); // about as tall as a small building
+    const glow = textures.glow?.();
+    this.scout = new ScoutFigure((x) => this.own(x), { ...(glow ? { glow: this.own(glow) } : {}), ...(opts.scoutBuild ? { build: opts.scoutBuild } : {}), ...(opts.log ? { log: opts.log } : {}) });
     this.bodyMat = this.own(
       new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0, ...(windows ? { emissiveMap: this.own(windows), emissive: WARM, emissiveIntensity: 0.9 } : {}) }),
     );
@@ -404,53 +416,150 @@ export class TownGraph {
     this.updateJourney(s);
     this.root.add(this.scout.root);
     this.scoutMove = -1;
+    this.anchor = undefined;
+    this.onRoof = undefined;
+    this.stops = patrolStops(s);
+    this.stopIndex = 0;
+    this.patrolling = false;
+    if (this.nameTag) this.scout.root.remove(this.nameTag);
+    this.nameTag = this.screenSprite([{ text: '🏮 Scout', yellow: true }], 0.032, SCOUT_SCALE);
+    this.root.remove(this.nameTag);
+    this.nameTag.name = 'scout-name';
+    // anchored at the head in SCREEN units: the name tag just above, the bubble one label higher (no overlap at any zoom)
+    this.nameTag.center.set(0.5, -0.2);
+    this.nameTag.position.set(0, 1.45, 0);
+    this.scout.root.add(this.nameTag);
     this.updateScout(s, true);
   }
 
-  /** Where Scout stands for a place: on the building's roof (visible from any angle), beside the power plant, or at
-   * the town gate. */
+  /** Scout's figure mode: 'figure', or 'fallback' if the mesh failed to build (a simple marker is shown). */
+  get scoutMode(): 'figure' | 'fallback' {
+    return this.scout.mode;
+  }
+
+  /** Where Scout ends up for a scene place: on a building's roof, beside the power plant, or on the plaza. */
   scoutPosition(place: ScoutPlace, s: SceneState | undefined = this.scene): THREE.Vector3 {
     const L = this.layout;
-    if (place.kind === 'building') {
-      const lot = L?.buildings[place.id];
+    if (L && place.kind === 'building') {
+      const lot = L.buildings[place.id];
       const b = s?.buildings[place.id];
       if (lot) return new THREE.Vector3(lot.x, b ? buildingHeight(b) : 0, lot.z);
     }
-    if (place.kind === 'plant' && L) return new THREE.Vector3(L.power.x - 6, 0, L.power.z + 3);
-    const b = L?.bounds ?? { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
-    return new THREE.Vector3((b.minX + b.maxX) / 2, 0, b.maxZ + 3);
+    if (L && place.kind === 'plant') {
+      const p = plantStop(L);
+      return new THREE.Vector3(p.x, 0, p.z);
+    }
+    const p = L ? plaza(L) : { x: 0, z: 0 };
+    return new THREE.Vector3(p.x, 0, p.z);
   }
 
-  /** Follows the scene's Scout: a new move starts a walk (or a fade with reduced motion) and a new bubble. */
-  private updateScout(s: SceneState, first = false): void {
-    const sc = s.scout;
-    if (sc.move === this.scoutMove) return;
-    this.scoutMove = sc.move;
-    this.scout.moveTo(this.scoutPosition(sc.at, s), sc.mood, this.reducedMotion, first);
+  /** Scout's world position (Find Scout, Follow Scout). */
+  scoutWorldPosition(out: THREE.Vector3): THREE.Vector3 {
+    return out.copy(this.scout.root.position);
+  }
+
+  /** The street point for a place (where Scout walks before any roof hop). */
+  private streetFor(place: ScoutPlace): Pt {
+    const L = this.layout!;
+    if (place.kind === 'building') return frontOf(L, place.id) ?? plaza(L);
+    if (place.kind === 'plant') return plantStop(L);
+    return plaza(L);
+  }
+
+  /** The waypoints from where Scout stands to a place: down from a roof, along the streets, then up a roof. */
+  private pathTo(place: ScoutPlace, s: SceneState, roof: boolean): THREE.Vector3[] {
+    const L = this.layout!;
+    const from = this.anchor ?? plaza(L);
+    const pts: THREE.Vector3[] = [];
+    if (this.onRoof) pts.push(new THREE.Vector3(from.x, 0, from.z)); // hop down to the street in front
+    for (const p of route(L, from, this.streetFor(place))) pts.push(new THREE.Vector3(p.x, 0, p.z));
+    if (roof && place.kind === 'building') pts.push(this.scoutPosition(place, s));
+    return pts;
+  }
+
+  private setBubble(text: string, key: string): void {
     if (this.scoutBubble) {
       this.scout.root.remove(this.scoutBubble);
       this.dropSprite(this.scoutBubble);
     }
     // the building name (if any) is the one yellow keyword
-    const key = sc.at.kind === 'building' ? (s.buildings[sc.at.id]?.name ?? '') : '';
-    const i = key ? sc.bubble.indexOf(key) : -1;
-    const parts: CaptionPart[] = i >= 0 ? [{ text: sc.bubble.slice(0, i) }, { text: key, yellow: true }, { text: sc.bubble.slice(i + key.length) }].filter((p) => p.text) : [{ text: sc.bubble }];
-    this.scoutBubble = this.sprite(parts, 0.55, 9);
+    const i = key ? text.indexOf(key) : -1;
+    const parts: CaptionPart[] = i >= 0 ? [{ text: text.slice(0, i) }, { text: key, yellow: true }, { text: text.slice(i + key.length) }].filter((p) => p.text) : [{ text }];
+    this.scoutBubble = this.screenSprite(parts, 0.03, SCOUT_SCALE);
     this.root.remove(this.scoutBubble);
     this.scoutBubble.name = 'scout-bubble';
-    this.scoutBubble.position.set(0, 1.85, 0);
+    this.scoutBubble.center.set(0.5, -1.55);
+    this.scoutBubble.position.set(0, 1.45, 0);
     this.scout.root.add(this.scoutBubble);
-    this.scout.root.visible = this.scoutVisible;
   }
 
-  /** Mute: hides Scout and its bubble (the scene state still tracks it). */
+  /** Follows the scene's Scout: an agent move or a click interrupts the patrol and walks there (fades with
+   * reduced motion); the bubble shows what happened. */
+  private updateScout(s: SceneState, first = false): void {
+    const sc = s.scout;
+    if (sc.move === this.scoutMove) return;
+    this.scoutMove = sc.move;
+    this.scout.setMood(sc.mood);
+    const key = sc.at.kind === 'building' ? (s.buildings[sc.at.id]?.name ?? '') : '';
+    this.setBubble(sc.bubble, key);
+    this.scout.root.visible = this.scoutVisible;
+    const moved = !this.anchor || sc.at.kind !== 'building' || this.onRoof !== sc.at.id || this.patrolling;
+    if (first || !this.layout) {
+      this.scout.place(this.scoutPosition(sc.at, s));
+    } else if (moved) {
+      this.scout.settle();
+      this.scout.walk(this.pathTo(sc.at, s, true), 18, this.reducedMotion);
+    }
+    if (this.layout) {
+      this.anchor = this.streetFor(sc.at);
+      this.onRoof = sc.at.kind === 'building' ? sc.at.id : undefined;
+    }
+    this.patrolling = false;
+    this.pauseUntil = this.scout.lastTick + 4;
+  }
+
+  /** Renderer-only patrol (cosmetic, seeded): not in the reducer, not in the journal, never during a run. */
+  private stepScout(t: number): void {
+    const moving = this.scout.tick(t, !this.reducedMotion);
+    const s = this.scene;
+    if (!s || !this.layout) return;
+    if (this.scout.takeArrived()) {
+      if (this.patrolling) {
+        const id = this.stops[(this.stopIndex - 1 + this.stops.length) % this.stops.length];
+        const name = id ? (s.buildings[id]?.name ?? id) : '';
+        if (name) this.setBubble(`This is ${name}`, name);
+        this.pauseUntil = t + 2.5;
+      } else this.pauseUntil = t + (s.running ? 0 : 5);
+    }
+    if (moving || s.running || !this.scoutVisible || t < this.pauseUntil) return;
+    if (this.reducedMotion) {
+      // no patrol: he waits on the plaza (a fade brings him back after a run)
+      const home = plaza(this.layout);
+      if (this.anchor && (this.anchor.x !== home.x || this.anchor.z !== home.z || this.onRoof)) {
+        this.scout.walk([new THREE.Vector3(home.x, 0, home.z)], 0, true);
+        this.anchor = home;
+        this.onRoof = undefined;
+        this.setBubble("I'm on the plaza. Click a building and I'll take you there.", '');
+      }
+      return;
+    }
+    const id = this.stops[this.stopIndex % Math.max(1, this.stops.length)];
+    if (!id || !this.layout.buildings[id]) return;
+    this.stopIndex++;
+    this.patrolling = true;
+    this.scout.walk(this.pathTo({ kind: 'building', id }, s, false), 5, false);
+    this.anchor = this.streetFor({ kind: 'building', id });
+    this.onRoof = undefined;
+  }
+
+  /** Mute: hides Scout, his name tag and bubble (the scene state still tracks him); the patrol pauses. */
   setScoutVisible(v: boolean): void {
     this.scoutVisible = v;
     this.scout.root.visible = v;
     this.applyModeVisibility();
   }
 
-  /** True while something is moving (Scout walking or fading): reduced-motion rendering still draws these frames. */
+  /** True while Scout is walking or fading: reduced-motion rendering still draws these frames. */
   get animating(): boolean {
     return this.scout.animating;
   }
@@ -490,6 +599,20 @@ export class TownGraph {
     const sp = new THREE.Sprite(this.build(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false })));
     const h = Math.min(height, maxWidth / aspect);
     sp.scale.set(h * aspect, h, 1);
+    return sp;
+  }
+
+  /**
+   * A label with a CONSTANT size on screen (`screenFraction` of the view height), whatever the camera distance:
+   * Scout's name tag and bubble stay readable in the whole-town view. `parentScale` undoes the parent's scale.
+   */
+  private screenSprite(parts: CaptionPart[], screenFraction: number, parentScale: number): THREE.Sprite {
+    const { texture, aspect } = this.textures.caption(parts);
+    this.build(texture);
+    const sp = new THREE.Sprite(this.build(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false, depthTest: false, sizeAttenuation: false })));
+    const h = (screenFraction * 2 * Math.tan((45 / 2) * (Math.PI / 180))) / parentScale; // camera fov 45
+    sp.scale.set(h * aspect, h, 1);
+    sp.renderOrder = 10; // always on top: never hidden behind a building
     return sp;
   }
 
@@ -656,7 +779,7 @@ export class TownGraph {
 
   /** Per-frame animation (skipped entirely with reduced motion). Never allocates. */
   tick(t: number): void {
-    this.scout.tick(t); // a move animates even with reduced motion (as a short fade)
+    this.stepScout(t); // Scout moves even with reduced motion (as a short fade); the patrol needs motion
     if (this.reducedMotion) return;
     if (this.stringLights) (this.stringLights.material as THREE.PointsMaterial).opacity = 0.6 + 0.2 * Math.sin(t * 1.7);
     if (this.powerGlow) this.powerGlow.rotation.y = t * 0.6;

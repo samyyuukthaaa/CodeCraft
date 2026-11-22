@@ -157,7 +157,8 @@ test('graph: dispose releases every geometry, material, texture and instance buf
   // live textures: 5 district captions + active caption + power caption + window texture + 20 journey stop
   // labels; every replaced active caption (20 events) was disposed when it was replaced
   // + 1: Scout's current speech bubble (each replaced bubble is disposed)
-  assert.equal(created.length - disposed, 8 + 20 + 1);
+  // + 1 for Scout's name tag (created once per build)
+  assert.equal(created.length - disposed, 8 + 20 + 1 + 1);
   g.dispose();
   assert.equal(disposed, created.length, 'all textures disposed');
   assert.equal(liveDisposed, new Set(live).size, 'all live geometries and materials disposed');

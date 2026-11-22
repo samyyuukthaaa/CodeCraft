@@ -12,6 +12,7 @@ import { townEventsFromJournal } from '../../src/town/fromJournal';
 import { buildTownHtml } from '../../src/town/html';
 import { foldEvents, initialSceneState, sceneReducer } from '../../src/town/reducer';
 import type { TownEvent } from '../../src/town/types';
+import { cdp } from './town-perf';
 
 const arg = (name: string, def = ''): string => {
   const i = process.argv.indexOf(`--${name}`);
@@ -98,7 +99,8 @@ window.addEventListener('load', () => {
   }
 });`,
   );
-  const html = buildTownHtml({ cspSource: 'file:', nonce: 'N', scriptUri: 'codetown.js' }).replace('<script nonce="N" src="codetown.js">', '<script nonce="N" src="stub.js"></script>\n  <script nonce="N" src="codetown.js">');
+  // --motion on|off|auto (default off: headless browsers may report reduced motion)
+  const html = buildTownHtml({ cspSource: 'file:', nonce: 'N', scriptUri: 'codetown.js', reducedMotion: (arg('motion', 'off') as 'on' | 'off' | 'auto'), scout: arg('scout', 'on') === 'muted' ? 'muted' : 'on' }).replace('<script nonce="N" src="codetown.js">', '<script nonce="N" src="stub.js"></script>\n  <script nonce="N" src="codetown.js">');
   const page = path.join(dir, 'index.html');
   fs.writeFileSync(page, html);
 
@@ -111,6 +113,54 @@ window.addEventListener('load', () => {
   const common = ['--headless=new', '--hide-scrollbars', ...gl, '--enable-precise-memory-info', `--window-size=${size}`, '--allow-file-access-from-files', `--user-data-dir=${path.join(dir, 'profile')}`];
   const url = `file:///${page.replace(/\\/g, '/')}`;
   const budget = arg('budget', measure ? String(Number(arg('window', '5000')) + 4000) : '6000');
+  if (arg('realtime')) {
+    // --realtime <seconds>: REAL time (virtual time runs too few animation frames for walks): open the page over
+    // the DevTools protocol, wait, print the stats (incl. Scout), take the screenshot, then close the browser.
+    const port = 9600 + Math.floor(Math.random() * 300);
+    const child = cp.spawn(browser, [...common, `--remote-debugging-port=${port}`, url], { stdio: 'ignore' });
+    try {
+      let ws = '';
+      for (let i = 0; i < 60 && !ws; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        try {
+          const list = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()) as Array<{ type: string; webSocketDebuggerUrl: string }>;
+          ws = list.find((t) => t.type === 'page')?.webSocketDebuggerUrl ?? '';
+        } catch {
+          // not up yet
+        }
+      }
+      if (!ws) throw new Error('the browser did not open a debugging port');
+      const c = await cdp(ws);
+      await new Promise((r) => setTimeout(r, Number(arg('realtime')) * 1000));
+      const stats = (await c.send('Runtime.evaluate', { expression: 'JSON.stringify(window.__townStats && window.__townStats())', returnByValue: true })).result?.value;
+      console.log('stats', String(stats));
+      const shot = (await c.send('Page.captureScreenshot', { format: 'png' })) as unknown as { data?: string };
+      if (shot.data) fs.writeFileSync(outFile, Buffer.from(shot.data, 'base64'));
+      c.close();
+    } finally {
+      try {
+        const v = (await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()) as { webSocketDebuggerUrl?: string };
+        if (v.webSocketDebuggerUrl) void (await cdp(v.webSocketDebuggerUrl)).send('Browser.close');
+      } catch {
+        // closed
+      }
+      if (process.platform === 'win32' && child.pid) {
+        try {
+          cp.execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+        } catch {
+          // gone
+        }
+      }
+    }
+    console.log(`${files.length} files, ${events.length} events -> ${outFile} (real time ${arg('realtime')} s)`);
+    return;
+  }
+  if (has('probe')) {
+    // --probe: print the page's stats (incl. Scout's position) shortly before the time budget ends
+    fs.appendFileSync(path.join(dir, 'stub.js'), `\nwindow.addEventListener('load', () => setTimeout(() => { document.title = 'PROBE ' + JSON.stringify(window.__townStats && window.__townStats()); }, ${Number(budget) - 800}));\n`);
+    const dom = cp.execFileSync(browser, [...common, `--virtual-time-budget=${budget}`, '--dump-dom', url], { encoding: 'utf8', timeout: 180_000 });
+    console.log((/PROBE ([^<]*)/.exec(dom)?.[1] ?? 'no probe').replace(/&quot;/g, '"'));
+  }
   if (measure) {
     const dom = cp.execFileSync(browser, [...common, `--virtual-time-budget=${budget}`, '--run-all-compositor-stages-before-draw', '--dump-dom', url], { encoding: 'utf8', timeout: 180_000 });
     const m = /MEASURE (\{[^<]*\})/.exec(dom);

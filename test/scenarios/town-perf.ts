@@ -60,7 +60,7 @@ export function eventsFromRecord(rec: Record, t0: number): TownEvent[] {
   return evs;
 }
 
-async function cdp(wsUrl: string): Promise<{ send: (method: string, params?: object) => Promise<{ result?: { value?: unknown } }>; close: () => void }> {
+export async function cdp(wsUrl: string): Promise<{ send: (method: string, params?: object) => Promise<{ result?: { value?: unknown } }>; close: () => void }> {
   const ws = new WebSocket(wsUrl);
   await new Promise<void>((res, rej) => {
     ws.onopen = () => res();
@@ -191,7 +191,8 @@ window.addEventListener('load', () => {
     } else child.kill('SIGKILL');
   }
 }
-if (require.main === module)
+// Run only as the town-perf script itself (bundled into other scripts, `require.main === module` would be true there too)
+if (/town-perf\.(js|ts)$/.test(process.argv[1] ?? ''))
   main().catch((e) => {
     console.error('FAILED', e instanceof Error ? e.message : e);
     process.exitCode = 1;

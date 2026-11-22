@@ -38,7 +38,7 @@ export function createEmptyStats(): SceneStats {
 }
 
 export function initialSceneState(): SceneState {
-  return { districts: {}, buildings: {}, activeBuildingId: undefined, totalBuildings: 0, stats: createEmptyStats(), power: { status: 'healthy' }, roads: [], aggregated: false, journey: [], scout: SCOUT_HOME, version: 0 };
+  return { districts: {}, buildings: {}, activeBuildingId: undefined, totalBuildings: 0, stats: createEmptyStats(), power: { status: 'healthy' }, roads: [], aggregated: false, journey: [], scout: SCOUT_HOME, running: false, version: 0 };
 }
 
 function calculateStats(buildings: Record<string, Building>): SceneStats {
@@ -168,11 +168,11 @@ function step(state: SceneState, event: TownEvent): SceneState {
         buildings[id] = { ...rest, state: 'idle', testStatus: 'unknown', color: idle.color, icon: idle.icon, label: idle.label };
       }
       const base = { ...state, buildings, activeBuildingId: undefined, stats: calculateStats(buildings), tests: undefined, journey: [] };
-      if (event.type === 'reset') return { ...base, power: { status: 'healthy', ...(state.power.model ? { model: state.power.model } : {}) } };
-      return { ...base, runId: event.runId, power: { status: 'healthy', ...(state.power.model ? { model: state.power.model } : {}), at: event.at } };
+      if (event.type === 'reset') return { ...base, running: false, power: { status: 'healthy', ...(state.power.model ? { model: state.power.model } : {}) } };
+      return { ...base, running: true, runId: event.runId, power: { status: 'healthy', ...(state.power.model ? { model: state.power.model } : {}), at: event.at } };
     }
     case 'run_finished':
-      return state;
+      return { ...state, running: false };
     case 'file_planned': {
       const b = state.buildings[normalizePath(event.path)];
       const detail = `planned to ${event.action}${event.why ? `: ${event.why}` : ''}`;
