@@ -276,3 +276,15 @@ Root cause of this run (from the TrueForge session events): `gemini-3-1-flash-li
 | task2 | 1 | FAIL | codecraft-fallback (failover x1) | docs/cli.rst<br>src/flask/cli.py<br>tests/test_cli.py | src/flask/app.py<br>src/flask/cli.py<br>src/flask/config.py<br>docs/cli.rst<br>docs/config.rst<br>tests/test_async.py<br>tests/test_cli.py<br>tests/test_config.py<br>tests/test_testing.py<br>src/flask/__init__.py | 3/234 | 3123804 | 862 s | 19 ms | TASKS.md: pytest tests/test_cli.py -q passes; TASKS.md: `flask config` prints JSON; TASKS.md: `config` appears in flask --help; full Flask test suite passes (0 failed) |
 
 **Models swapped (2026-11-22, project owner's decision, after the `1b3398d` run):** primary `google-gemini/gemini-3-5-flash-lite`, fallback `google-gemini/gemini-3-1-flash-lite`. Reason: `gemini-3-1-flash-lite` nests `mcp_server` inside `call_tool`'s `input` and TrueForge rejects every such call (137 of 137 in the `1b3398d` run), while `gemini-3-5-flash-lite` built `call_tool` correctly and finished Task B once (`d3e2cf3`, as the fallback). Task wording and checks are unchanged.
+
+### task2: 1 run(s), 2026-11-22T09:42:16.313Z
+
+| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| task2 | 1 | PASS | codecraft-primary | docs/cli.rst<br>src/flask/cli.py<br>tests/test_cli.py | src/flask/app.py<br>src/flask/cli.py<br>src/flask/config.py<br>docs/cli.rst<br>docs/config.rst<br>tests/test_async.py<br>tests/test_cli.py<br>tests/test_config.py<br>tests/test_testing.py<br>src/flask/__init__.py | 4/234 | 321086 | 101 s | 16 ms | - |
+
+**Tool probe with `codecraft.preloadTools` ON (2026-11-22, `c2514b9`, one run each):** primary `gemini-3-5-flash-lite` **PASS**: 3 requests, two real `list_files` calls reached CodeCraft, fixture clean. Fallback `gemini-3-1-flash-lite` **FAIL** by the probe's rule: its editor tool calls did reach CodeCraft (4 `list_files`), but it kept listing past the 6-request cap (7 requests, then cancelled). Because the primary passed, preloadTools is on by default from `9f4e8de`.
+
+| Code | Scenario | Runs | Result | Notes |
+|---|---|---|---|---|
+| `9f4e8de` | task2 | 1 | **PASS on the primary, no failover** | Primary `gemini-3-5-flash-lite` with preloadTools on: called the editor tools directly (8 `search_text`, 9 `read_file`, 1 `submit_plan` before the first proposal listing cli.py, docs/cli.rst and tests/test_cli.py, 1 `propose_changes`, 1 `run_tests`; 2 identical repeats answered from the read budget's cache, 0 caps, 0 "not found in tool mapping"). All checks passed: 3 files, test_cli 61 passed, full suite 493 passed, masked JSON (33 keys), `config` in `--help`, test and docs. **22 requests** (21 model calls + 1 per-minute 429), 321k tokens, 101 s. Session `01m81a1zyf4bsq7ma54vfwvx9x`. |
