@@ -295,3 +295,11 @@ Root cause of this run (from the TrueForge session events): `gemini-3-1-flash-li
 | Code | Scenario | Runs | Result | Notes |
 |---|---|---|---|---|
 | `9f4e8de` | task2 | 1 | **PASS on the primary, no failover** | Primary `gemini-3-5-flash-lite` with preloadTools on: called the editor tools directly (8 `search_text`, 9 `read_file`, 1 `submit_plan` before the first proposal listing cli.py, docs/cli.rst and tests/test_cli.py, 1 `propose_changes`, 1 `run_tests`; 2 identical repeats answered from the read budget's cache, 0 caps, 0 "not found in tool mapping"). All checks passed: 3 files, test_cli 61 passed, full suite 493 passed, masked JSON (33 keys), `config` in `--help`, test and docs. **22 requests** (21 model calls + 1 per-minute 429), 321k tokens, 101 s. Session `01m81a1zyf4bsq7ma54vfwvx9x`. |
+
+### task2: 3 run(s), 2026-11-22T11:52:08.511Z
+
+| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| task2 | 1 | FAIL | codecraft-primary | docs/cli.rst<br>src/flask/cli.py<br>tests/test_cli.py | src/flask/app.py<br>src/flask/cli.py<br>src/flask/config.py<br>docs/cli.rst<br>docs/config.rst<br>tests/test_async.py<br>tests/test_cli.py<br>tests/test_config.py<br>tests/test_testing.py<br>src/flask/__init__.py | 3/234 | 349567 | 82 s | 15 ms | TASKS.md: pytest tests/test_cli.py -q passes; TASKS.md: `flask config` prints JSON; TASKS.md: `config` appears in flask --help; full Flask test suite passes (0 failed) |
+
+Root cause of the task2 failure on `c7c390b` (session `01m81hgcjfkf6e3y2ad6r6zn9z`, primary `gemini-3-5-flash-lite`, about 18 model calls, 350k tokens, 82 s, no rate limits, no failover): the model sent every edit's replacement text with literal backslash-n instead of newlines. CodeCraft decoded a replacement only when its `find` text also needed decoding, so an exactly matching one-line `find` wrote the literal `\n` into tests/test_cli.py, a SyntaxError at collection (`run_tests` failed twice, then the 2-failed-runs limit stopped further proposals). `config` was also not registered with the CLI group (`No such command 'config'`). The loop stopped at run 1; task1 and task3 were not run.
