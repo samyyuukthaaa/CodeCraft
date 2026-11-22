@@ -28,7 +28,7 @@ OUTBOUND_URL_ALLOWED_HOSTS='["127.0.0.1"]' npx @truefoundry/trueforge@0.185.1
 # PowerShell
 $env:OUTBOUND_URL_ALLOWED_HOSTS='["127.0.0.1"]'; npx @truefoundry/trueforge@0.185.1
 ```
-TrueForge serves its UI and API at **http://localhost:8790**. Keep it running.
+TrueForge serves its UI and API at **http://localhost:8790**. Keep it running: leave this terminal open and use a second terminal for the next steps.
 (Tested with TrueForge 0.185.1 standalone, which is meant for localhost only. Its local sandbox is not available on Windows, so `run_tests` runs in your workspace after a confirmation dialog.)
 
 ## 3. Add your model provider in TrueForge (keys stay there)
