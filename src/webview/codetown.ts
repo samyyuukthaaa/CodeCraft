@@ -19,6 +19,7 @@ const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)
 /** codecraft.townReducedMotion: 'on' / 'off', or 'auto' (follow the OS setting). Changeable while open. */
 const motionSetting = (v: string | undefined): boolean => (v === 'on' ? true : v === 'off' ? false : prefersReducedMotion);
 let reducedMotion = motionSetting(document.body.dataset.reducedMotion);
+document.body.classList.toggle('reduced-motion', reducedMotion);
 /** codecraft.scout: muted hides Scout, its bubble and its tips. */
 let scoutMuted = document.body.dataset.scout === 'muted';
 /** With reduced motion nothing animates, so a frame is drawn only when something changed. */
@@ -30,7 +31,8 @@ const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) 
 const canvasContainer = $('canvas-container');
 const fallbackView = $('fallback-view');
 const fallbackContent = $('fallback-content');
-const scout2d = $('scout-2d');
+const scoutDockText = $('scout-dock-text');
+let lastScoutTarget: string | undefined;
 const btnToggleView = $<HTMLButtonElement>('btn-toggle-view');
 const btnResetCam = $<HTMLButtonElement>('btn-reset-cam');
 const btnReplay = $<HTMLButtonElement>('btn-replay');
@@ -352,8 +354,13 @@ function fillCard(card: HTMLElement, b: Building, active: boolean): void {
   card.classList.toggle('scout-target', current.scout.at.kind === 'building' && current.scout.at.id === b.id);
 }
 /** 2D: Scout is shown as its speech bubble plus a highlight on its target building. */
+/** 2D: Scout is a docked companion (always on screen) with the same bubble as in 3D; his target card is outlined
+ * and scrolled into view. */
 function render2DScout(s: SceneState): void {
-  scout2d.textContent = `🏮 Scout: ${s.scout.bubble}`;
+  scoutDockText.textContent = s.scout.bubble;
+  const target = s.scout.at.kind === 'building' ? s.scout.at.id : undefined;
+  if (target && target !== lastScoutTarget) cards.get(target)?.scrollIntoView({ block: 'nearest', behavior: reducedMotion ? 'auto' : 'smooth' });
+  lastScoutTarget = target;
 }
 
 function rebuild2D(s: SceneState): void {
@@ -636,6 +643,7 @@ on(window, 'message', (event: MessageEvent<HostToTown>) => {
     focusCamera(m.path);
   } else if (m.type === 'settings') {
     reducedMotion = motionSetting(m.reducedMotion);
+    document.body.classList.toggle('reduced-motion', reducedMotion);
     graph?.setReducedMotion(reducedMotion);
     setScoutMuted(m.scout === 'muted');
   }
@@ -685,6 +693,7 @@ function maybeTip(tip: Tip | undefined): void {
   if (!tip || scoutMuted || dismissedTips.has(tip.id)) return;
   tipShown = tip.id;
   tipText.textContent = `🏮 ${tip.text}`;
+  scoutDockText.textContent = tip.text; // the docked Scout says the tip too
   tipBox.classList.remove('hidden');
 }
 

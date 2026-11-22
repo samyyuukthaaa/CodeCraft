@@ -108,6 +108,17 @@ test('mute setting: contributed, defaults to on, and reaches the page', () => {
   const base = { cspSource: 'x', nonce: 'N', scriptUri: 'a.js' };
   assert.match(buildTownHtml(base), /data-scout="on"/);
   assert.match(buildTownHtml({ ...base, scout: 'muted' }), /data-scout="muted"/);
-  assert.match(buildTownHtml(base), /body\.scout-muted #tip, body\.scout-muted #scout-2d \{ display: none !important; \}/);
+  assert.match(buildTownHtml(base), /body\.scout-muted #tip, body\.scout-muted #scout-dock \{ display: none !important; \}/);
   assert.match(buildTownHtml(base), /id="ask"[^>]*aria-label="Ask Scout"/);
+});
+
+test('2D companion: Scout is docked on screen in the 2D view and the no-WebGL fallback, above every panel; muting hides it', () => {
+  const html = buildTownHtml({ cspSource: 'x', nonce: 'N', scriptUri: 'a.js' });
+  assert.match(html, /<div id="scout-dock" role="status" aria-live="polite" aria-label="Scout">/);
+  assert.match(html, /id="scout-dock-text"/);
+  assert.match(html, /body\.flat #scout-dock \{ display: flex; \}/);
+  assert.match(html, /#scout-dock \{ position: absolute; left: 12px; bottom: 12px; z-index: 30;/, 'above the panels (z-index 30 > 13)');
+  assert.match(html, /body\.reduced-motion \.scout-sprite \{ animation: none; \}/);
+  assert.match(html, /body\.scout-muted #tip, body\.scout-muted #scout-dock \{ display: none !important; \}/);
+  assert.doesNotMatch(html, /\sstyle="/);
 });

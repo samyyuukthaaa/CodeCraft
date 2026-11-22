@@ -69,7 +69,24 @@ ${stateRules}
   .fallback-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
   .fallback-card { background: rgba(30, 41, 59, 0.6); border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
   .fallback-card:hover { border-color: rgba(255, 255, 255, 0.4); }
-  .scout-2d { margin-bottom: 10px; padding: 6px 10px; border-radius: 8px; background: rgba(250, 204, 21, 0.12); border: 1px solid rgba(250, 204, 21, 0.5); color: #ffffff; font-weight: 700; font-size: 13px; }
+  /* Scout docked companion (2D view and the no-WebGL fallback): always on screen, above every panel */
+  #scout-dock { position: absolute; left: 12px; bottom: 12px; z-index: 30; display: none; align-items: flex-end; gap: 8px; max-width: min(460px, calc(100% - 24px)); pointer-events: none; }
+  body.flat #scout-dock { display: flex; }
+  body.flat #legend { bottom: 112px; }
+  .scout-sprite { position: relative; width: 56px; height: 70px; flex: none; animation: scout-bob 1.6s ease-in-out infinite; }
+  body.reduced-motion .scout-sprite { animation: none; }
+  @keyframes scout-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+  .s-body { position: absolute; left: 6px; bottom: 6px; width: 44px; height: 42px; background: #fff1d6; border-radius: 14px; box-shadow: 0 0 10px 2px rgba(255, 213, 138, 0.7); }
+  .s-cap { position: absolute; left: 13px; bottom: 46px; width: 30px; height: 12px; background: #e4572e; border-radius: 8px 8px 3px 3px; z-index: 1; }
+  .s-eye { position: absolute; top: 9px; width: 13px; height: 14px; background: #ffffff; border-radius: 50%; box-shadow: inset 0 0 0 1px #e8c9a0; }
+  .s-eye::after { content: ""; position: absolute; left: 4px; top: 4px; width: 6px; height: 7px; background: #1e1b2e; border-radius: 50%; }
+  .s-eye.l { left: 8px; } .s-eye.r { right: 8px; }
+  .s-cheek { position: absolute; top: 25px; width: 7px; height: 4px; background: #ff9eb5; border-radius: 50%; }
+  .s-cheek.l { left: 5px; } .s-cheek.r { right: 5px; }
+  .s-scarf { position: absolute; left: 4px; bottom: 6px; width: 48px; height: 7px; background: #f59e0b; border-radius: 4px; }
+  .s-lantern { position: absolute; right: -2px; bottom: 8px; width: 11px; height: 13px; background: #ffd27a; border: 2px solid #5b3a29; border-radius: 3px; box-shadow: 0 0 12px 4px rgba(255, 210, 122, 0.8); }
+  .scout-speech { pointer-events: auto; background: #ffffff; color: #0a1330; border-radius: 12px 12px 12px 2px; padding: 7px 11px; font-size: 13px; font-weight: 600; line-height: 1.35; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45); }
+  .scout-speech b { color: #b45309; margin-right: 6px; }
   .fallback-card.scout-target { outline: 2px dashed #facc15; outline-offset: 2px; }
   #ask { position: absolute; right: 12px; bottom: 12px; z-index: 13; width: 340px; font-size: 12px; }
   body.replaying #ask { bottom: 64px; }
@@ -84,7 +101,7 @@ ${stateRules}
   #ask-input { flex: 1; background: rgba(30, 41, 59, 0.92); color: #e2e8f0; border: 1px solid var(--border-color); border-radius: 6px; padding: 5px 8px; font-size: 12px; }
   #tip { position: absolute; top: 112px; left: 50%; transform: translateX(-50%); z-index: 12; display: flex; gap: 10px; align-items: flex-start; max-width: 520px; font-size: 12px; border-color: rgba(250, 204, 21, 0.6); }
   #tip button { padding: 2px 8px; }
-  body.scout-muted #tip, body.scout-muted #scout-2d { display: none !important; }
+  body.scout-muted #tip, body.scout-muted #scout-dock { display: none !important; }
   .fallback-card.active { border-color: var(--warm); box-shadow: 0 0 10px rgba(250, 204, 21, 0.35); }
   .fallback-card-title { font-size: 12px; font-weight: 700; color: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .fallback-card-meta { font-size: 11px; color: #94a3b8; }
@@ -142,6 +159,11 @@ ${stateRules}
 
   <div id="legend" class="hud-panel" aria-label="Legend"></div>
 
+  <div id="scout-dock" role="status" aria-live="polite" aria-label="Scout">
+    <div class="scout-sprite" aria-hidden="true"><div class="s-cap"></div><div class="s-body"><span class="s-eye l"></span><span class="s-eye r"></span><span class="s-cheek l"></span><span class="s-cheek r"></span><div class="s-scarf"></div></div><div class="s-lantern"></div></div>
+    <div class="scout-speech"><b>Scout</b><span id="scout-dock-text"></span></div>
+  </div>
+
   <div id="replay-bar" class="hud-panel hidden" role="group" aria-label="Replay controls">
     <label class="muted" for="rp-run">Run</label>
     <select id="rp-run" aria-label="Finished run to replay"></select>
@@ -179,7 +201,6 @@ ${stateRules}
   </div>
 
   <div id="fallback-view">
-    <div id="scout-2d" class="scout-2d" role="status" aria-live="polite"></div>
     <div class="fallback-intro">2D town view: click a building to send Scout there and open the file</div>
     <div id="fallback-content"></div>
   </div>
