@@ -5,7 +5,7 @@ export interface CodeCraftConfig {
   fallbackModel: string;
   /**
    * codecraft.preloadTools: TrueForge loads the editor tools' schemas into the model up front (preloadTools), so the
-   * model calls them directly instead of through the call_tool wrapper. Default off.
+   * model calls them directly instead of through the call_tool wrapper. Default on (the probe passed on the primary, 2026-11-22).
    */
   preloadTools: boolean;
 }
@@ -14,7 +14,7 @@ export const DEFAULT_CONFIG: CodeCraftConfig = {
   baseUrl: 'http://localhost:8790',
   primaryModel: 'google-gemini/gemini-3-5-flash-lite',
   fallbackModel: 'google-gemini/gemini-3-1-flash-lite',
-  preloadTools: false,
+  preloadTools: true,
 };
 
 export const PRIMARY_AGENT_NAME = 'codecraft-primary';

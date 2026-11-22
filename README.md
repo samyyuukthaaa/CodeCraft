@@ -61,6 +61,7 @@ Copy into your VS Code `settings.json` to change the defaults (also in [config.e
   "codecraft.baseUrl": "http://localhost:8790",
   "codecraft.primaryModel": "google-gemini/gemini-3-5-flash-lite",
   "codecraft.fallbackModel": "google-gemini/gemini-3-1-flash-lite",
+  "codecraft.preloadTools": true,
   "codecraft.contextBudget": 6000,
   "codecraft.testCommand": "npm test",
   "codecraft.mcpPort": 8791

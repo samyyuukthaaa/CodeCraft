@@ -58,7 +58,7 @@ test('ensureAgents: idempotent when unchanged, updates when the model changed', 
   const first = fakeAgents([]);
   await ensureAgents(first.api, DEFAULT_CONFIG);
   const mk = (name: string, id: string, model: string) =>
-    ({ id, name, description: '', manifest: manifestFor(model) }) as unknown as TrueForgeApi.Agent;
+    ({ id, name, description: '', manifest: manifestFor(model, { preloadTools: DEFAULT_CONFIG.preloadTools }) }) as unknown as TrueForgeApi.Agent;
   const same = fakeAgents([
     mk(PRIMARY_AGENT_NAME, 'a1', DEFAULT_CONFIG.primaryModel),
     mk(FALLBACK_AGENT_NAME, 'a2', DEFAULT_CONFIG.fallbackModel),

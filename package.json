@@ -70,7 +70,7 @@
         },
         "codecraft.preloadTools": {
           "type": "boolean",
-          "default": false,
+          "default": true,
           "description": "Load CodeCraft's editor tools into the model up front (TrueForge preloadTools), so the model calls them directly instead of through TrueForge's call_tool wrapper."
         },
         "codecraft.testCommand": {

@@ -1,5 +1,5 @@
 // codecraft.preloadTools: TrueForge loads the editor tools into the model up front (preloadTools), instead of the
-// call_tool wrapper. Default off. Only the agent manifest (MCP server entry and the one instruction line on how to
+// call_tool wrapper. Default on since the probe passed on the primary (2026-11-22). Only the agent manifest (MCP server entry and the one instruction line on how to
 // reach the tools) changes; everything else is identical.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,15 +9,16 @@ import { schemas } from '../src/mcp/tools';
 import { manifestFor, manifestMatches } from '../src/trueforge/client';
 import { AGENT_INSTRUCTIONS, CALL_TOOL_LINE, DEFAULT_CONFIG, PRELOADED_TOOLS_LINE, instructionsFor, validateConfig } from '../src/trueforge/config';
 
-test('preloadTools: off by default (config, validation and the VS Code setting)', () => {
-  assert.equal(DEFAULT_CONFIG.preloadTools, false);
-  assert.equal(validateConfig({}).preloadTools, false);
+test('preloadTools: on by default (config, validation and the VS Code setting)', () => {
+  assert.equal(DEFAULT_CONFIG.preloadTools, true);
+  assert.equal(validateConfig({}).preloadTools, true);
+  assert.equal(validateConfig({ preloadTools: false }).preloadTools, false);
   assert.equal(validateConfig({ preloadTools: true }).preloadTools, true);
   assert.equal(validateConfig({ preloadTools: 'yes' as unknown as boolean }).preloadTools, false, 'only a real true turns it on');
   const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')) as { contributes: { configuration: { properties: Record<string, { type: string; default: unknown }> } } };
   const s = pkg.contributes.configuration.properties['codecraft.preloadTools']!;
   assert.equal(s.type, 'boolean');
-  assert.equal(s.default, false);
+  assert.equal(s.default, true);
 });
 
 test('preloadTools ON: the MCP server entry preloads every editor tool; approvals stay; one instruction line changes', () => {
