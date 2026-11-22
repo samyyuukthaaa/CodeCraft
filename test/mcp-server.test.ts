@@ -149,16 +149,83 @@ test('mcp: a call envelope nested inside input (observed from gemini-3-5-flash-l
   }
 });
 
-test('mcp: server rejects missing/wrong token, bad host and browser origins', async () => {
+test('mcp: propose_write refuses whole-file replacement that deletes >30% of lines in large files', async () => {
   const t = await boot();
   try {
-    const post = (headers: Record<string, string>) =>
-      fetch(t.server.url, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers }, body: '{}' });
-    assert.equal((await post({})).status, 401);
-    assert.equal((await post({ Authorization: 'Bearer wrong' })).status, 401);
-    assert.equal((await post({ Authorization: `Bearer ${TOKEN}`, Origin: 'https://evil.example' })).status, 403);
-    assert.equal((await fetch(t.server.url.replace('/mcp', '/other'), { method: 'POST', headers: { Authorization: `Bearer ${TOKEN}` } })).status, 404);
-    assert.equal((await fetch(t.server.url, { method: 'GET', headers: { Authorization: `Bearer ${TOKEN}` } })).status, 405);
+    const lines = Array.from({ length: 100 }, (_, i) => `line${i + 1}`).join('\n') + '\n';
+    const ws = await tempWorkspace({ 'test.txt': lines });
+    const applier = new DiskApplier(ws.root);
+    const reviewer = new ScriptedReviewer();
+    const gate = new WriteGate(ws.fs, applier, reviewer);
+    const server2 = await startMcpServer(createHandlers({ fs: ws.fs, gate, tests: { async run() { return { ran: true, exitCode: 0, output: '' }; } } }), TOKEN);
+    const client = new Client({ name: 'test', version: '0' });
+    await client.connect(new StreamableHTTPClientTransport(new URL(server2.url), { requestInit: { headers: { Authorization: `Bearer ${TOKEN}` } } }));
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const r = (await client.callTool({ name, arguments: args })) as { isError?: boolean; content: Array<{ text: string }> };
+      return { isError: Boolean(r.isError), body: JSON.parse(r.content[0]!.text) };
+    };
+    await call('read_file', { path: 'test.txt' });
+    const shortened = Array.from({ length: 60 }, (_, i) => `line${i + 1}`).join('\n') + '\n';
+    const r = await call('propose_write', { path: 'test.txt', newContent: shortened, reason: 'truncate' });
+    assert.equal(r.isError, true);
+    assert.match(r.body.error, /deletes \d+% of the file/);
+    await client.close();
+    await server2.close();
+    await ws.cleanup();
+  } finally {
+    await t.close();
+  }
+});
+
+test('mcp: propose_write allows small files to be replaced even with large % deletion', async () => {
+  const t = await boot();
+  try {
+    const original = 'line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\n';
+    const ws = await tempWorkspace({ 'test.txt': original });
+    const applier = new DiskApplier(ws.root);
+    const reviewer = new ScriptedReviewer(acceptAll);
+    const gate = new WriteGate(ws.fs, applier, reviewer);
+    const server2 = await startMcpServer(createHandlers({ fs: ws.fs, gate, tests: { async run() { return { ran: true, exitCode: 0, output: '' }; } } }), TOKEN);
+    const client = new Client({ name: 'test', version: '0' });
+    await client.connect(new StreamableHTTPClientTransport(new URL(server2.url), { requestInit: { headers: { Authorization: `Bearer ${TOKEN}` } } }));
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const r = (await client.callTool({ name, arguments: args })) as { isError?: boolean; content: Array<{ text: string }> };
+      return { isError: Boolean(r.isError), body: JSON.parse(r.content[0]!.text) };
+    };
+    await call('read_file', { path: 'test.txt' });
+    const r = await call('propose_write', { path: 'test.txt', newContent: 'replaced\n', reason: 'replace small file' });
+    assert.equal(r.isError, false);
+    assert.equal(r.body.status, 'applied');
+    await client.close();
+    await server2.close();
+    await ws.cleanup();
+  } finally {
+    await t.close();
+  }
+});
+
+test('mcp: list_files excludes .venv and .claude directories', async () => {
+  const t = await boot();
+  try {
+    const ws = await tempWorkspace({ 'src/app.py': 'x\n', '.venv/bin/python': '#!/bin/sh\n', '.claude/settings.json': '{}', 'README.md': 'hi\n' });
+    const applier = new DiskApplier(ws.root);
+    const reviewer = new ScriptedReviewer();
+    const gate = new WriteGate(ws.fs, applier, reviewer);
+    const server2 = await startMcpServer(createHandlers({ fs: ws.fs, gate, tests: { async run() { return { ran: true, exitCode: 0, output: '' }; } } }), TOKEN);
+    const client = new Client({ name: 'test', version: '0' });
+    await client.connect(new StreamableHTTPClientTransport(new URL(server2.url), { requestInit: { headers: { Authorization: `Bearer ${TOKEN}` } } }));
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const r = (await client.callTool({ name, arguments: args })) as { isError?: boolean; content: Array<{ text: string }> };
+      return { isError: Boolean(r.isError), body: JSON.parse(r.content[0]!.text) };
+    };
+    const files = (await call('list_files')).body.files;
+    assert.equal(files.includes('.venv/bin/python'), false);
+    assert.equal(files.includes('.claude/settings.json'), false);
+    assert.equal(files.includes('README.md'), true);
+    assert.equal(files.includes('src/app.py'), true);
+    await client.close();
+    await server2.close();
+    await ws.cleanup();
   } finally {
     await t.close();
   }

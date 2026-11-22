@@ -213,6 +213,19 @@ export function createHandlers(deps: ToolDeps) {
     return `${path}: the proposed file has a Python syntax error: ${e}. Nothing was written. Fix it (use real newlines, never the two characters backslash and n) and propose again.`;
   };
 
+  const countLines = (text: string): number => (text === '' ? 0 : text.split('\n').length);
+
+  const checkTruncation = (original: string, proposed: string, path: string): string | undefined => {
+    const origLines = countLines(original);
+    const propLines = countLines(proposed);
+    const deletedLines = origLines - propLines;
+    const deletedPercent = origLines > 0 ? (deletedLines / origLines) * 100 : 0;
+    if (origLines > 50 && deletedPercent > 30) {
+      return `${path}: proposal deletes ${deletedPercent.toFixed(0)}% of the file (${deletedLines}/${origLines} lines). For large deletions, use propose_changes with edits (hunks) instead.`;
+    }
+    return undefined;
+  };
+
   const base = {
     async read_file(a: { path: string; startLine?: number; endLine?: number }): Promise<ToolOutput> {
       let p: string;
@@ -282,6 +295,10 @@ export function createHandlers(deps: ToolDeps) {
         current = undefined; // the gate reports the path error
       }
       const content = matchEol(current, decodeOverEscaped(a.path, a.newContent));
+      if (current !== undefined && current.length > 0) {
+        const truncErr = checkTruncation(current, content, a.path);
+        if (truncErr) return err(truncErr);
+      }
       const bad = await syntaxError(a.path, content);
       if (bad) return err(bad);
       const r = await deps.gate.propose(a.path, content, a.reason);
@@ -347,7 +364,12 @@ export function createHandlers(deps: ToolDeps) {
             if (!r.ok) return err(`${f.path}: ${r.error}`);
             files.push({ path: f.path, newContent: r.text });
           } else {
-            files.push({ path: f.path, newContent: matchEol(current, decodeOverEscaped(f.path, f.newContent as string)) });
+            const newContent = matchEol(current, decodeOverEscaped(f.path, f.newContent as string));
+            if (current !== undefined && current.length > 0) {
+              const truncErr = checkTruncation(current, newContent, f.path);
+              if (truncErr) return err(truncErr);
+            }
+            files.push({ path: f.path, newContent });
           }
           const bad = await syntaxError(f.path, files[files.length - 1]!.newContent);
           if (bad) return err(bad);

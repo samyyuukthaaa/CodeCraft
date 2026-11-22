@@ -2,6 +2,8 @@
 const DENY: RegExp[] = [
   /(^|\/)\.git(\/|$)/,
   /(^|\/)node_modules(\/|$)/,
+  /(^|\/)\.venv(\/|$)/,
+  /(^|\/)\.claude(\/|$)/,
   /(^|\/)\.env(\..*)?$/i,
   /\.(pem|key|p12|pfx|keystore)$/i,
   /(^|\/)id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$/,
