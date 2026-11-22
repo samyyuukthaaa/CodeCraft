@@ -126,6 +126,11 @@ ${stateRules}
   #scout-talk .talk-next:empty { display: none; }
   #talk-more { margin-top: 6px; background: #facc15; color: #0a1330; border: 0; font-weight: 800; }
   #talk-close { position: absolute; top: 6px; right: 6px; padding: 2px 7px; background: transparent; color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.3); }
+  .tour-ctl { display: flex; gap: 6px; margin-top: 6px; }
+  .tour-ctl.hidden { display: none; }
+  #tour-next { background: #facc15; color: #0a1330; border: 0; font-weight: 800; }
+  .tour-target { outline: 3px solid #facc15 !important; outline-offset: 2px; }
+  body.scout-muted .scout-tour { display: none !important; }
   body.flat #scout-talk { left: 12px; top: auto; bottom: 96px; transform: none; }
   body.flat #scout-talk::after { left: 30px; }
   body.flat.scout-talking #scout-dock .scout-speech { display: none; }
@@ -185,6 +190,7 @@ ${stateRules}
       <button id="btn-theme" type="button" title="Now Night; switch to Day" aria-label="Night view. Switch to Day">🌙 Night</button>
       <button id="btn-reset-cam" type="button">Reset View</button>
       <button id="btn-find-scout" class="scout-ctl" type="button" title="Fly the camera to Scout">🏮 Find Scout</button>
+      <button id="btn-tour" class="scout-tour" type="button" title="Scout walks you through the town">🏮 Show me around</button>
       <button id="btn-follow-scout" class="scout-ctl" type="button" aria-pressed="false" title="The camera follows Scout (off by default)">Follow Scout</button>
     </div>
   </div>
@@ -202,6 +208,7 @@ ${stateRules}
     <div id="talk-text" class="talk-text" aria-hidden="true"></div>
     <div id="talk-next" class="talk-next" role="status"></div>
     <button id="talk-more" type="button" class="hidden">Show more</button>
+    <div id="tour-ctl" class="tour-ctl hidden"><button id="tour-next" type="button">Next ▸</button><button id="tour-skip" type="button">Skip tour</button></div>
   </div>
 
   <div id="replay-bar" class="hud-panel hidden" role="group" aria-label="Replay controls">

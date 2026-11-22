@@ -11,7 +11,8 @@ import { CaptionPart, TextureFactory, TownGraph } from './town/graph';
 import { Flight, SCOUT_VIEW_OFFSET, flightStep, flightTo, followStep, framing } from './town/camera';
 import { VIEW_MODES, ViewMode, inspect, legendFor } from '../town/view';
 import { SUGGESTED, Tip, answerKeywords, askScout, tipFor } from '../town/help';
-import { ScoutTalk } from '../town/talk';
+import { ScoutTalk, highlight } from '../town/talk';
+import { ScoutTour, TourStop, tourStops } from '../town/tour';
 import { DEFAULT_THEME, THEMES, TownTheme, isTheme, otherTheme } from '../town/theme';
 import { Player, createPlayer, delayToNext, pause, play, positionText, seek, setSpeed, step } from '../town/replay';
 
@@ -300,7 +301,7 @@ function loop(): void {
   moveCamera(clock.getElapsedTime());
   renderer.render(scene3, camera);
   renderedFrames++;
-  if (talk.open) positionTalk();
+  if (talk.open || tourShowing()) positionTalk();
 }
 
 /** Read-only numbers for the frame-rate and memory check (never sent anywhere). */
@@ -318,6 +319,8 @@ function loop(): void {
   scout: graph ? { mode: graph.scoutMode, animating: graph.animating, at: graph.scoutWorldPosition(new THREE.Vector3()).toArray().map((v) => Math.round(v * 10) / 10) } : undefined,
   buildings: Object.keys(current.buildings).length,
   talk: { phase: talk.phase, open: talk.open, expanded: talk.view?.expanded ?? false, question: talk.view?.question, held: graph?.scoutHeld ?? false, talking: graph?.scoutTalking ?? false },
+  tour: tour ? { index: tour.index, phase: tour.phase, stop: tour.current?.id, guiding: graph?.scoutGuiding ?? false } : undefined,
+  inspected,
 });
 
 // Find Scout / Follow Scout (the camera only; Scout himself is unaffected)
@@ -617,7 +620,10 @@ function show(next: SceneState): void {
   const prev = current;
   if (!player) maybeTip(tipFor(prev, next)); // no tips during a replay
   current = next;
-  if (!player && next.running && !prev.running && talk.pausesPatrol) stopTalking(); // a new run: Scout gets back to work
+  if (!player && next.running && !prev.running) {
+    if (talk.pausesPatrol) stopTalking(); // a new run: Scout gets back to work
+    endTour();
+  }
   updateHud(next);
   if (inspected && prev.buildings[inspected] !== next.buildings[inspected]) renderInspector();
   if (is3D) graph?.sync(next);
@@ -625,6 +631,7 @@ function show(next: SceneState): void {
 }
 
 function setMode3D(want: boolean): void {
+  endTour(); // a view switch ends a tour
   is3D = want && hasWebGL && !webglLost;
   document.body.classList.toggle('flat', !is3D);
   btnToggleView.textContent = is3D ? 'Switch to 2D' : 'Switch to 3D';
@@ -861,6 +868,7 @@ const walkingToTarget = (): boolean => is3D && Boolean(graph?.walkingToTarget);
 
 function sayAnswer(q: string, text: string, keywords: string[]): void {
   if (scoutMuted) return; // muted: the answer is only in the panel
+  endTour(); // a question ends a tour
   graph?.holdScout(true); // stops the patrol at once; a walk to a target is finished first
   if (talk.ask(q, text, keywords, nowS(), walkingToTarget()) === 'talking') startTalking();
   else renderTalk();
@@ -896,7 +904,100 @@ const nextText = (): string => {
   return next ? `After this I'll walk on to ${next}.` : '';
 };
 
+// ---------------------------------------------------------------------------
+// "Show me around": Scout's guided tour (renderer only: never in the reducer or the journal)
+// ---------------------------------------------------------------------------
+let tour: ScoutTour | undefined;
+let tourTimer: ReturnType<typeof setInterval> | undefined;
+let tourMarked: HTMLElement | undefined;
+const tourCtl = $('tour-ctl');
+const tourNextBtn = $<HTMLButtonElement>('tour-next');
+const tourShowing = (): boolean => tour?.phase === 'showing';
+
+function startTour(): void {
+  if (scoutMuted) return;
+  if (talk.pausesPatrol) stopTalking();
+  endTour();
+  tour = new ScoutTour(tourStops(current));
+  tourTimer = setInterval(tickTour, 200);
+  goTourStop();
+}
+
+function goTourStop(): void {
+  const stop = tour?.current;
+  if (!tour || !stop) return endTour();
+  markTour(stop);
+  if (is3D && graph) graph.guideTo(stop.place);
+  else if (tour.tick(false) === 'show') showTourStop(); // 2D: Scout is docked; the stop is highlighted instead
+  renderTalk();
+}
+
+function tickTour(): void {
+  if (!tour) return;
+  if (is3D && graph && !graph.scoutGuiding) return endTour(); // an agent move or a click took Scout away
+  if (tour.tick(walkingToTarget()) === 'show') showTourStop();
+}
+
+function showTourStop(): void {
+  const stop = tour?.current;
+  if (!stop) return;
+  if (stop.id === 'inspector' && stop.building) openInspector(stop.building);
+  if (graph && camera && is3D) {
+    graph.setTalking(true, camera.position.x, camera.position.z);
+    if (askCamera && !reducedMotion) findScout(7);
+  }
+  renderTalk();
+}
+
+/** Highlights the stop: its building card (2D) or the power badge, and keeps it in view. */
+function markTour(stop: TourStop | undefined): void {
+  tourMarked?.classList.remove('tour-target');
+  tourMarked = stop ? (stop.building ? (is3D ? undefined : cards.get(stop.building)) : powerBadge) : undefined;
+  tourMarked?.classList.add('tour-target');
+  if (tourMarked && !is3D) tourMarked.scrollIntoView({ block: 'nearest', behavior: reducedMotion ? 'auto' : 'smooth' });
+}
+
+/** Ends the tour (Finish, Skip, close, Esc, a question, a new run, mute, a view switch); the patrol resumes. */
+function endTour(): void {
+  if (!tour) return;
+  tour.skip();
+  tour = undefined;
+  if (tourTimer) clearInterval(tourTimer);
+  tourTimer = undefined;
+  markTour(undefined);
+  if (graph?.scoutGuiding) graph.guideTo(undefined);
+  else graph?.setTalking(false);
+  renderTalk();
+}
+
+function renderTour(stop: TourStop, t: ScoutTour): void {
+  talkQ.textContent = `Tour ${t.index + 1} of ${t.stops.length} · ${stop.title}`;
+  talkText.replaceChildren(
+    ...highlight(stop.text, [stop.keyword]).map((p) => {
+      if (!p.yellow) return document.createTextNode(p.text);
+      const k = document.createElement('span');
+      k.className = 'kw';
+      k.textContent = p.text;
+      return k;
+    }),
+  );
+  talkBox.classList.remove('expanded');
+  talkMore.classList.add('hidden');
+  talkNext.textContent = '';
+  tourNextBtn.textContent = t.isLast ? 'Finish' : 'Next ▸';
+}
+
 function renderTalk(): void {
+  const showingTour = Boolean(tour && tourShowing() && tour.current && !scoutMuted);
+  tourCtl.classList.toggle('hidden', !showingTour);
+  if (showingTour && tour?.current) {
+    talkBox.classList.remove('hidden');
+    document.body.classList.add('scout-talking');
+    dirty = true;
+    renderTour(tour.current, tour);
+    positionTalk();
+    return;
+  }
   const v = talk.view;
   const open = Boolean(talk.open && v && !scoutMuted);
   talkBox.classList.toggle('hidden', !open);
@@ -956,24 +1057,36 @@ function setScoutMuted(muted: boolean): void {
   graph?.setScoutVisible(!muted);
   if (muted) {
     if (talk.pausesPatrol) stopTalking();
+    endTour();
     tipBox.classList.add('hidden');
     setFollow(false);
   }
 }
 
-on($('talk-close'), 'click', stopTalking);
+on($('talk-close'), 'click', () => (tour ? endTour() : stopTalking()));
+on($('btn-tour'), 'click', startTour);
+on(tourNextBtn, 'click', () => {
+  if (!tour) return;
+  if (tour.next() === 'walk') goTourStop();
+  else endTour();
+});
+on($('tour-skip'), 'click', endTour);
 on(talkMore, 'click', () => {
   talk.expand(nowS());
   renderTalk();
 });
 on(window, 'keydown', (e: KeyboardEvent) => {
-  if (e.key === 'Escape' && talk.pausesPatrol) {
+  if (e.key === 'Escape' && tour) {
+    e.preventDefault();
+    endTour();
+  } else if (e.key === 'Escape' && talk.pausesPatrol) {
     e.preventDefault();
     stopTalking();
   }
 });
 listeners.push(() => {
   if (talkTimer) clearInterval(talkTimer);
+  if (tourTimer) clearInterval(tourTimer);
 });
 on($('btn-theme'), 'click', () => applyTheme(otherTheme(theme)));
 on($('btn-find-scout'), 'click', () => findScout());
