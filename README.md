@@ -48,7 +48,7 @@ cd CodeCraft
 npm install
 npm run build
 ```
-Open the folder in VS Code and press **F5** ("Run CodeCraft Extension (opens fixtures/flask)"). In the new window run **CodeCraft: Open Agent Panel** from the Command Palette, type a request and press Send.
+Open the folder in VS Code and press **F5** ("Run CodeCraft Extension (opens fixtures/flask)"). That folder is created in Section 5, so do that first, or pick "Run CodeCraft Extension (no folder)" in the Run and Debug dropdown to start without it. In the new window run **CodeCraft: Open Agent Panel** from the Command Palette, type a request and press Send.
 
 The agents are **registered for you**: on the first request CodeCraft starts its local MCP server, registers it with TrueForge as `codecraft-editor`, and creates or updates two TrueForge agents, `codecraft-primary` and `codecraft-fallback` (identical instructions, the models from your settings). Nothing needs to be created by hand in TrueForge besides the provider key.
 
