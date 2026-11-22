@@ -4,7 +4,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as cp from 'node:child_process';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { WriteGate } from '../src/mcp/gate';
 import { isPython, pythonSyntaxCheck } from '../src/mcp/pySyntax';
