@@ -23,7 +23,11 @@
 - **Self-healing.** Errors are classified from real TrueForge error texts (39 captured samples). Each class has its own retry budget; there is failover to the fallback, a per-provider circuit breaker, and an append-only journal. 16 injected faults behaved as expected in 3 of 3 runs each (`docs/FAILURE_TABLE.md`).
 - **Context-engineering feature: history compaction** with an input-token trigger (48,000 tokens) plus TrueForge's large-tool-response handling, on both agents. It is set in the agent config and unit-tested, but not yet verified in a live run (`docs/TRUEFORGE_NOTES.md`).
 - **Code Town.** A 3D town of the workspace (folders are districts, files are buildings, imports are roads, the provider is a power plant), fed only from the journal and the index. It has Agent Journey and Architecture views, an inspector, replay, a 2D fallback and reduced motion (`docs/CODETOWN.md`).
-- **Scout and Ask Scout.** A walking guide character and a built-in help guide that makes **no model calls**. Both are **on the `codetown-scout` branch** and not merged into `main` yet.
+  - **Day / Night switch** (Night by default). Day has a sunny sky with a sunset horizon and brighter, more saturated rooftops; string lights stay on in both. Every building state keeps the same colour, icon and text in both themes (`src/town/theme.ts`).
+  - **A playful night:** more saturated districts, denser string lights plus a garland over each district, 5 lanterns over each success, and small confetti when a change is applied (none with reduced motion).
+- **Scout and Ask Scout** (merged into `main`). Both make **no model calls**.
+  - **Scout** is always on screen: he starts on the plaza, about the height of a small house, with a lantern and a name tag. With no run active he patrols the streets on a seeded route. The patrol is renderer-only: no clock, no randomness, never journaled. During a run he walks to the agent's files. In 2D and without WebGL he is docked in a corner. **Find Scout** and **Follow Scout** move the camera to him.
+  - **Ask Scout** answers from a built-in guide plus the live town state (`src/town/help.ts`). The answer appears in a speech bubble above Scout: the first 2–3 sentences, then Show more, a close button and Esc. While he talks his patrol pauses, and he resumes after close, Esc, 20 s of quiet or a new run. During a run he finishes his current walk first, and an agent move that arrives while he talks waits until he is done. The panel keeps a chat history, and screen readers still hear each answer. This is renderer state only, so replays are unchanged (`src/town/talk.ts`).
 
 ## 4. How context is selected
 - **Repository index:** Python, TypeScript and JavaScript symbols, import edges and related tests. It is incremental and kept in VS Code workspace storage.
@@ -61,8 +65,7 @@ Claude Code, Antigravity, TrueForge, VS Code.
 - **Free-tier quotas** shaped most failures: per-minute 429s and daily limits. Both models use the same provider, so a provider-wide outage or a revoked key takes out both.
 - **Not verified live:** history compaction, and TrueForge's ask-user question with a real Gemini model (verified only with a test-only mock model).
 - **No sandbox on Windows:** TrueForge's sandbox isn't available there, so `run_tests` runs on the machine after a confirmation.
-- **Not merged yet:** Scout and Ask Scout are on a branch.
-- **Code Town without a GPU:** about 15–17 fps in software rendering (144 fps on a GPU), clean re-measure on the `codetown-scout` branch. The first measurement in `docs/CODETOWN.md` on `main` ran beside a leftover headless browser; the corrected numbers arrive with that branch.
+- **Code Town performance:** on a laptop GPU (Intel UHD) it holds 144 fps, the screen-refresh cap, in two 5-minute runs: Scout patrolling, and the Ask Scout bubble kept open. JS heap after garbage collection stayed at 6.3–6.4 MB and resource counts stayed flat (`docs/results/town-scout-patrol-perf.json`, `town-scout-ask-bubble-perf.json`). Without a GPU it was about 15 fps in software rendering, measured **before** the Day/Night and playful-night changes, which have not been re-measured in software.
 - **With another month:**
   - a fallback on a second provider;
   - paid or higher-quota models to get Task B to 3 of 3;
