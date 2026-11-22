@@ -2,10 +2,11 @@
 // nonce'd stylesheet; dynamic colours are set through the CSSOM, which CSP allows), no remote resources.
 import { STATE_VISUALS } from './types';
 
-export function buildTownHtml(opts: { cspSource: string; nonce: string; scriptUri: string; reducedMotion?: 'on' | 'off' | 'auto'; scout?: 'on' | 'muted' }): string {
+export function buildTownHtml(opts: { cspSource: string; nonce: string; scriptUri: string; reducedMotion?: 'on' | 'off' | 'auto'; scout?: 'on' | 'muted'; askCamera?: boolean }): string {
   const { cspSource, nonce, scriptUri } = opts;
   const motion = opts.reducedMotion ?? 'auto';
   const scout = opts.scout === 'muted' ? 'muted' : 'on';
+  const askCamera = opts.askCamera === false ? 'off' : 'on';
   const csp = [
     "default-src 'none'",
     `style-src 'nonce-${nonce}'`,
@@ -104,7 +105,23 @@ ${stateRules}
   #ask-input { flex: 1; background: rgba(30, 41, 59, 0.92); color: #e2e8f0; border: 1px solid var(--border-color); border-radius: 6px; padding: 5px 8px; font-size: 12px; }
   #tip { position: absolute; top: 112px; left: 50%; transform: translateX(-50%); z-index: 12; display: flex; gap: 10px; align-items: flex-start; max-width: 520px; font-size: 12px; border-color: rgba(250, 204, 21, 0.6); }
   #tip button { padding: 2px 8px; }
-  body.scout-muted #tip, body.scout-muted #scout-dock, body.scout-muted .scout-ctl, body.flat .scout-ctl { display: none !important; }
+  /* Ask Scout: the answer in a speech bubble above Scout (3D: follows his screen position; 2D: above the docked Scout) */
+  #scout-talk { position: absolute; z-index: 25; left: 50%; top: 40%; transform: translate(-50%, calc(-100% - 14px)); width: min(360px, calc(100% - 24px));
+    background: rgba(6, 12, 32, 0.9); border: 2px solid #facc15; border-radius: 14px; padding: 10px 34px 10px 14px; box-shadow: 0 6px 22px rgba(0, 0, 0, 0.55);
+    color: #ffffff; font-size: 14px; font-weight: 700; line-height: 1.4; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); pointer-events: auto; }
+  #scout-talk::after { content: ''; position: absolute; left: 50%; bottom: -10px; margin-left: -9px; border: 9px solid transparent; border-bottom: 0; border-top-color: #facc15; }
+  #scout-talk .talk-q { font-size: 11px; font-weight: 600; color: #cbd5e1; margin-bottom: 4px; }
+  #scout-talk .talk-q::before { content: '🏮 Scout · '; color: #facc15; }
+  #scout-talk .kw { color: #facc15; }
+  #scout-talk.expanded .talk-text { max-height: min(38vh, 260px); overflow-y: auto; padding-right: 4px; }
+  #scout-talk .talk-next { font-size: 11px; font-weight: 600; color: #fde68a; margin-top: 6px; }
+  #scout-talk .talk-next:empty { display: none; }
+  #talk-more { margin-top: 6px; background: #facc15; color: #0a1330; border: 0; font-weight: 800; }
+  #talk-close { position: absolute; top: 6px; right: 6px; padding: 2px 7px; background: transparent; color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.3); }
+  body.flat #scout-talk { left: 12px; top: auto; bottom: 96px; transform: none; }
+  body.flat #scout-talk::after { left: 30px; }
+  body.flat.scout-talking #scout-dock .scout-speech { display: none; }
+  body.scout-muted #scout-talk, body.scout-muted #tip, body.scout-muted #scout-dock, body.scout-muted .scout-ctl, body.flat .scout-ctl { display: none !important; }
   #btn-follow-scout[aria-pressed="true"] { background: #facc15; color: #0a1330; font-weight: 700; }
   .fallback-card.active { border-color: var(--warm); box-shadow: 0 0 10px rgba(250, 204, 21, 0.35); }
   .fallback-card-title { font-size: 12px; font-weight: 700; color: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -140,7 +157,7 @@ ${stateRules}
   .fallback-card-status { font-size: 11px; padding: 2px 6px; border-radius: 3px; border: 1px solid; width: fit-content; font-weight: 600; }
 </style>
 </head>
-<body data-reduced-motion="${motion}" data-scout="${scout}">
+<body data-reduced-motion="${motion}" data-scout="${scout}" data-ask-camera="${askCamera}">
   <div id="canvas-container"></div>
   <div id="overlay">
     <div class="hud-panel">
@@ -169,6 +186,14 @@ ${stateRules}
   <div id="scout-dock" role="status" aria-live="polite" aria-label="Scout">
     <div class="scout-sprite" aria-hidden="true"><div class="s-cap"></div><div class="s-body"><span class="s-eye l"></span><span class="s-eye r"></span><span class="s-cheek l"></span><span class="s-cheek r"></span><div class="s-scarf"></div></div><div class="s-lantern"></div></div>
     <div class="scout-speech"><b>Scout</b><span id="scout-dock-text"></span></div>
+  </div>
+
+  <div id="scout-talk" class="hidden" role="group" aria-label="Scout's answer (the full text is in the Ask Scout panel)">
+    <button id="talk-close" type="button" aria-label="Close Scout's answer (Esc)">✕</button>
+    <div id="talk-q" class="talk-q"></div>
+    <div id="talk-text" class="talk-text" aria-hidden="true"></div>
+    <div id="talk-next" class="talk-next" role="status"></div>
+    <button id="talk-more" type="button" class="hidden">Show more</button>
   </div>
 
   <div id="replay-bar" class="hud-panel hidden" role="group" aria-label="Replay controls">

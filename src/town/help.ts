@@ -166,6 +166,12 @@ export interface HelpAnswer {
   suggestions: string[];
 }
 
+/** Words to highlight in an answer bubble (the topic's strongest words first). */
+export function answerKeywords(topic: string | undefined): string[] {
+  const t = topic ? TOPICS.find((x) => x.id === topic) : undefined;
+  return t ? [...(t.strong ?? []), ...t.keywords] : ['README', 'Scout'];
+}
+
 export function askScout(question: string, scene?: SceneState): HelpAnswer {
   const ranked = TOPICS.map((t) => ({ t, score: scoreTopic(t, question) })).sort((a, b) => b.score - a.score);
   const best = ranked[0];

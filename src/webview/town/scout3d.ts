@@ -78,6 +78,8 @@ export class ScoutFigure {
   private fadeTo = new THREE.Vector3();
   private lastT = 0;
   private arrivedFlag = false;
+  private seg = 0; // the walk segment he is on (for halt)
+  private talking = false;
 
   constructor(own: <T extends { dispose(): void }>(x: T) => T, opts: ScoutFigureOptions = {}) {
     this.root.name = 'scout';
@@ -175,7 +177,11 @@ export class ScoutFigure {
     this.lastT = t;
     if (this.start === undefined) {
       // idle: a gentle bob, or (reduced motion) only a soft lantern pulse
-      if (idleMotion) this.body.position.y = Math.sin(t * 2.2) * 0.04;
+      if (idleMotion && this.talking) {
+        // talking: a quick little bounce and squash, as if speaking
+        this.body.position.y = Math.abs(Math.sin(t * 9)) * 0.05;
+        this.body.scale.set(1, 1 + 0.035 * Math.sin(t * 18), 1);
+      } else if (idleMotion) this.body.position.y = Math.sin(t * 2.2) * 0.04;
       else (this.glow.material as THREE.SpriteMaterial).opacity = 0.75 + 0.15 * Math.sin(t * 1.2);
       return false;
     }
@@ -199,6 +205,7 @@ export class ScoutFigure {
     }
     let i = 0;
     while (i < this.lens.length - 1 && d > this.lens[i]!) d -= this.lens[i++]!;
+    this.seg = i;
     const a = this.pts[i]!;
     const b = this.pts[i + 1]!;
     const f = this.lens[i]! > 0 ? d / this.lens[i]! : 1;
@@ -225,6 +232,47 @@ export class ScoutFigure {
     this.body.rotation.y = 0;
     this.start = undefined;
     this.setOpacity(1);
+  }
+
+  /**
+   * Stops a walk where he is and returns the rest of its waypoints (all on streets), so the same walk can be
+   * continued later without leaving the streets. A fade finishes at once instead (nothing remains).
+   */
+  halt(): THREE.Vector3[] {
+    if (this.start === undefined) return [];
+    if (this.reduced || this.start < 0) {
+      const rest = this.reduced ? [] : this.pts.slice(1);
+      if (this.reduced) this.settle();
+      else this.start = undefined;
+      return rest;
+    }
+    const a = this.pts[this.seg]!;
+    const b = this.pts[this.seg + 1]!;
+    // back on the ground of the segment (drop the walking step); a roof hop is finished instead
+    if (Math.abs(b.y - a.y) > 0.01) {
+      this.root.position.copy(b);
+      this.start = undefined;
+      return this.pts.slice(this.seg + 2);
+    }
+    this.root.position.y = a.y;
+    this.start = undefined;
+    return this.pts.slice(this.seg + 1);
+  }
+
+  /** Talking (a small animation while the speech bubble is open; static with reduced motion). */
+  setTalking(on: boolean): void {
+    this.talking = on;
+    if (!on) this.body.scale.set(1, 1, 1);
+  }
+
+  get isTalking(): boolean {
+    return this.talking;
+  }
+
+  /** Turns to face a point on the ground (the camera). */
+  faceTowards(x: number, z: number): void {
+    const p = this.root.position;
+    if (Math.abs(x - p.x) + Math.abs(z - p.z) > 1e-6) this.body.rotation.y = Math.atan2(x - p.x, z - p.z);
   }
 
   get lastTick(): number {

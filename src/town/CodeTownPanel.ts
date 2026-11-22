@@ -14,6 +14,10 @@ function motionSetting(): 'on' | 'off' | 'auto' {
 }
 
 /** codecraft.scout: 'muted' hides Scout and its tips (Ask Scout stays available on request). */
+function askCameraSetting(): boolean {
+  return vscode.workspace.getConfiguration('codecraft').get<boolean>('scoutAskCamera', true) !== false;
+}
+
 function scoutSetting(): 'on' | 'muted' {
   return vscode.workspace.getConfiguration('codecraft').get<string>('scout', 'on') === 'muted' ? 'muted' : 'on';
 }
@@ -64,9 +68,10 @@ export class CodeTownPanel {
     this.panel = panel;
     const nonce = crypto.randomBytes(16).toString('base64');
     const scriptUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(mediaRoot, 'codetown.js')).toString();
-    panel.webview.html = buildTownHtml({ cspSource: panel.webview.cspSource, nonce, scriptUri, reducedMotion: motionSetting(), scout: scoutSetting() });
+    panel.webview.html = buildTownHtml({ cspSource: panel.webview.cspSource, nonce, scriptUri, reducedMotion: motionSetting(), scout: scoutSetting(), askCamera: askCameraSetting() });
     const cfg = vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration('codecraft.townReducedMotion') || e.affectsConfiguration('codecraft.scout')) this.post({ type: 'settings', reducedMotion: motionSetting(), scout: scoutSetting() });
+      if (e.affectsConfiguration('codecraft.townReducedMotion') || e.affectsConfiguration('codecraft.scout') || e.affectsConfiguration('codecraft.scoutAskCamera'))
+        this.post({ type: 'settings', reducedMotion: motionSetting(), scout: scoutSetting(), askCamera: askCameraSetting() });
     });
     this.disposables.push(() => cfg.dispose());
 

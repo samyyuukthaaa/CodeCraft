@@ -149,6 +149,10 @@ export class TownGraph {
   // confetti over an applied change: one pooled Points object, created once (renderer only)
   private readonly confetti = new Confetti((x) => this.own(x));
   private clockT = 0;
+  // Ask Scout (renderer only): held = no patrol and agent moves wait; the rest of a halted patrol walk
+  private held = false;
+  private talking = false;
+  private resumePts: THREE.Vector3[] = [];
 
   private readonly counters = { rebuilds: 0, buildingRebuilds: 0, incremental: 0 };
   private readonly tmp = new THREE.Matrix4();
@@ -553,6 +557,7 @@ export class TownGraph {
     this.scoutBubble.name = 'scout-bubble';
     this.scoutBubble.center.set(0.5, -1.55);
     this.scoutBubble.position.set(0, 1.45, 0);
+    this.scoutBubble.visible = !this.talking; // the Ask Scout bubble replaces it while open
     this.scout.root.add(this.scoutBubble);
   }
 
@@ -561,6 +566,7 @@ export class TownGraph {
   private updateScout(s: SceneState, first = false): void {
     const sc = s.scout;
     if (sc.move === this.scoutMove) return;
+    if (this.held && !first) return; // Ask Scout: the move waits until he has answered (pendingTarget tells the user)
     this.scoutMove = sc.move;
     this.scout.setMood(sc.mood);
     const key = sc.at.kind === 'building' ? (s.buildings[sc.at.id]?.name ?? '') : '';
@@ -586,6 +592,10 @@ export class TownGraph {
     const moving = this.scout.tick(t, !this.reducedMotion);
     const s = this.scene;
     if (!s || !this.layout) return;
+    if (this.held) {
+      this.scout.takeArrived();
+      return; // Ask Scout: no patrol while a question is waiting or answered
+    }
     if (this.scout.takeArrived()) {
       if (this.patrolling) {
         const id = this.stops[(this.stopIndex - 1 + this.stops.length) % this.stops.length];
@@ -613,6 +623,64 @@ export class TownGraph {
     this.scout.walk(this.pathTo({ kind: 'building', id }, s, false), 5, false);
     this.anchor = this.streetFor({ kind: 'building', id });
     this.onRoof = undefined;
+  }
+
+  /**
+   * Ask Scout: hold (true) stops his patrol at once (a patrol walk halts where he is; the rest of its street path is
+   * kept) and makes agent moves wait; a walk to a target is finished first. Release (false) does the waiting move
+   * first, otherwise continues the halted patrol walk. Renderer only: nothing reaches the scene state or journal.
+   */
+  holdScout(on: boolean): void {
+    if (on === this.held) return;
+    this.held = on;
+    if (on) {
+      if (this.patrolling && this.scout.animating) this.resumePts = this.scout.halt();
+      return;
+    }
+    this.setTalking(false);
+    const s = this.scene;
+    const rest = this.resumePts;
+    this.resumePts = [];
+    if (s && s.scout.move !== this.scoutMove) {
+      this.updateScout(s);
+      return;
+    }
+    this.pauseUntil = this.scout.lastTick;
+    if (rest.length && this.patrolling && s && !s.running) this.scout.walk(rest, 5, this.reducedMotion);
+  }
+
+  get scoutHeld(): boolean {
+    return this.held;
+  }
+
+  /** True while Scout walks to a target (the agent's file or a clicked building), not on patrol. */
+  get walkingToTarget(): boolean {
+    return this.scout.animating && !this.patrolling;
+  }
+
+  /** The talking animation, facing the given ground point (the camera); the small 3D bubble hides meanwhile. */
+  setTalking(on: boolean, faceX?: number, faceZ?: number): void {
+    this.talking = on;
+    this.scout.setTalking(on);
+    if (on && faceX !== undefined && faceZ !== undefined) this.scout.faceTowards(faceX, faceZ);
+    if (this.scoutBubble) this.scoutBubble.visible = !on;
+  }
+
+  get scoutTalking(): boolean {
+    return this.scout.isTalking;
+  }
+
+  /** Where the agent's next move will take Scout once he has answered (undefined if nothing is waiting). */
+  get pendingTarget(): string | undefined {
+    const s = this.scene;
+    if (!this.held || !s || s.scout.move === this.scoutMove) return undefined;
+    const at = s.scout.at;
+    return at.kind === 'building' ? (s.buildings[at.id]?.name ?? at.id) : at.kind === 'plant' ? 'the power plant' : 'the plaza';
+  }
+
+  /** The point just above Scout's name tag (world), where the Ask Scout bubble is anchored. */
+  scoutHead(out: THREE.Vector3): THREE.Vector3 {
+    return out.copy(this.scout.root.position).setY(this.scout.root.position.y + 1.6 * SCOUT_SCALE);
   }
 
   /** Mute: hides Scout, his name tag and bubble (the scene state still tracks him); the patrol pauses. */

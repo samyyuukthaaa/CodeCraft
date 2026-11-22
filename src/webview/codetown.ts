@@ -10,7 +10,8 @@ import type { HostToTown, TownToHost } from '../town/protocol';
 import { CaptionPart, TextureFactory, TownGraph } from './town/graph';
 import { Flight, SCOUT_VIEW_OFFSET, flightStep, flightTo, followStep, framing } from './town/camera';
 import { VIEW_MODES, ViewMode, inspect, legendFor } from '../town/view';
-import { SUGGESTED, Tip, askScout, tipFor } from '../town/help';
+import { SUGGESTED, Tip, answerKeywords, askScout, tipFor } from '../town/help';
+import { ScoutTalk } from '../town/talk';
 import { DEFAULT_THEME, THEMES, TownTheme, isTheme, otherTheme } from '../town/theme';
 import { Player, createPlayer, delayToNext, pause, play, positionText, seek, setSpeed, step } from '../town/replay';
 
@@ -40,6 +41,8 @@ let reducedMotion = motionSetting(document.body.dataset.reducedMotion);
 document.body.classList.toggle('reduced-motion', reducedMotion);
 /** codecraft.scout: muted hides Scout, its bubble and its tips. */
 let scoutMuted = document.body.dataset.scout === 'muted';
+/** codecraft.scoutAskCamera: the camera eases to Scout when he answers (never with reduced motion). */
+let askCamera = document.body.dataset.askCamera !== 'off';
 /** Day or Night (Night by default); remembered for this panel only (webview state, not the journal). */
 const savedTheme = loadState().theme;
 let theme: TownTheme = isTheme(savedTheme) ? savedTheme : DEFAULT_THEME;
@@ -297,6 +300,7 @@ function loop(): void {
   moveCamera(clock.getElapsedTime());
   renderer.render(scene3, camera);
   renderedFrames++;
+  if (talk.open) positionTalk();
 }
 
 /** Read-only numbers for the frame-rate and memory check (never sent anywhere). */
@@ -313,6 +317,7 @@ function loop(): void {
   listeners: listeners.length,
   scout: graph ? { mode: graph.scoutMode, animating: graph.animating, at: graph.scoutWorldPosition(new THREE.Vector3()).toArray().map((v) => Math.round(v * 10) / 10) } : undefined,
   buildings: Object.keys(current.buildings).length,
+  talk: { phase: talk.phase, open: talk.open, expanded: talk.view?.expanded ?? false, question: talk.view?.question, held: graph?.scoutHeld ?? false, talking: graph?.scoutTalking ?? false },
 });
 
 // Find Scout / Follow Scout (the camera only; Scout himself is unaffected)
@@ -332,9 +337,10 @@ function resetCamera(): void {
   dirty = true;
 }
 
-function findScout(): void {
+/** Flies to a close view of Scout; `lift` aims above him (he answers in a bubble over his head). */
+function findScout(lift = 0): void {
   if (!camera || !graph || scoutMuted) return;
-  flight = flightTo(camera.position, cameraTarget, graph.scoutWorldPosition(scoutPos), clock.getElapsedTime(), reducedMotion ? 0 : undefined);
+  flight = flightTo(camera.position, cameraTarget, graph.scoutWorldPosition(scoutPos), clock.getElapsedTime(), reducedMotion ? 0 : undefined, lift);
   dirty = true;
 }
 
@@ -351,7 +357,7 @@ function moveCamera(t: number): void {
     // home in on where Scout is NOW (he may be walking), without allocating
     if (graph) {
       graph.scoutWorldPosition(scoutPos);
-      flight.toTarget.set(scoutPos.x, 2, scoutPos.z);
+      flight.toTarget.set(scoutPos.x, 2 + flight.lift, scoutPos.z);
       flight.toPos.copy(flight.toTarget).add(SCOUT_VIEW_OFFSET);
     }
     if (!flightStep(flight, t, camera.position, cameraTarget)) flight = undefined;
@@ -611,6 +617,7 @@ function show(next: SceneState): void {
   const prev = current;
   if (!player) maybeTip(tipFor(prev, next)); // no tips during a replay
   current = next;
+  if (!player && next.running && !prev.running && talk.pausesPatrol) stopTalking(); // a new run: Scout gets back to work
   updateHud(next);
   if (inspected && prev.buildings[inspected] !== next.buildings[inspected]) renderInspector();
   if (is3D) graph?.sync(next);
@@ -625,6 +632,7 @@ function setMode3D(want: boolean): void {
   canvasContainer.classList.toggle('hidden', !is3D);
   if (is3D) graph?.sync(current);
   else rebuild2D(current);
+  if (talk.open) renderTalk(); // the same bubble: above Scout in 3D, above the docked Scout in 2D
 }
 
 // ---------------------------------------------------------------------------
@@ -763,6 +771,7 @@ on(window, 'message', (event: MessageEvent<HostToTown>) => {
     reducedMotion = motionSetting(m.reducedMotion);
     document.body.classList.toggle('reduced-motion', reducedMotion);
     graph?.setReducedMotion(reducedMotion);
+    askCamera = m.askCamera !== false;
     setScoutMuted(m.scout === 'muted');
   }
 });
@@ -805,8 +814,104 @@ function renderSuggestions(qs: string[]): void {
 function answer(q: string): void {
   const r = askScout(q, current);
   askInput.value = q;
-  askAnswer.textContent = r.answer;
+  askAnswer.textContent = r.answer; // the full answer always stays here (screen readers, copy and paste)
   renderSuggestions(r.suggestions);
+  sayAnswer(q, r.answer, answerKeywords(r.topic));
+}
+
+// ---------------------------------------------------------------------------
+// Scout answers in a speech bubble above his head (renderer state only: never in the reducer or journal)
+// ---------------------------------------------------------------------------
+const talk = new ScoutTalk();
+const talkBox = $('scout-talk');
+const talkQ = $('talk-q');
+const talkText = $('talk-text');
+const talkNext = $('talk-next');
+const talkMore = $<HTMLButtonElement>('talk-more');
+const headPos = new THREE.Vector3();
+const hudBar = $('overlay');
+let talkTimer: ReturnType<typeof setInterval> | undefined;
+const nowS = (): number => performance.now() / 1000;
+/** Only a walk to a target counts (in 2D he is docked and never walks). */
+const walkingToTarget = (): boolean => is3D && Boolean(graph?.walkingToTarget);
+
+function sayAnswer(q: string, text: string, keywords: string[]): void {
+  if (scoutMuted) return; // muted: the answer is only in the panel
+  graph?.holdScout(true); // stops the patrol at once; a walk to a target is finished first
+  if (talk.ask(q, text, keywords, nowS(), walkingToTarget()) === 'talking') startTalking();
+  else renderTalk();
+  if (!talkTimer) talkTimer = setInterval(tickTalk, 250);
+}
+
+function tickTalk(): void {
+  const ev = talk.tick(nowS(), walkingToTarget());
+  if (ev === 'show') startTalking();
+  else if (ev === 'close') stopTalking();
+  else if (talk.open) talkNext.textContent = nextText();
+}
+
+function startTalking(): void {
+  if (graph && camera && is3D) {
+    graph.setTalking(true, camera.position.x, camera.position.z);
+    if (askCamera && !reducedMotion) findScout(7); // the camera eases over to frame him, low enough for the bubble
+  }
+  renderTalk();
+}
+
+/** Closes the bubble (button, Esc, quiet for a while, a new run, mute) and Scout walks on. */
+function stopTalking(): void {
+  talk.close();
+  graph?.holdScout(false);
+  if (talkTimer) clearInterval(talkTimer);
+  talkTimer = undefined;
+  renderTalk();
+}
+
+const nextText = (): string => {
+  const next = graph?.pendingTarget;
+  return next ? `After this I'll walk on to ${next}.` : '';
+};
+
+function renderTalk(): void {
+  const v = talk.view;
+  const open = Boolean(talk.open && v && !scoutMuted);
+  talkBox.classList.toggle('hidden', !open);
+  document.body.classList.toggle('scout-talking', open);
+  dirty = true;
+  if (!open || !v) return;
+  talkQ.textContent = v.question;
+  const parts = v.expanded ? v.full : v.short;
+  talkText.replaceChildren(
+    ...parts.map((p) => {
+      if (!p.yellow) return document.createTextNode(p.text);
+      const k = document.createElement('span');
+      k.className = 'kw';
+      k.textContent = p.text;
+      return k;
+    }),
+  );
+  if (v.truncated && !v.expanded) talkText.append(document.createTextNode(' …'));
+  talkBox.classList.toggle('expanded', v.expanded);
+  talkMore.classList.toggle('hidden', !v.truncated || v.expanded);
+  talkNext.textContent = nextText();
+  positionTalk();
+}
+
+/** 3D: the bubble follows Scout's screen position (kept on screen); 2D: CSS places it above the docked Scout. */
+function positionTalk(): void {
+  if (!is3D || !camera || !graph) {
+    talkBox.style.left = talkBox.style.top = '';
+    return;
+  }
+  graph.scoutHead(headPos).project(camera);
+  const w = window.innerWidth;
+  const half = Math.min(180, (w - 24) / 2);
+  const x = Math.max(12 + half, Math.min(w - 12 - half, ((headPos.x + 1) / 2) * w));
+  // never over the top bar: the bubble (drawn above its anchor) starts below the HUD
+  const hud = hudBar.getBoundingClientRect().bottom;
+  const y = Math.max(hud + talkBox.offsetHeight + 24, ((1 - headPos.y) / 2) * window.innerHeight);
+  talkBox.style.left = `${Math.round(x)}px`;
+  talkBox.style.top = `${Math.round(y)}px`;
 }
 
 function maybeTip(tip: Tip | undefined): void {
@@ -822,13 +927,28 @@ function setScoutMuted(muted: boolean): void {
   document.body.classList.toggle('scout-muted', muted);
   graph?.setScoutVisible(!muted);
   if (muted) {
+    if (talk.pausesPatrol) stopTalking();
     tipBox.classList.add('hidden');
     setFollow(false);
   }
 }
 
+on($('talk-close'), 'click', stopTalking);
+on(talkMore, 'click', () => {
+  talk.expand(nowS());
+  renderTalk();
+});
+on(window, 'keydown', (e: KeyboardEvent) => {
+  if (e.key === 'Escape' && talk.pausesPatrol) {
+    e.preventDefault();
+    stopTalking();
+  }
+});
+listeners.push(() => {
+  if (talkTimer) clearInterval(talkTimer);
+});
 on($('btn-theme'), 'click', () => applyTheme(otherTheme(theme)));
-on($('btn-find-scout'), 'click', findScout);
+on($('btn-find-scout'), 'click', () => findScout());
 on($('btn-follow-scout'), 'click', () => setFollow(!following));
 
 on(askToggle, 'click', () => {

@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { MIN_SCORE, SUGGESTED, TOPICS, UNKNOWN_ANSWER, askScout, tipFor } from '../src/town/help';
+import { MIN_SCORE, SUGGESTED, TOPICS, UNKNOWN_ANSWER, answerKeywords, askScout, tipFor } from '../src/town/help';
+import { ScoutTalk } from '../src/town/talk';
 import { buildTownHtml } from '../src/town/html';
 import { foldEvents, initialSceneState, sceneReducer } from '../src/town/reducer';
 import type { SceneState } from '../src/town/types';
@@ -60,7 +61,7 @@ test('help: answers use the live town state', () => {
   assert.ok(askScout('how do I undo', s).suggestions.length > 0);
 });
 
-test('help: no network, no model, no editor: nothing is fetched or called while answering', () => {
+test('help: no network, no model, no editor: nothing is fetched or called while answering (bubble included)', () => {
   const g = globalThis as unknown as Record<string, unknown>;
   const saved = { fetch: g.fetch, XMLHttpRequest: g.XMLHttpRequest, WebSocket: g.WebSocket };
   const calls: string[] = [];
@@ -76,13 +77,24 @@ test('help: no network, no model, no editor: nothing is fetched or called while 
   };
   try {
     const s = foldEvents(scene(), [{ type: 'run_started', runId: 'r', at: 1 }, { type: 'file_read', path: 'src/flask/cli.py', at: 2 }]);
-    for (const q of [...TOPICS.map((t) => t.question), 'random question', 'how do I undo']) askScout(q, s);
+    const talk = new ScoutTalk();
+    let now = 0;
+    for (const q of [...TOPICS.map((t) => t.question), 'random question', 'how do I undo']) {
+      const r = askScout(q, s);
+      // the speech bubble too: ask, Show more, wait, close
+      talk.ask(q, r.answer, answerKeywords(r.topic), (now += 1), false);
+      talk.expand(now);
+      talk.tick((now += 30), false);
+      talk.close();
+    }
     assert.deepEqual(calls, []);
   } finally {
     Object.assign(g, saved);
   }
   const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'town', 'help.ts'), 'utf8').replace(/\/\/.*$/gm, '');
   assert.doesNotMatch(src, /\bfetch\s*\(|XMLHttpRequest|WebSocket|https?:\/\/|from ['"](vscode|three|node:|.*trueforge)/, 'the help module cannot reach a network, VS Code or a model');
+  const talkSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'town', 'talk.ts'), 'utf8').replace(/\/\/.*$/gm, '');
+  assert.doesNotMatch(talkSrc, /\bfetch\s*\(|XMLHttpRequest|WebSocket|https?:\/\/|from ['"]/, 'the bubble module imports nothing and cannot reach a network or a model');
   // and the webview page itself may not connect anywhere (CSP default-src 'none', no connect-src)
   const html = buildTownHtml({ cspSource: 'x', nonce: 'N', scriptUri: 'a.js' });
   assert.match(html, /default-src 'none'/);

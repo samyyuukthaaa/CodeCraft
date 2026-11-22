@@ -10,6 +10,8 @@ export interface Flight {
   toTarget: THREE.Vector3;
   start: number;
   duration: number;
+  /** The view aims this far above Scout (so he sits lower on screen, e.g. under his speech bubble). */
+  lift: number;
 }
 
 /** The camera offset used when looking at Scout up close. */
@@ -17,9 +19,9 @@ export const SCOUT_VIEW_OFFSET = new THREE.Vector3(9, 18, 26);
 export const FLIGHT_S = 0.8;
 
 /** A flight from the current camera to a close view of `focus` (allocates once per flight). */
-export function flightTo(camPos: THREE.Vector3, camTarget: THREE.Vector3, focus: THREE.Vector3, start: number, duration = FLIGHT_S): Flight {
-  const toTarget = focus.clone().setY(2);
-  return { fromPos: camPos.clone(), toPos: toTarget.clone().add(SCOUT_VIEW_OFFSET), fromTarget: camTarget.clone(), toTarget, start, duration };
+export function flightTo(camPos: THREE.Vector3, camTarget: THREE.Vector3, focus: THREE.Vector3, start: number, duration = FLIGHT_S, lift = 0): Flight {
+  const toTarget = focus.clone().setY(2 + lift);
+  return { fromPos: camPos.clone(), toPos: toTarget.clone().add(SCOUT_VIEW_OFFSET), fromTarget: camTarget.clone(), toTarget, start, duration, lift };
 }
 
 /** Moves the camera along a flight (ease in-out); returns true while still flying. Duration 0 = jump. */
