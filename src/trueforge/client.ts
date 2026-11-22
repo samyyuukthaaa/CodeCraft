@@ -204,6 +204,7 @@ export function sessionDriver(client: TrueForge, sessionId: string) {
       resumePausedTurn(client, sessionId, turnId, approvals, afterEventId, signal),
     newTurnWithApprovals: (approvals: ApprovalInput[], signal: AbortSignal) => streamTurnInput(client, sessionId, approvals, signal),
     resumeStream: (turnId: string, afterEventId: string | undefined, signal: AbortSignal) => resumeTurnStream(client, sessionId, turnId, afterEventId, signal),
+    cancel: () => cancelSession(client, sessionId),
     sessionId,
   };
 }

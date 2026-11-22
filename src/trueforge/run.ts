@@ -59,6 +59,8 @@ export interface TurnDriver {
   resumeStream?(turnId: string, afterEventId: string | undefined, signal: AbortSignal): AsyncIterable<TurnEvent>;
   /** TrueForge session ID (persisted in the journal for resume). */
   sessionId?: string;
+  /** Cancels the session server-side (so an abandoned turn stops spending quota). */
+  cancel?(): Promise<void>;
 }
 
 /** Where a run is in TrueForge: persisted so a cut stream can be resumed. */
@@ -69,6 +71,13 @@ export interface StreamPosition {
   /** Why the position was recorded. */
   at: 'paused' | 'done' | 'cut' | 'resumed';
 }
+
+/**
+ * TrueForge's reply when a model calls an MCP tool by name instead of through call_tool. This many in one run end
+ * the run as a provider failure (class tool_not_mapped), which fails over to the fallback model.
+ */
+export const TOOL_NOT_MAPPED = /Tool (\S+) not found in tool mapping/;
+export const TOOL_MAPPING_LIMIT = 2;
 
 /** A cut stream is resumed at most this many times per run. */
 export const MAX_STREAM_RESUMES = 2;
@@ -136,6 +145,8 @@ export async function runWithApprovals(text: string, opts: RunOptions): Promise<
   let turnId: string | undefined;
   let lastEventId: string | undefined;
   let resumes = 0;
+  let notMapped = 0;
+  let notMappedTool = '';
 
   const makeStream = (() => {
     let next: (signal: AbortSignal) => AsyncIterable<TurnEvent> = (s) => opts.driver.start(text, s);
@@ -185,6 +196,14 @@ export async function runWithApprovals(text: string, opts: RunOptions): Promise<
         } else if (ev.type === 'tool.response_required') {
           if (opts.responder) for (const tc of ev.toolCalls) toAnswer.set(tc.id, { threadId: ev.threadId });
           else unsupported = true;
+        } else if (ev.type === 'tool.response') {
+          const content = (ev as { content?: unknown }).content;
+          const m = typeof content === 'string' ? TOOL_NOT_MAPPED.exec(content) : null;
+          if (m) {
+            notMapped++;
+            notMappedTool = m[1] ?? '';
+            if (notMapped >= TOOL_MAPPING_LIMIT) break;
+          }
         } else if (ev.type === 'turn.update' && ev.state.status === 'paused') {
           paused = true;
           break; // the server keeps the stream open while paused
@@ -202,6 +221,11 @@ export async function runWithApprovals(text: string, opts: RunOptions): Promise<
       opts.signal?.removeEventListener('abort', onAbort);
     }
     if (opts.signal?.aborted) return { status: 'cancelled', rounds: round };
+    if (notMapped >= TOOL_MAPPING_LIMIT) {
+      // Nothing was executed (unmapped calls never reach the editor tools), so the workspace is untouched.
+      await opts.driver.cancel?.().catch(() => undefined);
+      return { status: 'error', message: `Tool ${notMappedTool} not found in tool mapping (${notMapped} times in this run): the model called the editor tools by name instead of through call_tool`, rounds: round };
+    }
     const position = (at: StreamPosition['at']): void => {
       if (turnId) opts.onPosition?.({ ...(opts.driver.sessionId ? { sessionId: opts.driver.sessionId } : {}), turnId, ...(lastEventId ? { lastEventId } : {}), at });
     };
