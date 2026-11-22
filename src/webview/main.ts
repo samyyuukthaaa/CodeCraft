@@ -1,6 +1,8 @@
 // Runs inside the webview. Read-only view: it renders sanitized events with textContent only
 // and sends one narrowly typed message to the host.
 import type { HostToWebview } from '../panel/protocol';
+import type { Plan } from '../mcp/tools';
+import { budgetMeter, chosenFiles } from '../panel/readout';
 
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
 const vscode = acquireVsCodeApi();
@@ -15,6 +17,27 @@ const ctxSummary = document.getElementById('context-summary') as HTMLElement;
 const ctxRows = document.getElementById('context-rows') as HTMLElement;
 const reads = document.getElementById('reads') as HTMLElement;
 const readBudget = document.getElementById('read-budget') as HTMLElement;
+const ctxMeter = document.getElementById('ctx-meter') as HTMLElement;
+const ctxMeterBar = document.getElementById('ctx-meter-bar') as HTMLElement;
+const ctxMeterText = document.getElementById('ctx-meter-text') as HTMLElement;
+const chosenSummary = document.getElementById('chosen-summary') as HTMLElement;
+const chosenRows = document.getElementById('chosen-rows') as HTMLElement;
+// the agent's choices this run: its plan and the files it read (both already sent by the host)
+let runPlan: Plan | undefined;
+let runReads: string[] = [];
+function renderChosen(): void {
+  const rows = chosenFiles(runPlan, runReads);
+  chosenSummary.textContent = rows.length ? `${runPlan ? `Plan: ${runPlan.files.length} file(s)` : 'No plan yet'}; read: ${runReads.length} file(s).` : 'The plan and the files the agent read appear here during a run.';
+  chosenRows.textContent = '';
+  for (const f of rows) {
+    const tr = document.createElement('tr');
+    cell(tr, f.path);
+    cell(tr, f.how);
+    cell(tr, f.why);
+    cell(tr, f.read ? 'yes' : '-');
+    chosenRows.appendChild(tr);
+  }
+}
 const planSummary = document.getElementById('plan-summary') as HTMLElement;
 const planRows = document.getElementById('plan-rows') as HTMLElement;
 const healthRows = document.getElementById('health-rows') as HTMLElement;
@@ -180,6 +203,16 @@ window.addEventListener('message', (e: MessageEvent<HostToWebview>) => {
       ctxRows.appendChild(tr);
     }
     reads.textContent = '';
+    // a new request: the meter shows this request's context, the choices start empty
+    const meter = budgetMeter(r);
+    ctxMeter.classList.toggle('over', meter.over);
+    ctxMeter.setAttribute('aria-valuemax', String(meter.limit));
+    ctxMeter.setAttribute('aria-valuenow', String(meter.used));
+    ctxMeterBar.style.width = `${meter.percent}%`;
+    ctxMeterText.textContent = meter.text;
+    runPlan = undefined;
+    runReads = [];
+    renderChosen();
     return;
   }
   if (m.type === 'health') {
@@ -197,6 +230,8 @@ window.addEventListener('message', (e: MessageEvent<HostToWebview>) => {
     return;
   }
   if (m.type === 'plan') {
+    runPlan = m.plan;
+    renderChosen();
     planSummary.textContent = m.plan.summary;
     planRows.textContent = '';
     for (const f of m.plan.files) {
@@ -214,6 +249,8 @@ window.addEventListener('message', (e: MessageEvent<HostToWebview>) => {
     return;
   }
   if (m.type === 'reads') {
+    runReads = m.paths;
+    renderChosen();
     reads.textContent = `Files read by the agent: ${m.read} of ${m.total}` + (m.paths.length ? ` (${m.paths.slice(0, 8).join(', ')}${m.paths.length > 8 ? ', ...' : ''})` : '');
     return;
   }

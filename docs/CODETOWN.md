@@ -29,21 +29,26 @@ Building states: idle, planned, read, proposed, applied, rejected, failed, recov
 - **Replay**: any finished run from the journal, through the same reducer. Play, pause, 0.5× to 8×, a position slider, and Back to live.
 - **2D view**: used automatically when WebGL is unavailable or the WebGL context is lost, and available any time with a button.
 - **Reduced motion**: setting `codecraft.townReducedMotion` (`auto` follows the OS). With reduced motion on, nothing animates and a frame is drawn only when something changes.
+- **Day / Night** (Night by default): Day has a sunny sky with a sunset horizon and brighter, more saturated rooftops; string lights stay on in both. Every state keeps the same colour, icon and text in both themes (`src/town/theme.ts`). Night adds garlands over each district, 5 lanterns over each success and small confetti when a change is applied (none with reduced motion).
 
-## Scout, the guide (branch `codetown-scout`)
+## Scout, the guide
 - **Who:** an original little guide made for Code Town and not based on any existing character or game asset: a small round cream block with big friendly eyes, rosy cheeks, a warm red cap and scarf, and a lantern whose colour shows its mood.
 - **Where it goes** (`src/town/scout.ts`, pure: no VS Code, no Three.js, no clock):
   - Scout's place, speech bubble and mood come only from town events.
   - It walks to each building as the agent plans, reads, proposes, has a change accepted or rejected, changes, reverts or fails a test.
   - On failover or recovery it goes to the power plant and says what happened in plain words. Bubbles never repeat provider error text or key values.
 - **Clicks:** clicking a building, or **Open file** in the inspector, sends a typed `navigate` request (a relative path, no extra fields). The host also requires the path to be a building in the town. It then journals the click as `scout_navigate`, Scout walks there, and the file opens. Because clicks are journaled too, a replay reproduces Scout exactly.
-- **Movement:** Scout hops from roof to roof, so it stays visible from any angle. With reduced motion it doesn't walk: it fades out and back in at the new place. In the 2D view a Scout bar shows the bubble text and the target building is outlined.
+- **Always on screen:** Scout starts on the plaza, about the height of a small house, with a lantern, a rim light and a "Scout" name tag. With no run active he patrols the streets on a seeded route (renderer only: no clock, no randomness, never journaled), pausing at buildings to name them. During a run he walks along the streets to the agent's file and stands on its roof. With reduced motion he doesn't walk: he waits on the plaza and fades to each new place.
+- **2D and no WebGL:** a docked Scout in the bottom-left corner shows the same bubble, and the target building's card is outlined and scrolled into view.
+- **Camera:** **Find Scout** flies to him, **Follow Scout** (off by default) keeps him in view, and **Reset View** keeps him in frame.
+- **Guided tour:** **🏮 Show me around** walks Scout to the power plant, a test lab and a changed (or proposed) building, then opens the inspector on it. Each stop has a bubble from the built-in guide with **Next** and **Skip tour** (Esc also skips). The walk stays on the streets; the patrol waits and resumes afterwards. A question, a new run, an agent move, mute or a view switch ends the tour. In 2D the stop's card or the power badge is highlighted instead. Renderer only (`src/town/tour.ts`): nothing reaches the reducer or the journal, no model, no network.
 - **Mute:** setting `codecraft.scout` (`on` | `muted`) hides Scout, its bubble and its tips. Scout never edits files, runs tasks or calls a model.
 
 ## Ask Scout (built-in help, no model calls)
 - **What it is:** the **Ask Scout** box in the Code Town panel. It answers from a static knowledge base plus the live town state (`src/town/help.ts`) using keyword and intent matching. It never calls a model and never touches the network; the page's CSP has no `connect-src`, and a test asserts that no `fetch`, XHR or WebSocket call happens.
 - **What it covers:** building colours and states, reviewing and accepting or rejecting hunks, undo and rollback, stopping a run, failover, switching models, running the three tasks, Journey, Architecture and Replay, the cost panel, Scout itself, what is happening now, and test marks and confidence tags.
 - **When it doesn't know:** it offers six suggested questions, and otherwise says plainly that it doesn't know and points to the README.
+- **Where the answer appears:** in a speech bubble above Scout (in 3D it follows him; in 2D it sits above the docked Scout), with one yellow keyword, the first 2 to 3 sentences, **Show more**, a close button and Esc. His patrol pauses while he talks and resumes after close, Esc, 20 s of quiet or a new run; during a run he finishes his current walk first. The panel keeps a **Chat history** of every question and answer; screen readers hear each answer through a hidden live region. With Scout muted the answer appears in the panel instead. Setting `codecraft.scoutAskCamera` (default on) eases the camera to him, never with reduced motion.
 - **Tips:** short, dismissible tips (failover, recovery, the first review, a failing test) appear once each and never block the editor.
 
 ## Colour (original style)
@@ -94,6 +99,8 @@ First measurement (2026-11-21, superseded by the clean re-measure above):
 The 4 extra geometries and textures in a run are the journey path line and its stop numbers (at most 40 numbers). Raw samples are in `docs/results/town-perf-task2-*.json`.
 
 Not measured: a live task2 run with a model. Live model runs were paused at the time, so the check replays the recorded run's events into the same code path the live panel uses.
+
+**Later checks (2026-11-22, Intel UHD, D3D11, 234 buildings, 300 s each):** Scout patrolling, and the Ask Scout bubble kept open (a new question every 15 s). Both held 144 fps in every sample (the vsync cap); JS heap after a forced GC was 6.3 -> 6.4 MB and 6.3 -> 6.3 MB; geometries, textures and listeners stayed constant (`docs/results/town-scout-patrol-perf.json`, `town-scout-ask-bubble-perf.json`). Scout is one merged mesh under 1,500 triangles. Software rendering was **not** re-measured after the Day / Night and playful-night changes.
 
 ## Clean shutdown
 Closing the panel removes its journal listener, its settings listener and the webview message handler (VS Code test: listener count 1 → 0, and back to 1 on reopen). In the webview, every DOM listener is registered through one helper and removed on unload; the animation frame and replay timer are cancelled; and the scene graph and renderer free all GPU resources.

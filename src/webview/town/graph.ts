@@ -153,6 +153,8 @@ export class TownGraph {
   private held = false;
   private talking = false;
   private resumePts: THREE.Vector3[] = [];
+  // guided tour (renderer only): Scout walks to tour stops; no patrol meanwhile
+  private guiding = false;
 
   private readonly counters = { rebuilds: 0, buildingRebuilds: 0, incremental: 0 };
   private readonly tmp = new THREE.Matrix4();
@@ -568,6 +570,7 @@ export class TownGraph {
     if (sc.move === this.scoutMove) return;
     if (this.held && !first) return; // Ask Scout: the move waits until he has answered (pendingTarget tells the user)
     this.scoutMove = sc.move;
+    this.guiding = false; // an agent move or a click ends a guided tour
     this.scout.setMood(sc.mood);
     const key = sc.at.kind === 'building' ? (s.buildings[sc.at.id]?.name ?? '') : '';
     this.setBubble(sc.bubble, key);
@@ -592,7 +595,7 @@ export class TownGraph {
     const moving = this.scout.tick(t, !this.reducedMotion);
     const s = this.scene;
     if (!s || !this.layout) return;
-    if (this.held) {
+    if (this.held || this.guiding) {
       this.scout.takeArrived();
       return; // Ask Scout: no patrol while a question is waiting or answered
     }
@@ -647,6 +650,36 @@ export class TownGraph {
     }
     this.pauseUntil = this.scout.lastTick;
     if (rest.length && this.patrolling && s && !s.running) this.scout.walk(rest, 5, this.reducedMotion);
+  }
+
+  /**
+   * Guided tour: walks Scout to a place (renderer only). A walk in progress is finished along its own street path
+   * first, so he never cuts through a district. `undefined` ends the tour and the patrol resumes.
+   */
+  guideTo(place: ScoutPlace | undefined): void {
+    const s = this.scene;
+    if (!place) {
+      this.guiding = false;
+      this.setTalking(false);
+      this.pauseUntil = this.scout.lastTick;
+      return;
+    }
+    if (!s || !this.layout) return;
+    this.guiding = true;
+    this.held = false;
+    this.setTalking(false);
+    const rest = [...this.resumePts, ...(this.scout.animating ? this.scout.halt() : [])];
+    this.resumePts = [];
+    const path = this.pathTo(place, s, place.kind === 'building');
+    this.patrolling = false;
+    this.scout.walk([...rest, ...path], 9, this.reducedMotion);
+    this.anchor = this.streetFor(place);
+    this.onRoof = place.kind === 'building' ? place.id : undefined;
+  }
+
+  /** True while a guided tour has Scout (an agent move or a click ends it). */
+  get scoutGuiding(): boolean {
+    return this.guiding;
   }
 
   get scoutHeld(): boolean {
