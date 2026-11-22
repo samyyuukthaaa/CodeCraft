@@ -16,3 +16,11 @@ trueforge-data/
 *.log
 logs/
 fixtures/flask/
+
+# keys and local environments (never commit)
+*.pem
+*.key
+*.p12
+*.pfx
+.venv/
+venv/
