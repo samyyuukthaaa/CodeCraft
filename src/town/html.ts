@@ -63,6 +63,9 @@ ${stateRules}
   /* 2D: the list starts right of the legend, and the 3D-only camera button is hidden */
   body.flat #fallback-view { left: 330px; }
   body.flat #btn-reset-cam { display: none; }
+  /* Day: a sunny sky behind the 2D view and the canvas edges; panels stay dark cards for contrast */
+  body.theme-day, body.theme-day html { background: linear-gradient(#3d9bff 0%, #8cc8ff 60%, #ffc98a 100%); }
+  body.theme-day #btn-theme { background: #fde68a; color: #0a1330; font-weight: 700; }
   .fallback-intro { margin-bottom: 12px; font-size: 12px; color: #cbd5e1; }
   .fallback-district { margin-bottom: 18px; }
   .fallback-district-name { font-weight: 700; font-size: 13px; color: #ffffff; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
@@ -154,6 +157,7 @@ ${stateRules}
       </div>
       <button id="btn-replay" type="button" title="Replay a finished run from the journal" disabled>▶ Replay</button>
       <button id="btn-toggle-view" type="button">Switch to 2D</button>
+      <button id="btn-theme" type="button" title="Now Night; switch to Day" aria-label="Night view. Switch to Day">🌙 Night</button>
       <button id="btn-reset-cam" type="button">Reset View</button>
       <button id="btn-find-scout" class="scout-ctl" type="button" title="Fly the camera to Scout">🏮 Find Scout</button>
       <button id="btn-follow-scout" class="scout-ctl" type="button" aria-pressed="false" title="The camera follows Scout (off by default)">Follow Scout</button>

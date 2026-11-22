@@ -11,10 +11,27 @@ import { CaptionPart, TextureFactory, TownGraph } from './town/graph';
 import { Flight, SCOUT_VIEW_OFFSET, flightStep, flightTo, followStep, framing } from './town/camera';
 import { VIEW_MODES, ViewMode, inspect, legendFor } from '../town/view';
 import { SUGGESTED, Tip, askScout, tipFor } from '../town/help';
+import { DEFAULT_THEME, THEMES, TownTheme, isTheme, otherTheme } from '../town/theme';
 import { Player, createPlayer, delayToNext, pause, play, positionText, seek, setSpeed, step } from '../town/replay';
 
-declare function acquireVsCodeApi(): { postMessage(msg: TownToHost): void };
+declare function acquireVsCodeApi(): { postMessage(msg: TownToHost): void; getState?(): unknown; setState?(s: unknown): void };
 const vscode = acquireVsCodeApi();
+/** Webview state (per panel, a convenience only): may be missing or throw; the town works without it. */
+function loadState(): Record<string, unknown> {
+  try {
+    const s = vscode.getState?.();
+    return typeof s === 'object' && s !== null ? (s as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+function saveState(patch: Record<string, unknown>): void {
+  try {
+    vscode.setState?.({ ...loadState(), ...patch });
+  } catch {
+    // ignore
+  }
+}
 
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 /** codecraft.townReducedMotion: 'on' / 'off', or 'auto' (follow the OS setting). Changeable while open. */
@@ -23,6 +40,9 @@ let reducedMotion = motionSetting(document.body.dataset.reducedMotion);
 document.body.classList.toggle('reduced-motion', reducedMotion);
 /** codecraft.scout: muted hides Scout, its bubble and its tips. */
 let scoutMuted = document.body.dataset.scout === 'muted';
+/** Day or Night (Night by default); remembered for this panel only (webview state, not the journal). */
+const savedTheme = loadState().theme;
+let theme: TownTheme = isTheme(savedTheme) ? savedTheme : DEFAULT_THEME;
 /** With reduced motion nothing animates, so a frame is drawn only when something changed. */
 let dirty = true;
 let renderedFrames = 0;
@@ -138,6 +158,12 @@ let renderer: THREE.WebGLRenderer | undefined;
 let scene3: THREE.Scene | undefined;
 let camera: THREE.PerspectiveCamera | undefined;
 let graph: TownGraph | undefined;
+// environment that changes with Day / Night
+let hemi: THREE.HemisphereLight | undefined;
+let sun: THREE.DirectionalLight | undefined;
+let groundMat: THREE.MeshStandardMaterial | undefined;
+let stars: THREE.Points | undefined;
+const skies = new Map<TownTheme, THREE.Texture>();
 const cameraTarget = new THREE.Vector3();
 const listeners: Array<() => void> = [];
 // Every listener goes through on(): it is removed again on shutdown, and any input or message marks the frame dirty.
@@ -166,23 +192,71 @@ function starfield(): THREE.Points {
   return new THREE.Points(g, new THREE.PointsMaterial({ color: '#e0e7ff', size: 0.9, sizeAttenuation: true, transparent: true, opacity: 0.85, depthWrite: false }));
 }
 
+/** A vertical sky gradient (top to horizon), made once per theme. */
+function skyTexture(t: TownTheme): THREE.Texture {
+  let tex = skies.get(t);
+  if (tex) return tex;
+  const p = THEMES[t];
+  const c = document.createElement('canvas');
+  c.width = 2;
+  c.height = 256;
+  const ctx = c.getContext('2d')!;
+  const g = ctx.createLinearGradient(0, 0, 0, 256);
+  g.addColorStop(0, p.skyTop);
+  g.addColorStop(0.62, p.skyTop);
+  g.addColorStop(1, p.skyHorizon);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 2, 256);
+  tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  skies.set(t, tex);
+  return tex;
+}
+
+/** Applies Day or Night: sky, fog, lights, ground, stars and the town colours; the switch shows icon + text. */
+function applyTheme(t: TownTheme): void {
+  theme = t;
+  const p = THEMES[t];
+  document.body.classList.toggle('theme-day', t === 'day');
+  const btn = $<HTMLButtonElement>('btn-theme');
+  const next = THEMES[otherTheme(t)];
+  btn.textContent = `${p.icon} ${p.label}`;
+  btn.title = `Now ${p.label}; switch to ${next.label}`;
+  btn.setAttribute('aria-label', `${p.label} view. Switch to ${next.label}`);
+  saveState({ theme: t });
+  if (scene3) {
+    scene3.background = skyTexture(t);
+    scene3.fog = new THREE.FogExp2(p.fog, p.fogDensity);
+  }
+  hemi?.color.set(p.hemiSky);
+  hemi?.groundColor.set(p.hemiGround);
+  if (hemi) hemi.intensity = p.hemiIntensity;
+  sun?.color.set(p.sun);
+  if (sun) sun.intensity = p.sunIntensity;
+  groundMat?.color.set(p.ground);
+  if (stars) stars.visible = p.stars;
+  graph?.setTheme(t);
+  dirty = true;
+}
+
 function init3D(): void {
   scene3 = new THREE.Scene();
-  scene3.background = new THREE.Color('#0a1330');
-  scene3.fog = new THREE.FogExp2('#0a1330', 0.0028);
   camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.5, 2000);
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   canvasContainer.appendChild(renderer.domElement);
 
-  scene3.add(new THREE.HemisphereLight('#6d82c9', '#141a33', 1.7));
-  const moon = new THREE.DirectionalLight('#dbe4ff', 1.6);
-  moon.position.set(40, 80, 30);
-  scene3.add(moon);
-  const ground = new THREE.Mesh(new THREE.CircleGeometry(600, 48).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#0c1530', roughness: 1 }));
+  hemi = new THREE.HemisphereLight('#6d82c9', '#141a33', 1.7);
+  scene3.add(hemi);
+  sun = new THREE.DirectionalLight('#dbe4ff', 1.6);
+  sun.position.set(40, 80, 30);
+  scene3.add(sun);
+  groundMat = new THREE.MeshStandardMaterial({ color: '#0c1530', roughness: 1 });
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(600, 48).rotateX(-Math.PI / 2), groundMat);
   ground.position.y = -0.32;
-  scene3.add(ground, starfield());
+  stars = starfield();
+  scene3.add(ground, stars);
 
   graph = new TownGraph(textures, reducedMotion, {
     log: (msg, err) => {
@@ -191,6 +265,7 @@ function init3D(): void {
     },
   });
   scene3.add(graph.root);
+  applyTheme(theme);
   setupControls(renderer.domElement);
   // If the GPU drops the WebGL context (driver reset, too many contexts), fall back to the 2D view.
   on(renderer.domElement, 'webglcontextlost', (e: Event) => {
@@ -698,6 +773,8 @@ on(window, 'unload', () => {
   if (replayTimer) clearTimeout(replayTimer);
   for (const off of listeners.splice(0)) off();
   graph?.dispose();
+  for (const tex of skies.values()) tex.dispose();
+  skies.clear();
   renderer?.dispose();
 });
 
@@ -750,6 +827,7 @@ function setScoutMuted(muted: boolean): void {
   }
 }
 
+on($('btn-theme'), 'click', () => applyTheme(otherTheme(theme)));
 on($('btn-find-scout'), 'click', findScout);
 on($('btn-follow-scout'), 'click', () => setFollow(!following));
 
@@ -770,6 +848,9 @@ renderSuggestions(SUGGESTED);
 
 renderLegend();
 if (hasWebGL) init3D();
-else btnToggleView.classList.add('hidden');
+else {
+  applyTheme(theme);
+  btnToggleView.classList.add('hidden');
+}
 setScoutMuted(scoutMuted);
 setMode3D(hasWebGL);

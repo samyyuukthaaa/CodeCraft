@@ -73,7 +73,7 @@ async function main(): Promise<void> {
   const measure = has('measure');
   fs.writeFileSync(
     path.join(dir, 'stub.js'),
-    `window.acquireVsCodeApi = () => ({ postMessage: (m) => { window.__sent = (window.__sent || []).concat([m]);
+    `window.acquireVsCodeApi = () => ({ getState: () => window.__vsState, setState: (v) => { window.__vsState = v; }, postMessage: (m) => { window.__sent = (window.__sent || []).concat([m]);
   if (m.type === 'replay_run') setTimeout(() => window.postMessage({ type: 'replay', runId: 'ab12ab12ab12ab12', base: window.__base, events: window.__replay }, '*'), 10); } });
 window.__base = ${JSON.stringify(has('replay') ? start : null)};
 window.__replay = ${JSON.stringify(has('replay') ? events : [])};

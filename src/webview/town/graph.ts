@@ -16,6 +16,7 @@ import { ViewMode, journeyStops } from '../../town/view';
 import type { ScoutPlace } from '../../town/scout';
 import { SCOUT_SCALE, ScoutFigure } from './scout3d';
 import { Pt, frontOf, patrolStops, plantStop, plaza, route } from '../../town/patrol';
+import { DEFAULT_THEME, THEMES, ThemePalette, TownTheme } from '../../town/theme';
 
 export interface CaptionPart {
   text: string;
@@ -50,16 +51,26 @@ const VERB: Partial<Record<string, string>> = {
 /** Chunky low-poly blocks: 1 to about 7 units tall for 1 to 20 height steps (footprint 2.2). */
 export const buildingHeight = (b: Building): number => 0.9 + b.height * 0.32;
 
-/** Body colour: idle buildings are a dark tint of their kind; any other state shows its state colour. */
-export function bodyColor(b: Building, mode: ViewMode = 'journey'): THREE.Color {
-  if (mode === 'architecture') return new THREE.Color(KIND_VISUALS[b.kind].color).lerp(NAVY, 0.3);
-  // idle: the district's warm wall colour, a little dimmed so touched buildings (state colours) stand out
-  return b.state === 'idle' ? new THREE.Color(districtColors(b.district).wall).lerp(NAVY, 0.38) : new THREE.Color(b.color);
+/** A district colour in a theme: saturation and lightness boosted, optionally mixed with the theme's dim colour. */
+function tint(hex: string, p: ThemePalette, dimmed: boolean): THREE.Color {
+  const c = new THREE.Color(hex);
+  if (p.saturate || p.lighten) c.offsetHSL(0, p.saturate, p.lighten);
+  return dimmed ? c.lerp(new THREE.Color(p.dim), p.dimAmount) : c;
 }
 
-/** Roof colour: the district's rooftop colour (kind colour in Architecture mode). */
-export function roofColor(b: Building, mode: ViewMode = 'journey'): THREE.Color {
-  return mode === 'architecture' ? new THREE.Color(KIND_VISUALS[b.kind].color).lerp(NAVY, 0.55) : new THREE.Color(districtColors(b.district).roof);
+/**
+ * Body colour: idle buildings wear their district's wall colour (per theme); any other state shows its state
+ * colour, the same in both themes (colour + icon + text).
+ */
+export function bodyColor(b: Building, mode: ViewMode = 'journey', theme: TownTheme = DEFAULT_THEME): THREE.Color {
+  if (mode === 'architecture') return new THREE.Color(KIND_VISUALS[b.kind].color).lerp(NAVY, theme === 'day' ? 0.05 : 0.3);
+  // idle: the district's warm wall colour, dimmed at night so touched buildings (state colours) stand out
+  return b.state === 'idle' ? tint(districtColors(b.district).wall, THEMES[theme], true) : new THREE.Color(b.color);
+}
+
+/** Roof colour: the district's rooftop colour, more saturated by day (kind colour in Architecture mode). */
+export function roofColor(b: Building, mode: ViewMode = 'journey', theme: TownTheme = DEFAULT_THEME): THREE.Color {
+  return mode === 'architecture' ? new THREE.Color(KIND_VISUALS[b.kind].color).lerp(NAVY, theme === 'day' ? 0.2 : 0.55) : tint(districtColors(b.district).roof, THEMES[theme], false);
 }
 
 /** Buildings that earn festival lanterns: an applied change, or a test that passes again. */
@@ -118,6 +129,7 @@ export class TownGraph {
   private selectRing: THREE.Mesh | undefined;
   private selected: string | undefined;
   private mode: ViewMode = 'journey';
+  private theme: TownTheme = DEFAULT_THEME;
   // Scout: created once, survives rebuilds
   private readonly scout: ScoutFigure;
   private scoutBubble: THREE.Sprite | undefined;
@@ -182,6 +194,25 @@ export class TownGraph {
     this.applyModeVisibility();
   }
 
+  get townTheme(): TownTheme {
+    return this.theme;
+  }
+
+  /** Day or Night: recolours idle walls, rooftops, slabs and roads once (a user action); string lights stay on. */
+  setTheme(theme: TownTheme): void {
+    if (theme === this.theme) return;
+    this.theme = theme;
+    const p = THEMES[theme];
+    this.slabMat.color.set(p.slab);
+    if (this.bodyMat.emissiveMap) this.bodyMat.emissiveIntensity = p.windows;
+    const s = this.scene;
+    if (s) {
+      for (const [id, i] of this.indexById) this.placeBuilding(s.buildings[id]!, i);
+      this.flush();
+    }
+    this.applyModeVisibility();
+  }
+
   /** Replay accent on or off (the path turns rainbow while a finished run is replayed). */
   setReplay(on: boolean): void {
     if (on === this.replay) return;
@@ -207,7 +238,7 @@ export class TownGraph {
     if (this.roads) {
       const m = this.roads.material as THREE.LineBasicMaterial;
       m.opacity = journey ? 0.35 : 1;
-      m.color.set(journey ? '#2b4a7a' : '#7aa2e3');
+      m.color.set(journey ? THEMES[this.theme].road : '#7aa2e3');
     }
     if (this.journeyLine) this.journeyLine.visible = journey;
     for (const sp of this.stopLabels.values()) sp.visible = journey;
@@ -688,7 +719,7 @@ export class TownGraph {
     const footprint = b.placeholder ? 0.6 : 1;
     this.tmp.compose(new THREE.Vector3(lot.x, 0, lot.z), new THREE.Quaternion(), new THREE.Vector3(footprint, h, footprint));
     this.buildings.setMatrixAt(i, this.tmp);
-    this.buildings.setColorAt(i, bodyColor(b, this.mode));
+    this.buildings.setColorAt(i, bodyColor(b, this.mode, this.theme));
     const showBeacon = b.state !== 'idle';
     this.tmp.compose(new THREE.Vector3(lot.x, h + 0.7, lot.z), new THREE.Quaternion(), new THREE.Vector3().setScalar(showBeacon ? 1 : 0));
     this.beacons.setMatrixAt(i, this.tmp);
@@ -696,7 +727,7 @@ export class TownGraph {
     if (this.roofs) {
       this.tmp.compose(new THREE.Vector3(lot.x, h + 0.05, lot.z), new THREE.Quaternion(), new THREE.Vector3(footprint, 1, footprint));
       this.roofs.setMatrixAt(i, this.tmp);
-      this.roofs.setColorAt(i, roofColor(b, this.mode));
+      this.roofs.setColorAt(i, roofColor(b, this.mode, this.theme));
     }
     if (this.lanterns) {
       // festival lanterns over a success: fixed spots around the roof (no randomness), from a small pool
