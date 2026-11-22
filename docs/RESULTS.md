@@ -2,7 +2,14 @@
 
 All runs: 2026-11-20, against pallets/flask 3.1.3 (`22d92470`) in `fixtures/flask`, real TrueForge 0.185.1, real models (primary `google-gemini/gemini-3-1-flash-lite`, fallback `google-gemini/gemini-3-5-flash-lite`, both on the Gemini free tier), the real MCP server, and real verification commands (python, pytest, flask CLI). Only the human is scripted (tool approval and hunk review). Commands: `npm run scenario -- task1|task2|task3-fallback|task3-nofallback`. Full per-run JSON: `docs/results/`.
 
-## Status as of 2026-11-21 12:40 UTC (3-in-a-row goal)
+## Current status (2026-11-22, honest)
+
+- **Setup:** primary `google-gemini/gemini-3-5-flash-lite`, fallback `google-gemini/gemini-3-1-flash-lite`, `codecraft.preloadTools` on (TrueForge loads the editor tools into the model), per-run read budget, failover on repeated "not found in tool mapping", automatic answers to ask-user questions in non-interactive runs.
+- **Task B (task2): passed once on the primary with no failover** (`9f4e8de`): 22 requests, 321k tokens, 101 s, all checks passed. It has **not** yet passed 3 in a row on one commit.
+- **Task A (task1) and Task C (task3, both variants):** passed 3 in a row on `53fdb7a` with the earlier models; **not yet re-run** on the current setup.
+- **The 3-in-a-row proof on one commit is pending the teammates' run** ([RUNBOOK.md](RUNBOOK.md)). No `submission-safe` tag exists yet.
+
+## Earlier status as of 2026-11-21 12:40 UTC (3-in-a-row goal)
 
 On the final code `53fdb7a`: task1, task3-fallback and task3-nofallback pass 3 in a row; task2 does not. Every run since the first summary, in order (all rows are in the raw table below):
 
