@@ -4,11 +4,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import type { TurnEvent } from '../src/trueforge/client';
+import type { ApprovalInput, TurnEvent } from '../src/trueforge/client';
 import { ASK_LIMIT_MESSAGE, AUTO_ANSWER, AUTO_ASK_LIMIT, autoResponder } from '../src/trueforge/autoAnswer';
 import { AGENT_INSTRUCTIONS } from '../src/trueforge/config';
 import { AgentAttempt, runWithFailover } from '../src/trueforge/failover';
-import { ApprovalInput, ClientToolCall, Responder, TurnDriver, runWithApprovals } from '../src/trueforge/run';
+import { ClientToolCall, Responder, TurnDriver, runWithApprovals } from '../src/trueforge/run';
 
 const ev = (e: unknown): TurnEvent => e as TurnEvent;
 const gen = (events: TurnEvent[]) =>

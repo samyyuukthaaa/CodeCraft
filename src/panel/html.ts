@@ -31,6 +31,11 @@ export function buildHtml(opts: { cspSource: string; nonce: string; scriptUri: s
   #context td, #context th { text-align: left; padding: 2px 6px; border-bottom: 1px solid var(--vscode-panel-border, transparent); }
   #context td.num, #context th.num { text-align: right; }
   #context tr.excluded { opacity: .6; }
+  #ctx-meter { height: 8px; border-radius: 4px; background: var(--vscode-editorWidget-border, #8884); overflow: hidden; margin: 4px 0; }
+  #ctx-meter-bar { height: 100%; width: 0; background: var(--vscode-progressBar-background, #0e70c0); }
+  #ctx-meter.over #ctx-meter-bar { background: var(--vscode-errorForeground, #f14c4c); }
+  #chosen table { border-collapse: collapse; font-size: 12px; width: 100%; }
+  #chosen td, #chosen th { text-align: left; padding: 2px 6px; border-bottom: 1px solid var(--vscode-panel-border, transparent); }
   #plan table, #health table { border-collapse: collapse; font-size: 12px; width: 100%; }
   #health td, #health th { text-align: left; padding: 2px 6px; border-bottom: 1px solid var(--vscode-panel-border, transparent); }
   #health td.paused { color: var(--vscode-errorForeground); }
@@ -101,9 +106,16 @@ export function buildHtml(opts: { cspSource: string; nonce: string; scriptUri: s
   <section id="context" aria-labelledby="context-h">
     <h4 id="context-h">Context used</h4>
     <p id="context-summary" class="muted">No request yet.</p>
+    <div id="ctx-meter" role="meter" aria-label="Context budget used" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"><div id="ctx-meter-bar"></div></div>
+    <p id="ctx-meter-text" class="muted"></p>
     <p id="reads" class="muted"></p>
     <p id="read-budget" class="muted" role="status"></p>
     <table><thead><tr><th>File</th><th>Reason</th><th class="num">Tokens (est.)</th></tr></thead><tbody id="context-rows"></tbody></table>
+  </section>
+  <section id="chosen" aria-labelledby="chosen-h">
+    <h4 id="chosen-h">Files the agent chose</h4>
+    <p id="chosen-summary" class="muted">The plan and the files the agent read appear here during a run.</p>
+    <table><thead><tr><th>File</th><th>How</th><th>Why</th><th>Read</th></tr></thead><tbody id="chosen-rows"></tbody></table>
   </section>
   <h4>Event stream</h4>
   <ul id="events" aria-label="Live event stream"></ul>
