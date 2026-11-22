@@ -2,6 +2,7 @@
 // the proposal to the WriteGate, which needs a stored per-hunk decision before anything changes.
 import { z } from 'zod';
 import { redact } from '../util/redact';
+import { ReadBudget, isBudgeted, resultSummary } from './budget';
 import { ReadFs, WriteGate } from './gate';
 import { isDenied, normalizeRelPath } from './paths';
 import { Edit, applyEdits, matchEol, pageOf } from './text';
@@ -109,6 +110,8 @@ export interface ToolDeps {
   onRead?: (path: string) => void;
   /** Awaited before every tool runs (journal: an operation ID is recorded before the call). */
   beforeTool?: (tool: string, args: unknown) => Promise<void>;
+  /** Per-run read budget (caps, identical-repeat cache); reset by the caller at the start of every run. */
+  budget?: ReadBudget;
   /** Called with every real test result (journal); `output` is the real (tail of the) test output. */
   onTests?: (passed: boolean, exitCode: number | null, output?: string) => void;
 }
@@ -376,6 +379,19 @@ export function createHandlers(deps: ToolDeps) {
   for (const [name, fn] of Object.entries(base) as Array<[keyof typeof base, (a: never) => Promise<ToolOutput>]>) {
     (wrapped as Record<string, unknown>)[name] = async (a: never) => {
       await deps.beforeTool?.(name, a);
+      // Per-run read budget (read_file, list_files, search_text): identical repeats are answered from a short
+      // cache, and past a cap the agent is told to stop reading and plan. Internal calls (search_text listing
+      // files) go to `base` directly and are not counted.
+      if (deps.budget && isBudgeted(name)) {
+        const d = deps.budget.check(name, a);
+        if (d.kind !== 'run') {
+          note(`${name} ${d.kind === 'cached' ? 'answered from cache (identical repeat)' : 'refused: read budget reached'}`);
+          return { text: d.text, isError: d.kind === 'capped' };
+        }
+        const r = await fn.call(base, a);
+        if (!r.isError) deps.budget.record(name, a, resultSummary(name, r.text));
+        return r;
+      }
       return fn.call(base, a);
     };
   }

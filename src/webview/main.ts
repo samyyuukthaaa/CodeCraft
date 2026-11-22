@@ -14,6 +14,7 @@ const MAX_ROWS = 500;
 const ctxSummary = document.getElementById('context-summary') as HTMLElement;
 const ctxRows = document.getElementById('context-rows') as HTMLElement;
 const reads = document.getElementById('reads') as HTMLElement;
+const readBudget = document.getElementById('read-budget') as HTMLElement;
 const planSummary = document.getElementById('plan-summary') as HTMLElement;
 const planRows = document.getElementById('plan-rows') as HTMLElement;
 const healthRows = document.getElementById('health-rows') as HTMLElement;
@@ -205,6 +206,11 @@ window.addEventListener('message', (e: MessageEvent<HostToWebview>) => {
       cell(tr, f.why);
       planRows.appendChild(tr);
     }
+    return;
+  }
+  if (m.type === 'budget') {
+    const b = m.budget;
+    readBudget.textContent = `Read budget this run: read_file ${b.used.read_file} of ${b.limits.read_file}, list_files ${b.used.list_files} of ${b.limits.list_files}, search_text ${b.used.search_text} of ${b.limits.search_text}` + (b.cached ? ` (${b.cached} repeat(s) answered from cache)` : '') + '.';
     return;
   }
   if (m.type === 'reads') {

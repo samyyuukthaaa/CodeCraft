@@ -102,6 +102,7 @@ export function buildHtml(opts: { cspSource: string; nonce: string; scriptUri: s
     <h4 id="context-h">Context used</h4>
     <p id="context-summary" class="muted">No request yet.</p>
     <p id="reads" class="muted"></p>
+    <p id="read-budget" class="muted" role="status"></p>
     <table><thead><tr><th>File</th><th>Reason</th><th class="num">Tokens (est.)</th></tr></thead><tbody id="context-rows"></tbody></table>
   </section>
   <h4>Event stream</h4>

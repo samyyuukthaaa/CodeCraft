@@ -12,6 +12,14 @@ const SCENARIOS: Record<string, Scenario> = { task1, task2, 'task3-fallback': ta
 /** task3 runs both Task C variants. */
 const ALIASES: Record<string, string[]> = { task3: ['task3-fallback', 'task3-nofallback'] };
 
+/** One line for docs/RESULTS.md listing the ask-user questions that were answered automatically. */
+export function autoAnswerNote(runs: RunRecord[]): string {
+  const clean = (q: string): string => q.slice(0, 160).replace(/\|/g, '/').replace(/\s+/g, ' ');
+  return `Auto-answered ask-user questions (non-interactive run, fixed reply): ${runs
+    .map((r) => `${r.scenario} run ${r.run}: ${(r.autoAnswers ?? []).map((a) => `"${clean(a.question)}"`).join('; ')}`)
+    .join(' | ')}`;
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const runsIdx = args.indexOf('--runs');
@@ -56,6 +64,9 @@ async function main(): Promise<void> {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     fs.writeFileSync(path.join(dir, `${ids.join('-')}-${stamp}.json`), JSON.stringify(all, null, 2));
     fs.appendFileSync(path.resolve('docs/RESULTS.md'), `\n### ${ids.join(', ')}: ${runs} run(s), ${new Date().toISOString()}\n\n| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |\n|---|---|---|---|---|---|---|---|---|---|---|\n${all.map(summaryRow).join('\n')}\n`);
+    const asked = all.filter((r) => r.autoAnswers?.length);
+    if (asked.length)
+      fs.appendFileSync(path.resolve('docs/RESULTS.md'), `\n${autoAnswerNote(asked)}\n`);
     console.log(`recorded to docs/RESULTS.md and docs/results/`);
   }
   process.exitCode = tlsStop ? 3 : all.length > 0 && all.every((r) => r.pass) ? 0 : 1;

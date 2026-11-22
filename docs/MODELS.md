@@ -4,10 +4,14 @@ All agent execution and model calls happen inside TrueForge. CodeCraft never cal
 
 | Role | Agent name in TrueForge | Setting | Default model reference | Provider |
 |---|---|---|---|---|
-| Primary | `codecraft-primary` | `codecraft.primaryModel` | `google-gemini/gemini-3-5-flash` (model id `gemini-3.5-flash`) | `google-gemini` |
-| Fallback | `codecraft-fallback` | `codecraft.fallbackModel` | `google-gemini/gemini-3-5-flash-lite` (model id `gemini-3.5-flash-lite`) | `google-gemini` |
+| Primary | `codecraft-primary` | `codecraft.primaryModel` | `google-gemini/gemini-3-5-flash-lite` (model id `gemini-3.5-flash-lite`) | `google-gemini` |
+| Fallback | `codecraft-fallback` | `codecraft.fallbackModel` | `google-gemini/gemini-3-1-flash-lite` (model id `gemini-3.1-flash-lite`) | `google-gemini` |
 
-**Why the primary changed (2026-11-21):** the primary was `google-gemini/gemini-3-1-flash-lite`. In Task B the free-tier "lite" models repeatedly wrote a `flask config` command that could not JSON-encode some config values and then looped on debugging (up to 4.2M tokens per run) until the free-tier quota stopped them; see `docs/RESULTS.md`. With the project owner's approval the primary is now the stronger `google-gemini/gemini-3-5-flash`; `google-gemini/gemini-3-5-flash-lite` stays the fallback. Task C's fallback variant still exercises the lite fallback.
+**Primary and fallback swapped (2026-11-22, project owner's decision):** the primary is now `gemini-3-5-flash-lite` and the fallback `gemini-3-1-flash-lite`. In live Task B runs, `gemini-3-1-flash-lite` nested `mcp_server` (and often `tool_name`) inside the `input` of TrueForge's `call_tool`, so TrueForge rejected every call before it reached the editor tools. `gemini-3-5-flash-lite` built `call_tool` correctly and finished Task B once (`docs/RESULTS.md`).
+
+**Earlier the same day, primary back to `gemini-3-1-flash-lite`:** the free tier allows `gemini-3-5-flash` only 20 requests per day, so it ran out at once and the recorded runs finished on the lite fallback anyway. Both references were confirmed in `GET /api/v1/models` on TrueForge 0.185.1 before the change.
+
+**Why the primary changed earlier (2026-11-21):** the primary was `google-gemini/gemini-3-1-flash-lite`. In Task B the free-tier "lite" models repeatedly wrote a `flask config` command that could not JSON-encode some config values and then looped on debugging (up to 4.2M tokens per run) until the free-tier quota stopped them; see `docs/RESULTS.md`. With the project owner's approval the primary is now the stronger `google-gemini/gemini-3-5-flash`; `google-gemini/gemini-3-5-flash-lite` stays the fallback. Task C's fallback variant still exercises the lite fallback.
 
 Both agents get identical instructions (`AGENT_INSTRUCTIONS` in `src/trueforge/config.ts`) and the same editor tools, so only the model differs.
 

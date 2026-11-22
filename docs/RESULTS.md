@@ -33,6 +33,9 @@ On the final code `53fdb7a`: task1, task3-fallback and task3-nofallback pass 3 i
 | `53fdb7a` | task1 | 3 | **PASS, PASS, PASS** | all three finished on the lite fallback after the primary's daily 429 (28-54 s, ~60k tokens each) |
 | `53fdb7a` | task3-fallback | 3 | **PASS, PASS, PASS** | |
 | `53fdb7a` | task3-nofallback | 3 | **PASS, PASS, PASS** | |
+| `1b101e0` | task2 | 1 | FAIL | primary back to `gemini-3-1-flash-lite` (2026-11-22). The model called the editor tools **by name** (`list_files`, `read_file`, `run_tests`, ...) instead of through TrueForge's `call_tool` wrapper; TrueForge answered "Tool list_files not found in tool mapping" 89 times. The model then said the tools were unavailable and ended the turn as `done`, so failover never fired. Nothing written, 0 files read, no plan; about 96 requests (90 model calls + 6 per-minute 429s waited out), 1.11M tokens, 385 s. Session `01m814zm6ss85ehg23smf7spf3`. |
+| `d3e2cf3` | task2 | 1 | **PASS** (on the fallback) | After the call_tool instruction line and the tool-mapping failover (`17b97f5`, `cb53492`), and `npm run probe` passing on the primary (2 requests, a real `list_files` call). The primary now used call_tool (0 "not found in tool mapping"), but spent 166 model calls reading (104 `read_file`, 10 `list_files`, 44 `call_tool` with no tool name) without submitting a plan, until its 10th per-minute 429 wait; it then failed over. The fallback `gemini-3-5-flash-lite` planned cli.py, tests/test_cli.py and docs/cli.rst, and all checks passed (59 test_cli, 491 suite, masked JSON, `config` in --help). About 222 requests (166 + 42 answered model calls, 14 per-minute 429s), 4.35M tokens, 1113 s. Sessions `01m816xntxvkg9m8cg5pxqs89j`, `01m817rdwgkxzjwefbtcq2b23a`. |
+| `1b3398d` | task2 | 1 | FAIL | With the per-run read budget. The primary still looped, but **none of its calls reached the editor tools**: all 137 of its `call_tool` calls put `mcp_server` (and often `tool_name`) inside `input`, and TrueForge's own `call_tool` validation rejected each one ("mcp_server: expected string, received undefined"). It cycled through 7 argument shapes (122 list_files attempts) until its 10th per-minute 429 wait, so the budget never triggered (0 capped, 0 cached). The fallback planned all three files and changed them, but `config` was not registered (not in `flask --help`, `No such command 'config'`) and 1 test in test_cli.py failed. About 192 requests (143 + 37 answered model calls, 12 per-minute 429s), 3.12M tokens, 862 s. Sessions `01m818j0g7ehx4822ajmgjb8js`, `01m8197zjhwxgk5gy7bwe9m7rf`. |
 
 **Primary model changed (2026-11-21, approved by the project owner):** from `google-gemini/gemini-3-1-flash-lite` to `google-gemini/gemini-3-5-flash`; `google-gemini/gemini-3-5-flash-lite` stays the fallback. Reason: in Task B the free-tier "lite" models repeatedly wrote a `flask config` command that could not JSON-encode some config values, then looped on debugging (up to 4.2M tokens in one run) until the free-tier quota stopped them. At the same time the agent instructions now require verifying a new command through a test and run_tests before declaring done, and CodeCraft refuses further proposals after 2 failed test runs in a run (the agent must stop and report). Task wording and checks are unchanged. All three tasks are re-run 3 times on this configuration before any tag.
 
@@ -251,3 +254,37 @@ A stopped 3-run batch of task1 kept running in the background (only its shell wr
 | task3-nofallback | 1 | PASS | codecraft-test-primary-badkey | (none) | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 0/234 | n/a | 1 s | 14 ms | - |
 | task3-nofallback | 2 | PASS | codecraft-test-primary-badkey | (none) | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 0/234 | n/a | 1 s | 12 ms | - |
 | task3-nofallback | 3 | PASS | codecraft-test-primary-badkey | (none) | src/flask/helpers.py<br>tests/test_converters.py<br>tests/test_helpers.py<br>src/flask/globals.py<br>src/flask/signals.py<br>src/flask/wrappers.py | 0/234 | n/a | 1 s | 15 ms | - |
+
+### task2: 1 run(s), 2026-11-22T08:18:20.014Z
+
+| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| task2 | 1 | FAIL | codecraft-primary | (none) | src/flask/app.py<br>src/flask/cli.py<br>src/flask/config.py<br>docs/cli.rst<br>docs/config.rst<br>tests/test_async.py<br>tests/test_cli.py<br>tests/test_config.py<br>tests/test_testing.py<br>src/flask/__init__.py | 0/234 | 1110596 | 385 s | 16 ms | TASKS.md: the diff touches at least three files; TASKS.md: `flask config` prints JSON; TASKS.md: `config` appears in flask --help; covered by a test (added test code invokes "config"); documented in docs/cli.rst with the other built-in commands; plan shown before proposing, listing src/flask/cli.py, a tests/ file and docs/cli.rst to change |
+
+Root cause of this run (from the TrueForge session events): `gemini-3-1-flash-lite` called the editor MCP tools directly by name, which TrueForge does not map ("Tool list_files not found in tool mapping", 89 times); only `call_tool {mcp_server, tool_name, input}` reaches them. The turn ended as `done` with an apology, so it was not treated as a provider failure and the fallback never ran. Fixes follow in the next commits; the task wording and checks are unchanged.
+
+### task2: 1 run(s), 2026-11-22T09:04:20.642Z
+
+| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| task2 | 1 | PASS | codecraft-fallback (failover x1) | docs/cli.rst<br>src/flask/cli.py<br>tests/test_cli.py | src/flask/app.py<br>src/flask/cli.py<br>src/flask/config.py<br>docs/cli.rst<br>docs/config.rst<br>tests/test_async.py<br>tests/test_cli.py<br>tests/test_config.py<br>tests/test_testing.py<br>src/flask/__init__.py | 3/234 | 4354103 | 1113 s | 46 ms | - |
+
+### task2: 1 run(s), 2026-11-22T09:28:45.223Z
+
+| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| task2 | 1 | FAIL | codecraft-fallback (failover x1) | docs/cli.rst<br>src/flask/cli.py<br>tests/test_cli.py | src/flask/app.py<br>src/flask/cli.py<br>src/flask/config.py<br>docs/cli.rst<br>docs/config.rst<br>tests/test_async.py<br>tests/test_cli.py<br>tests/test_config.py<br>tests/test_testing.py<br>src/flask/__init__.py | 3/234 | 3123804 | 862 s | 19 ms | TASKS.md: pytest tests/test_cli.py -q passes; TASKS.md: `flask config` prints JSON; TASKS.md: `config` appears in flask --help; full Flask test suite passes (0 failed) |
+
+**Models swapped (2026-11-22, project owner's decision, after the `1b3398d` run):** primary `google-gemini/gemini-3-5-flash-lite`, fallback `google-gemini/gemini-3-1-flash-lite`. Reason: `gemini-3-1-flash-lite` nests `mcp_server` inside `call_tool`'s `input` and TrueForge rejects every such call (137 of 137 in the `1b3398d` run), while `gemini-3-5-flash-lite` built `call_tool` correctly and finished Task B once (`d3e2cf3`, as the fallback). Task wording and checks are unchanged.
+
+### task2: 1 run(s), 2026-11-22T09:42:16.313Z
+
+| scenario | run | result | agent | files changed | context files | files read | tokens | time | max event-loop lag | failed checks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| task2 | 1 | PASS | codecraft-primary | docs/cli.rst<br>src/flask/cli.py<br>tests/test_cli.py | src/flask/app.py<br>src/flask/cli.py<br>src/flask/config.py<br>docs/cli.rst<br>docs/config.rst<br>tests/test_async.py<br>tests/test_cli.py<br>tests/test_config.py<br>tests/test_testing.py<br>src/flask/__init__.py | 4/234 | 321086 | 101 s | 16 ms | - |
+
+**Tool probe with `codecraft.preloadTools` ON (2026-11-22, `c2514b9`, one run each):** primary `gemini-3-5-flash-lite` **PASS**: 3 requests, two real `list_files` calls reached CodeCraft, fixture clean. Fallback `gemini-3-1-flash-lite` **FAIL** by the probe's rule: its editor tool calls did reach CodeCraft (4 `list_files`), but it kept listing past the 6-request cap (7 requests, then cancelled). Because the primary passed, preloadTools is on by default from `9f4e8de`.
+
+| Code | Scenario | Runs | Result | Notes |
+|---|---|---|---|---|
+| `9f4e8de` | task2 | 1 | **PASS on the primary, no failover** | Primary `gemini-3-5-flash-lite` with preloadTools on: called the editor tools directly (8 `search_text`, 9 `read_file`, 1 `submit_plan` before the first proposal listing cli.py, docs/cli.rst and tests/test_cli.py, 1 `propose_changes`, 1 `run_tests`; 2 identical repeats answered from the read budget's cache, 0 caps, 0 "not found in tool mapping"). All checks passed: 3 files, test_cli 61 passed, full suite 493 passed, masked JSON (33 keys), `config` in `--help`, test and docs. **22 requests** (21 model calls + 1 per-minute 429), 321k tokens, 101 s. Session `01m81a1zyf4bsq7ma54vfwvx9x`. |

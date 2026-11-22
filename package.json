@@ -60,13 +60,18 @@
         },
         "codecraft.primaryModel": {
           "type": "string",
-          "default": "google-gemini/gemini-3-5-flash",
+          "default": "google-gemini/gemini-3-5-flash-lite",
           "description": "Model name for the primary agent, as registered in TrueForge. Keys are configured only in TrueForge."
         },
         "codecraft.fallbackModel": {
           "type": "string",
-          "default": "google-gemini/gemini-3-5-flash-lite",
+          "default": "google-gemini/gemini-3-1-flash-lite",
           "description": "Model name for the fallback agent, as registered in TrueForge (any provider). Used when a run on the primary agent fails. Change it here to swap providers; no code change needed."
+        },
+        "codecraft.preloadTools": {
+          "type": "boolean",
+          "default": true,
+          "description": "Load CodeCraft's editor tools into the model up front (TrueForge preloadTools), so the model calls them directly instead of through TrueForge's call_tool wrapper."
         },
         "codecraft.testCommand": {
           "type": "string",
@@ -124,6 +129,7 @@
     "live-mcp": "node esbuild.mjs --tests && node out/test/live-mcp.js",
     "perf-index": "node esbuild.mjs --tests && node out/test/perf-index.js",
     "scenario": "node esbuild.mjs --scenarios && node out/scenarios/run.js",
+    "probe": "node esbuild.mjs --scenarios && node out/scenarios/probe.js",
     "failure-table": "node esbuild.mjs --scenarios && node out/scenarios/failure-table.js",
     "capture-errors": "node esbuild.mjs --scenarios && node out/scenarios/capture-errors.js",
     "ask-user": "node esbuild.mjs --scenarios && node out/scenarios/ask-user.js",

@@ -12,6 +12,7 @@ import { WriteGate } from './mcp/gate';
 import { NodeReadFs } from './mcp/nodeFs';
 import { RunningServer, startMcpServer } from './mcp/server';
 import { Plan, PlanStore, createHandlers } from './mcp/tools';
+import { BudgetView, ReadBudget } from './mcp/budget';
 import { PROPOSED_SCHEME, ProposedContentProvider, VsCodeApplier, VsCodeReviewer, VsCodeTestRunner } from './mcp/vscodeHost';
 import { AgentPanel } from './panel/AgentPanel';
 import { CodeTownPanel } from './town/CodeTownPanel';
@@ -55,6 +56,7 @@ function readConfig(): CodeCraftConfig {
     baseUrl: c.get<string>('baseUrl'),
     primaryModel: c.get<string>('primaryModel'),
     fallbackModel: c.get<string>('fallbackModel'),
+    preloadTools: c.get<boolean>('preloadTools'),
   } as Partial<CodeCraftConfig>);
 }
 
@@ -93,6 +95,9 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
   const readThisRun = new Set<string>();
   let postReads: (() => void) | undefined;
   let postPlan: ((p: Plan) => void) | undefined;
+  // Per-run read budget of the editor tools (reset at the start of every run, shown in the panel).
+  let postBudget: ((v: BudgetView) => void) | undefined;
+  const readBudget = new ReadBudget((v) => postBudget?.(v));
   const planStore = new PlanStore();
   // Per-provider circuit breaker for this VS Code session (health shown in the panel; never key values).
   const breaker = new CircuitBreaker();
@@ -134,6 +139,7 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
             if (outcome) trust?.onProposalOutcome(outcome[1]!);
           },
           plan: planStore,
+          budget: readBudget,
           onTests: (passed, exitCode, output) => void (trust ? trust.onAgentTests(passed, exitCode, output) : journal.append({ t: 'tests', phase: 'agent', passed, exitCode })),
           // An operation ID is journaled (and written) before every tool call runs.
           beforeTool: (tool, args) => journal.append({ t: 'tool_call', opId: randomBytes(6).toString('hex'), tool, args: toolArgsSummary(tool, args) }),
@@ -270,6 +276,8 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
           trust?.setReads(readThisRun.size, index.stats.totalFiles);
         };
         postReads();
+        postBudget = (v) => post({ type: 'budget', budget: v });
+        readBudget.reset();
       }
 
       const depthAtStart = host ? host.gate.undoDepth : 0;

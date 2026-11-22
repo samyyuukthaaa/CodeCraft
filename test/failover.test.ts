@@ -292,6 +292,6 @@ test('retryAfterMs and RETRY_BUDGET: Retry-After header text and the observed hi
   assert.equal(retryAfterMs('{"retry_after": 7.5}'), 7500);
   assert.equal(retryAfterMs('Please retry in 59.382723513s.'), 59383);
   assert.equal(retryAfterMs('no hint'), undefined);
-  assert.deepEqual(RETRY_BUDGET, { tls_error: 0, editor_tools_unreachable: 0, invalid_or_revoked_key: 0, bad_request: 0, unknown: 0, rate_limit: 3, unavailable_or_timeout: 2, bad_output: 1, context_too_large: 1 });
+  assert.deepEqual(RETRY_BUDGET, { tls_error: 0, editor_tools_unreachable: 0, invalid_or_revoked_key: 0, bad_request: 0, unknown: 0, rate_limit: 3, unavailable_or_timeout: 2, bad_output: 1, context_too_large: 1, tool_not_mapped: 0 });
   assert.equal(retryDelayMs('[Model Error] Request failed (429): Too Many Requests. Retry-After: 3', 0, () => 0), 3000);
 });

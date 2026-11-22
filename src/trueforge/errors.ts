@@ -11,6 +11,7 @@ export type ErrorClass =
   | 'unavailable_or_timeout'
   | 'bad_output'
   | 'context_too_large'
+  | 'tool_not_mapped'
   | 'bad_request'
   | 'unknown';
 
@@ -35,6 +36,10 @@ export function classifyError(message: string): Classified {
   // observed: "[MCP Error] Failed to connect to remote MCP server 'codecraft-editor': failed to connect (tried
   // streamable-http, sse) ... ECONNREFUSED 127.0.0.1:56336" (CodeCraft's own editor server was not running)
   if (/^\s*\[mcp error\]/.test(t)) return { cls: 'editor_tools_unreachable', status };
+  // observed (gemini-3-1-flash-lite, 2026-11-22): the model called editor tools by name instead of through call_tool;
+  // TrueForge answered each call with "Tool list_files not found in tool mapping". CodeCraft ends such a run
+  // (TOOL_MAPPING_LIMIT in run.ts) with a message containing that text.
+  if (/not found in tool mapping/.test(t)) return { cls: 'tool_not_mapped', status };
   // observed: "(401): Invalid API Key"
   if (status === 401 || status === 403 || /invalid api key|api key not valid|api_key_invalid|unauthori[sz]ed|permission denied/.test(t)) return { cls: 'invalid_or_revoked_key', status };
   // observed: "(429): You exceeded your current quota ..."
@@ -73,6 +78,7 @@ export const RETRY_BUDGET: Record<ErrorClass, number> = {
   unavailable_or_timeout: 2,
   bad_output: 1,
   context_too_large: 1,
+  tool_not_mapped: 0,
 };
 /** Consecutive rate-limit failures without progress before failing over. */
 export const MAX_RETRIES = RETRY_BUDGET.rate_limit;
@@ -125,6 +131,7 @@ const WHAT: Record<ErrorClass, string> = {
   unavailable_or_timeout: 'the provider was unavailable or timed out',
   bad_output: 'it returned output CodeCraft could not use',
   context_too_large: 'the request was too large for its context window',
+  tool_not_mapped: 'it called the editor tools in a way TrueForge cannot route (tool not found in tool mapping)',
   bad_request: 'the provider rejected the request',
   unknown: 'it failed',
 };
@@ -156,6 +163,8 @@ export function failureMessage(model: string, reason: string, appliedFiles: stri
       return `${model} hit a rate limit or quota${code}. Try again later or configure a fallback model.${filesNote}`;
     case 'unavailable_or_timeout':
       return `${model} is unavailable or timed out${code}. Try again, or configure a fallback model.${filesNote}`;
+    case 'tool_not_mapped':
+      return `${model} called the editor tools in a way TrueForge cannot route ("tool not found in tool mapping"), so it could not read or change files. Configure a fallback model or try another model.${filesNote}`;
     case 'context_too_large':
       return `The request was too large for ${model}${code}. Reduce codecraft.contextBudget or narrow the request.${filesNote}`;
     default:
