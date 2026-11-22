@@ -10,6 +10,7 @@ import { foldEvents, initialSceneState, sceneReducer } from '../src/town/reducer
 import type { SceneState, TownFileInput } from '../src/town/types';
 import { TextureFactory, TownGraph } from '../src/webview/town/graph';
 import { SCOUT_SCALE } from '../src/webview/town/scout3d';
+import { parseTownMessage } from '../src/town/protocol';
 
 const FILES: TownFileInput[] = Array.from({ length: 60 }, (_, i) => ({ path: `pkg/d${i % 6}/f${String(i).padStart(3, '0')}.py`, lines: 20 + ((i * 37) % 400) }));
 const init = (): SceneState => sceneReducer(initialSceneState(), { type: 'init', files: FILES, at: 0 });
@@ -151,4 +152,9 @@ test('mesh failure: an error is logged and a visible fallback marker with the na
   assert.match(logged[0]!, /Scout figure failed to build; showing a simple marker instead/);
   const sc = scoutOf(g);
   assert.ok(sc.visible && sc.getObjectByName('scout-body') && sc.getObjectByName('scout-name'));
+});
+
+test('mesh failure reaches the CodeCraft output: the webview may send only a bare scout_fallback message', () => {
+  assert.deepEqual(parseTownMessage({ type: 'scout_fallback' }), { type: 'scout_fallback' });
+  assert.equal(parseTownMessage({ type: 'scout_fallback', text: 'anything' }), undefined, 'no free text from the webview');
 });

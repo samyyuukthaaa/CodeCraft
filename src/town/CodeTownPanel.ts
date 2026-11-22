@@ -24,6 +24,8 @@ export interface TownSources {
   /** The append-only journal: the only source of what happened. */
   journal: Journal;
   onOpenFile: (path: string) => Promise<void>;
+  /** Writes a line to the CodeCraft output channel (optional). */
+  log?: (line: string) => void;
 }
 
 /**
@@ -90,6 +92,8 @@ export class CodeTownPanel {
         } catch {
           void vscode.window.showErrorMessage(`CodeCraft: could not open "${msg.path}"`);
         }
+      } else if (msg.type === 'scout_fallback') {
+        sources.log?.('[Code Town] Scout figure failed to build in the webview; a simple marker is shown instead.');
       } else if (msg.type === 'replay_run') {
         this.postReplay(msg.runId);
       }

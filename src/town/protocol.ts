@@ -6,7 +6,9 @@ export type TownToHost =
   /** Scout walks to this building and the file opens (the host checks it is a building in the town). */
   | { type: 'navigate'; path: string }
   /** Replay a finished run from the journal (the latest one when runId is omitted). */
-  | { type: 'replay_run'; runId?: string };
+  | { type: 'replay_run'; runId?: string }
+  /** Scout's figure failed to build in the webview; a simple marker is shown (the host logs it). No free text. */
+  | { type: 'scout_fallback' };
 
 export type HostToTown =
   | { type: 'scene'; state: SceneState }
@@ -36,6 +38,7 @@ export function parseTownMessage(raw: unknown): TownToHost | undefined {
   const m = raw as { type?: unknown; path?: unknown; runId?: unknown };
   const keys = Object.keys(m).length;
   // The webview is read-only: it may only ask to open a file or replay; nothing else, no extra fields.
+  if (m.type === 'scout_fallback' && keys === 1) return { type: 'scout_fallback' };
   if (m.type === 'replay_run' && keys === 1) {
     return { type: 'replay_run' };
   }

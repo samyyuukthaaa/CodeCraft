@@ -184,7 +184,12 @@ function init3D(): void {
   ground.position.y = -0.32;
   scene3.add(ground, starfield());
 
-  graph = new TownGraph(textures, reducedMotion);
+  graph = new TownGraph(textures, reducedMotion, {
+    log: (msg, err) => {
+      console.error(msg, err);
+      vscode.postMessage({ type: 'scout_fallback' });
+    },
+  });
   scene3.add(graph.root);
   setupControls(renderer.domElement);
   // If the GPU drops the WebGL context (driver reset, too many contexts), fall back to the 2D view.
