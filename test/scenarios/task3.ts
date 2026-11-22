@@ -5,7 +5,8 @@
 // In both, git status must be clean and the editor (here: the extension-host event loop) responsive.
 // The invalid key lives only in a TEST-ONLY provider/agent (see testProvider.ts); real providers are untouched.
 import { classifyError } from '../../src/trueforge/errors';
-import { FALLBACK_AGENT_NAME } from '../../src/trueforge/config';
+import { FALLBACK_AGENT_NAME, validateConfig } from '../../src/trueforge/config';
+import { bannerNamesTakeover, expectedBannerModels } from './banner';
 import { Check, Scenario } from './harness';
 import { task1 } from './task1';
 import { DUMMY_KEY, TEST_AGENT_NAME, TEST_MODEL_REF, ensureTestAgent, ensureTestProvider } from './testProvider';
@@ -37,11 +38,18 @@ export const task3Fallback: Scenario = {
     const sw = run.switches[0];
     const snap = run.atSwitch[0];
     const banner = run.banners[0] ?? '';
+    // the configured fallback (codecraft.fallbackModel); the refused primary is the invalid-key test model standing in for codecraft.primaryModel
+    const expected = expectedBannerModels(validateConfig({}), TEST_MODEL_REF);
     const checks: Check[] = [
       { name: 'exactly one automatic switch, from the invalid-key agent to codecraft-fallback', pass: run.switches.length === 1 && sw?.from === TEST_AGENT_NAME && sw?.to === FALLBACK_AGENT_NAME, detail: run.switches.map((s) => `${s.from} -> ${s.to}`).join(', ') || 'no switch' },
       { name: 'the switch was caused by the rejected key (HTTP 401)', pass: !!sw && classifyError(sw.reason).cls === 'invalid_or_revoked_key' && classifyError(sw.reason).status === 401, detail: sw?.reason.slice(0, 200) ?? '-' },
       { name: 'no user action before the takeover (0 approvals, 0 reviews) and nothing written at that moment', pass: !!snap && snap.approvalsBefore === 0 && snap.reviewsBefore === 0 && snap.changed.length === 0, detail: snap ? `approvals ${snap.approvalsBefore}, reviews ${snap.reviewsBefore}, changed ${snap.changed.join(', ') || 'none'}` : 'no snapshot' },
-      { name: 'banner says in plain words that the primary key was rejected and the fallback took over', pass: banner.startsWith('Provider key rejected: update it in TrueForge Settings.') && banner.includes('(HTTP 401)') && banner.includes('google-gemini/gemini-3-5-flash-lite') && /switched to the fallback model .* automatically/.test(banner), detail: banner || 'no banner' },
+      {
+        // the expected names come from the configuration (the harness runs with the same validateConfig({}))
+        name: `banner says in plain words that the primary key was rejected and the configured fallback (${expected.fallback}) took over`,
+        pass: bannerNamesTakeover(banner, expected) && sw?.toModel === expected.fallback,
+        detail: banner || 'no banner',
+      },
       { name: 'TASKS.md: the second configured model took over (run finished on codecraft-fallback)', pass: run.outcome.status === 'done' && run.finalAgent === FALLBACK_AGENT_NAME, detail: `${run.outcome.status} on ${run.finalAgent}` },
       { name: 'the fallback did the work: it proposed a change to src/flask/helpers.py (rejected by the scripted user)', pass: run.review.some((r) => r.groups.some((g) => g.includes('src/flask/helpers.py'))), detail: run.review.map((r) => r.groups.join(' | ')).join(' || ') || 'no proposal' },
       ...common(run),
