@@ -8,6 +8,8 @@
 //        [--motion auto|on|off] [--size 1400,900]
 // --patrol: no run at all, Scout patrols the idle town for --seconds; samples every 30 s, plus the JS heap after a
 //           forced garbage collection at the start and at the end (a leak shows up as growth there).
+// --ask (with --patrol): keeps Scout's Ask Scout bubble open the whole time: a question every 15 s (cycling, each
+//           one replaces the bubble) and Show more pressed on every second one.
 import * as cp from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -90,6 +92,7 @@ async function main(): Promise<void> {
   const rec = (JSON.parse(fs.readFileSync(recPath, 'utf8')) as Record[])[0]!;
   const seconds = Number(arg('seconds', '60'));
   const patrol = process.argv.includes('--patrol');
+  const askOpen = patrol && process.argv.includes('--ask');
   const dir = path.resolve('out/town-perf');
   fs.mkdirSync(dir, { recursive: true });
   const index = await new IndexService(path.resolve('fixtures/flask'), undefined).get();
@@ -112,12 +115,20 @@ window.addEventListener('load', () => {
   const sample = (phase) => { const s = window.__townStats(); const now = performance.now();
     window.__perf.push({ t: Math.round((now - t0) / 1000), phase, events: i, fps: Math.round(((s.frames - lastFrames) / ((now - lastT) / 1000)) * 10) / 10,
       heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 104857.6) / 10 : -1, geometries: s.geometries, textures: s.textures,
-      drawCalls: s.drawCalls, rebuilds: s.graph && s.graph.rebuilds, incremental: s.graph && s.graph.incremental, rendered: s.renderedFrames, listeners: s.listeners, scoutAt: s.scout && s.scout.at, scoutWalking: s.scout && s.scout.animating });
+      drawCalls: s.drawCalls, rebuilds: s.graph && s.graph.rebuilds, incremental: s.graph && s.graph.incremental, rendered: s.renderedFrames, listeners: s.listeners, scoutAt: s.scout && s.scout.at, scoutWalking: s.scout && s.scout.animating, bubbleOpen: s.talk && s.talk.open, scoutHeld: s.talk && s.talk.held });
     lastFrames = s.frames; lastT = now; };
   setTimeout(() => sample('idle (before the run)'), 4000);
+  if (${askOpen}) {
+    const qs = ['What do the building colours mean?', 'How do I stop a run?', 'How does failover work?', 'How do I undo a change?'];
+    let k = 0;
+    const askNext = () => { const t = document.getElementById('ask-toggle'); if (t.getAttribute('aria-expanded') !== 'true') t.click();
+      document.getElementById('ask-input').value = qs[k % qs.length]; document.getElementById('ask-form').requestSubmit();
+      if (k % 2 === 1) setTimeout(() => document.getElementById('talk-more').click(), 500); k++; };
+    setTimeout(() => { askNext(); setInterval(askNext, 15000); }, 4500);
+  }
   setTimeout(() => {
     const iv = setInterval(() => { if (i < evs.length) window.postMessage({ type: 'event', event: evs[i++] }, '*'); else clearInterval(iv); }, ${interval});
-    const sv = setInterval(() => sample(${patrol} ? 'Scout patrolling' : i < evs.length ? 'task2 streaming' : 'after the run'), ${every});
+    const sv = setInterval(() => sample(${askOpen} ? 'bubble open' : ${patrol} ? 'Scout patrolling' : i < evs.length ? 'task2 streaming' : 'after the run'), ${every});
     setTimeout(() => { clearInterval(sv); sample(${patrol} ? 'Scout patrolling (end)' : 'after the run'); document.title = 'PERF DONE'; }, ${seconds * 1000 + (patrol ? 0 : 10000)});
   }, 5000);
 });`,
@@ -182,7 +193,7 @@ window.addEventListener('load', () => {
       returnByValue: true,
     })).result?.value;
     c.close();
-    console.log(JSON.stringify({ record: path.basename(recPath), recordedDurationS: Math.round(rec.durationMs / 1000), streamedOverS: seconds, events: events.length, buildings: files.length, gpu, renderer, motion: arg('motion', 'off'), ...(patrol ? { mode: 'scout patrol, no run', heapAfterGcStartMB, heapAfterGcEndMB } : {}), samples: JSON.parse(String(perf ?? '[]')) }, null, 1));
+    console.log(JSON.stringify({ record: path.basename(recPath), recordedDurationS: Math.round(rec.durationMs / 1000), streamedOverS: seconds, events: events.length, buildings: files.length, gpu, renderer, motion: arg('motion', 'off'), ...(patrol ? { mode: askOpen ? 'Ask Scout bubble open (re-asked every 15 s), no run' : 'scout patrol, no run', heapAfterGcStartMB, heapAfterGcEndMB } : {}), samples: JSON.parse(String(perf ?? '[]')) }, null, 1));
   } finally {
     // Ask the browser to close itself first: on Windows the launched msedge.exe hands off to a broker process that
     // is not its child, so killing the process tree alone left the browser (and its renderers) running.

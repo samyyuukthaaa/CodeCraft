@@ -51,6 +51,61 @@ function demoEvents(at0: number): TownEvent[] {
   ];
 }
 
+/**
+ * --talk-check (with --realtime): drives Ask Scout in the real page and prints what it saw: the bubble in 3D (and
+ * Scout held still), Show more, a replacing question, Esc, the patrol resuming, the same bubble in 2D (close
+ * button), and mute (answer only in the panel). Screenshots: <out>-3d.png, <out>-3d-more.png, <out>-2d.png.
+ */
+async function talkCheck(c: { send: (m: string, p?: object) => Promise<{ result?: { value?: unknown } }> }, outFile: string): Promise<void> {
+  const ev = async (expression: string): Promise<unknown> => (await c.send('Runtime.evaluate', { expression, returnByValue: true })).result?.value;
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const stats = async (): Promise<{ talk: Record<string, unknown>; scout?: { at: number[] } }> => JSON.parse(String(await ev('JSON.stringify(window.__townStats())')));
+  const shot = async (suffix: string): Promise<string> => {
+    const file = outFile.replace(/.png$/, `-${suffix}.png`);
+    const s = (await c.send('Page.captureScreenshot', { format: 'png' })) as unknown as { data?: string };
+    if (s.data) fs.writeFileSync(file, Buffer.from(s.data, 'base64'));
+    return path.basename(file);
+  };
+  const ask = (q: string) =>
+    ev(`(() => { const t = document.getElementById('ask-toggle'); if (t.getAttribute('aria-expanded') !== 'true') t.click(); document.getElementById('ask-input').value = ${JSON.stringify(q)}; document.getElementById('ask-form').requestSubmit(); })()`);
+  const box = async () => JSON.parse(String(await ev("JSON.stringify((() => { const b = document.getElementById('scout-talk'); const r = b.getBoundingClientRect(); return { visible: !b.classList.contains('hidden') && r.height > 0, left: Math.round(r.left), top: Math.round(r.top), bottom: Math.round(r.bottom), height: Math.round(r.height), vh: innerHeight, more: !document.getElementById('talk-more').classList.contains('hidden'), text: document.getElementById('talk-text').textContent, kw: document.querySelector('#talk-text .kw')?.textContent, panel: document.getElementById('ask-answer').textContent.length }; })())")));
+  const out: Record<string, unknown> = {};
+  await wait(6000); // the patrol is under way
+  const before = (await stats()).scout?.at;
+  await ask('What do the building colours mean?');
+  await wait(1500);
+  const a = (await stats()).scout?.at;
+  await wait(2000);
+  const b = (await stats()).scout?.at;
+  out.ask3d = { ...(await stats()).talk, box: await box(), stoodStill: JSON.stringify(a) === JSON.stringify(b), patrolBefore: before, at: b, shot: await shot('3d') };
+  await ev("document.getElementById('talk-more').click()");
+  await wait(400);
+  out.showMore = { expanded: (await stats()).talk.expanded, box: await box(), shot: await shot('3d-more') };
+  await ask('How do I stop a run?');
+  await wait(600);
+  out.replaced = { question: (await stats()).talk.question, expanded: (await stats()).talk.expanded, open: (await stats()).talk.open };
+  await ev("window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))");
+  await wait(300);
+  const esc = await stats();
+  const atEsc = esc.scout?.at;
+  await wait(4000);
+  out.escape = { open: esc.talk.open, held: esc.talk.held, talking: esc.talk.talking, walksAgain: JSON.stringify((await stats()).scout?.at) !== JSON.stringify(atEsc) };
+  await ev("document.getElementById('btn-toggle-view').click()");
+  await wait(500);
+  await ask('What do the building colours mean?');
+  await wait(600);
+  out.ask2d = { ...(await stats()).talk, box: await box(), shot: await shot('2d') };
+  await ev("document.getElementById('talk-close').click()");
+  await wait(300);
+  out.close2d = { open: (await stats()).talk.open, held: (await stats()).talk.held };
+  await ev("window.postMessage({ type: 'settings', reducedMotion: 'off', scout: 'muted', askCamera: true }, '*')");
+  await wait(300);
+  await ask('How can I undo that?');
+  await wait(500);
+  out.muted = { open: (await stats()).talk.open, held: (await stats()).talk.held, bubbleVisible: (await box()).visible, panelChars: (await box()).panel };
+  console.log(JSON.stringify(out, null, 1));
+}
+
 async function main(): Promise<void> {
   const root = path.resolve(arg('root', 'fixtures/flask'));
   const outFile = path.resolve(arg('out', 'out/town-preview/shot.png'));
@@ -135,6 +190,11 @@ window.addEventListener('load', () => {
         // --click <id>: press a panel button 1.5 s after load (e.g. btn-find-scout)
         await new Promise((r) => setTimeout(r, 1500));
         await c.send('Runtime.evaluate', { expression: `document.getElementById(${JSON.stringify(arg('click'))})?.click()` });
+      }
+      if (has('talk-check')) {
+        await talkCheck(c, outFile);
+        c.close();
+        return;
       }
       await new Promise((r) => setTimeout(r, Number(arg('realtime')) * 1000));
       const stats = (await c.send('Runtime.evaluate', { expression: 'JSON.stringify(window.__townStats && window.__townStats())', returnByValue: true })).result?.value;
