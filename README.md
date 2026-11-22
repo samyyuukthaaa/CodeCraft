@@ -3,7 +3,7 @@
 CodeCraft is a VS Code extension that puts a TrueForge coding agent inside the editor, with safe, reviewable edits:
 
 - **TrueForge owns the agent loop and every model call.** CodeCraft never calls a model provider and never stores, logs or commits API keys. Keys live only in TrueForge Settings.
-- **CodeCraft is the editor-tool host.** It runs a local MCP server (`codecraft-editor`) that TrueForge calls: `read_file` (paged), `list_files`, `search_text`, `search_symbols`, `list_related`, `propose_write`, `propose_changes`, `run_tests`.
+- **CodeCraft is the editor-tool host.** It runs a local MCP server (`codecraft-editor`) that TrueForge calls: `read_file` (paged), `list_files`, `search_text`, `search_symbols`, `list_related`, `submit_plan`, `propose_write`, `propose_changes`, `run_tests`.
 - **Nothing is written without you.** `propose_write` / `propose_changes` never write by themselves: TrueForge pauses for your approval, then you review a diff and accept or reject whole groups or single hunks. Only accepted hunks are applied, as one undo step, and only if the file is unchanged since the agent read it.
 - **Failover and recovery.** A primary and a fallback agent with identical instructions. Temporary provider errors (rate limit, 503, timeout) are retried with capped backoff; an invalid key fails over at once, with a plain-words banner. Without a fallback you get a clear message ("Provider key rejected ... update it in TrueForge Settings").
 - **Repository context.** A Python / TypeScript / JavaScript index (symbols, imports, related tests), `@file:` and `@symbol:` references, your editor selection, and a token budget that shows what was included and why.
