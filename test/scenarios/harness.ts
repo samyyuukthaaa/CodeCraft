@@ -13,6 +13,7 @@ import { Decision, ReviewRequest, WriteGate } from '../../src/mcp/gate';
 import { NodeReadFs } from '../../src/mcp/nodeFs';
 import { startMcpServer } from '../../src/mcp/server';
 import { Plan, PlanStore, TestResult, createHandlers } from '../../src/mcp/tools';
+import { ReadBudget } from '../../src/mcp/budget';
 import { agentsApi, cancelSession, createClient, createSession, describeError, ensureAgents, registerEditorServer, sessionDriver } from '../../src/trueforge/client';
 import type { TrueForge } from '@truefoundry/trueforge-sdk';
 import { CodeCraftConfig, FALLBACK_AGENT_NAME, PRIMARY_AGENT_NAME, validateConfig } from '../../src/trueforge/config';
@@ -194,6 +195,7 @@ export async function runScenario(s: Scenario, runNo: number, log: (l: string) =
     tests,
     index,
     plan: planStore,
+    budget: new ReadBudget(), // per run, as in the extension
     onPlan: (p) => {
       plans.push({ plan: p, reviewsBefore: review.length });
       log(`PLAN: ${p.summary} | ${p.files.map((f) => `${f.action} ${f.path} (${f.why})`).join(' | ')}`);

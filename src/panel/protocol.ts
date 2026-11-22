@@ -1,6 +1,7 @@
 // Messages between the webview (untrusted) and the extension host. The host validates every
 // incoming message; the webview only ever receives sanitized DisplayEvent records.
 import type { ContextReport } from '../index/context';
+import type { BudgetView } from '../mcp/budget';
 import type { Plan } from '../mcp/tools';
 import type { DisplayEvent } from '../trueforge/events';
 import type { HealthRow } from '../trueforge/health';
@@ -49,6 +50,8 @@ export type HostToWebview =
   | { type: 'status'; state: 'idle' | 'running'; note?: string }
   | { type: 'context'; report: ContextReport }
   | { type: 'reads'; read: number; total: number; paths: string[] }
+  /** The per-run read budget of the editor tools (calls used of the limit, identical repeats answered from cache). */
+  | { type: 'budget'; budget: BudgetView }
   | { type: 'plan'; plan: Plan }
   | { type: 'health'; rows: HealthRow[]; note?: string }
   | { type: 'warn'; files: string[]; tests: string[] }
