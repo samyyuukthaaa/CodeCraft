@@ -6,6 +6,8 @@
 // textures), draw calls, scene-graph rebuilds. No virtual time: these are wall-clock numbers.
 // Usage: node out/scenarios/town-perf.js [--record docs/results/task2-....json] [--seconds 60] [--gpu software|hardware]
 //        [--motion auto|on|off] [--size 1400,900]
+// --patrol: no run at all, Scout patrols the idle town for --seconds; samples every 30 s, plus the JS heap after a
+//           forced garbage collection at the start and at the end (a leak shows up as growth there).
 import * as cp from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -87,6 +89,7 @@ async function main(): Promise<void> {
   const recPath = arg('record') || path.join('docs/results', fs.readdirSync('docs/results').filter((f) => f.startsWith('task2-')).sort().at(-1)!);
   const rec = (JSON.parse(fs.readFileSync(recPath, 'utf8')) as Record[])[0]!;
   const seconds = Number(arg('seconds', '60'));
+  const patrol = process.argv.includes('--patrol');
   const dir = path.resolve('out/town-perf');
   fs.mkdirSync(dir, { recursive: true });
   const index = await new IndexService(path.resolve('fixtures/flask'), undefined).get();
@@ -96,24 +99,26 @@ async function main(): Promise<void> {
   // --bundle: measure another build of the webview (e.g. main's) with the same harness
   fs.copyFileSync(path.resolve(arg('bundle', 'out/codetown.js')), path.join(dir, 'codetown.js'));
   const interval = (seconds * 1000) / events.length;
+  const streamed = patrol ? [] : events;
+  const every = patrol ? 30000 : 5000;
   fs.writeFileSync(
     path.join(dir, 'stub.js'),
     `window.acquireVsCodeApi = () => ({ postMessage: () => {} });
 window.__perf = [];
 window.addEventListener('load', () => {
   window.postMessage({ type: 'scene', state: ${JSON.stringify(state)} }, '*');
-  const evs = ${JSON.stringify(events)}; let i = 0;
+  const evs = ${JSON.stringify(streamed)}; let i = 0;
   const t0 = performance.now(); let lastFrames = 0, lastT = t0;
   const sample = (phase) => { const s = window.__townStats(); const now = performance.now();
     window.__perf.push({ t: Math.round((now - t0) / 1000), phase, events: i, fps: Math.round(((s.frames - lastFrames) / ((now - lastT) / 1000)) * 10) / 10,
       heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 104857.6) / 10 : -1, geometries: s.geometries, textures: s.textures,
-      drawCalls: s.drawCalls, rebuilds: s.graph && s.graph.rebuilds, incremental: s.graph && s.graph.incremental, rendered: s.renderedFrames, listeners: s.listeners });
+      drawCalls: s.drawCalls, rebuilds: s.graph && s.graph.rebuilds, incremental: s.graph && s.graph.incremental, rendered: s.renderedFrames, listeners: s.listeners, scoutAt: s.scout && s.scout.at, scoutWalking: s.scout && s.scout.animating });
     lastFrames = s.frames; lastT = now; };
   setTimeout(() => sample('idle (before the run)'), 4000);
   setTimeout(() => {
     const iv = setInterval(() => { if (i < evs.length) window.postMessage({ type: 'event', event: evs[i++] }, '*'); else clearInterval(iv); }, ${interval});
-    const sv = setInterval(() => sample(i < evs.length ? 'task2 streaming' : 'after the run'), 5000);
-    setTimeout(() => { clearInterval(sv); sample('after the run'); document.title = 'PERF DONE'; }, ${seconds * 1000 + 10000});
+    const sv = setInterval(() => sample(${patrol} ? 'Scout patrolling' : i < evs.length ? 'task2 streaming' : 'after the run'), ${every});
+    setTimeout(() => { clearInterval(sv); sample(${patrol} ? 'Scout patrolling (end)' : 'after the run'); document.title = 'PERF DONE'; }, ${seconds * 1000 + (patrol ? 0 : 10000)});
   }, 5000);
 });`,
   );
@@ -153,6 +158,17 @@ window.addEventListener('load', () => {
     }
     if (!ws) throw new Error('the browser did not open a debugging port');
     const c = await cdp(ws);
+    // heap after a forced GC (patrol mode): once the town is up, and again at the end
+    const gcHeap = async (): Promise<number> => {
+      await c.send('HeapProfiler.collectGarbage', {});
+      const v = (await c.send('Runtime.evaluate', { expression: 'performance.memory.usedJSHeapSize', returnByValue: true })).result?.value;
+      return Math.round(Number(v) / 104857.6) / 10;
+    };
+    let heapAfterGcStartMB: number | undefined;
+    if (patrol) {
+      await new Promise((r) => setTimeout(r, 6000));
+      heapAfterGcStartMB = await gcHeap();
+    }
     const deadline = Date.now() + (seconds + 40) * 1000;
     let title = '';
     while (Date.now() < deadline && title !== 'PERF DONE') {
@@ -160,12 +176,13 @@ window.addEventListener('load', () => {
       title = String((await c.send('Runtime.evaluate', { expression: 'document.title', returnByValue: true })).result?.value ?? '');
     }
     const perf = (await c.send('Runtime.evaluate', { expression: 'JSON.stringify(window.__perf)', returnByValue: true })).result?.value;
+    const heapAfterGcEndMB = patrol ? await gcHeap() : undefined;
     const renderer = (await c.send('Runtime.evaluate', {
       expression: "(() => { const g = document.querySelector('canvas')?.getContext('webgl2'); const d = g && g.getExtension('WEBGL_debug_renderer_info'); return d ? g.getParameter(d.UNMASKED_RENDERER_WEBGL) : 'unknown'; })()",
       returnByValue: true,
     })).result?.value;
     c.close();
-    console.log(JSON.stringify({ record: path.basename(recPath), recordedDurationS: Math.round(rec.durationMs / 1000), streamedOverS: seconds, events: events.length, buildings: files.length, gpu, renderer, motion: arg('motion', 'off'), samples: JSON.parse(String(perf ?? '[]')) }, null, 1));
+    console.log(JSON.stringify({ record: path.basename(recPath), recordedDurationS: Math.round(rec.durationMs / 1000), streamedOverS: seconds, events: events.length, buildings: files.length, gpu, renderer, motion: arg('motion', 'off'), ...(patrol ? { mode: 'scout patrol, no run', heapAfterGcStartMB, heapAfterGcEndMB } : {}), samples: JSON.parse(String(perf ?? '[]')) }, null, 1));
   } finally {
     // Ask the browser to close itself first: on Windows the launched msedge.exe hands off to a broker process that
     // is not its child, so killing the process tree alone left the browser (and its renderers) running.

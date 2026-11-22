@@ -9,7 +9,7 @@ import { crossesDistrict, frontOf, patrolStops, plaza, route, rowsOf } from '../
 import { foldEvents, initialSceneState, sceneReducer } from '../src/town/reducer';
 import type { SceneState, TownFileInput } from '../src/town/types';
 import { TextureFactory, TownGraph } from '../src/webview/town/graph';
-import { SCOUT_SCALE } from '../src/webview/town/scout3d';
+import { SCOUT_SCALE, buildScoutGeometry } from '../src/webview/town/scout3d';
 import { parseTownMessage } from '../src/town/protocol';
 
 const FILES: TownFileInput[] = Array.from({ length: 60 }, (_, i) => ({ path: `pkg/d${i % 6}/f${String(i).padStart(3, '0')}.py`, lines: 20 + ((i * 37) % 400) }));
@@ -157,4 +157,31 @@ test('mesh failure: an error is logged and a visible fallback marker with the na
 test('mesh failure reaches the CodeCraft output: the webview may send only a bare scout_fallback message', () => {
   assert.deepEqual(parseTownMessage({ type: 'scout_fallback' }), { type: 'scout_fallback' });
   assert.equal(parseTownMessage({ type: 'scout_fallback', text: 'anything' }), undefined, 'no free text from the webview');
+});
+
+test('performance: Scout is one low-poly mesh; a simulated 5-minute patrol keeps every resource bounded', () => {
+  const geo = buildScoutGeometry();
+  const tris = (geo.index ? geo.index.count : geo.getAttribute('position').count) / 3;
+  assert.ok(tris < 1500, `low-poly (${tris} triangles)`);
+  geo.dispose();
+  const g = new TownGraph(tex);
+  g.sync(init());
+  const figures = new Set<THREE.BufferGeometry>();
+  scoutOf(g).traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) figures.add((o as THREE.Mesh).geometry);
+  });
+  assert.equal(figures.size, 1, 'one geometry (the rim light reuses it)');
+  g.tick(0);
+  const owned = g.stats().owned;
+  const children = scoutOf(g).children.length;
+  const seen = new Set<string>();
+  for (let t = 0; t <= 300; t += 1 / 30) {
+    g.tick(t);
+    const p = scoutOf(g).position;
+    seen.add(`${Math.round(p.x / 4)},${Math.round(p.z / 4)}`);
+  }
+  assert.ok(seen.size > 20, `he really patrols (${seen.size} street cells visited)`);
+  assert.equal(g.stats().owned, owned, 'no growth in owned resources (old bubbles are disposed)');
+  assert.equal(scoutOf(g).children.length, children, 'no growth in his children');
+  g.dispose();
 });

@@ -31,22 +31,22 @@ const at = (x: number, y: number, z: number, sx = 1, sy = 1, sz = 1): THREE.Matr
 /** All of Scout in one geometry (local height ≈1.33; feet at y = 0, facing +z). */
 export function buildScoutGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [
-    part(new RoundedBoxGeometry(1.1, 1.0, 0.95, 3, 0.32), '#fff1d6', at(0, 0.62, 0)), // body
-    part(new RoundedBoxGeometry(0.3, 0.16, 0.36, 2, 0.07), '#e8c9a0', at(-0.25, 0.08, 0.06)), // feet
-    part(new RoundedBoxGeometry(0.3, 0.16, 0.36, 2, 0.07), '#e8c9a0', at(0.25, 0.08, 0.06)),
-    part(new THREE.CylinderGeometry(0.36, 0.44, 0.22, 16), '#e4572e', at(0, 1.2, 0)), // cap
-    part(new THREE.CylinderGeometry(0.3, 0.3, 0.05, 16), '#c2410c', at(0, 1.11, 0.28)), // brim
-    part(new THREE.TorusGeometry(0.5, 0.09, 8, 20).rotateX(Math.PI / 2), '#f59e0b', at(0, 0.27, 0)), // scarf
+    part(new RoundedBoxGeometry(1.1, 1.0, 0.95, 2, 0.32), '#fff1d6', at(0, 0.62, 0)), // body
+    part(new RoundedBoxGeometry(0.3, 0.16, 0.36, 1, 0.07), '#e8c9a0', at(-0.25, 0.08, 0.06)), // feet
+    part(new RoundedBoxGeometry(0.3, 0.16, 0.36, 1, 0.07), '#e8c9a0', at(0.25, 0.08, 0.06)),
+    part(new THREE.CylinderGeometry(0.36, 0.44, 0.22, 12), '#e4572e', at(0, 1.2, 0)), // cap
+    part(new THREE.CylinderGeometry(0.3, 0.3, 0.05, 12), '#c2410c', at(0, 1.11, 0.28)), // brim
+    part(new THREE.TorusGeometry(0.5, 0.09, 6, 14).rotateX(Math.PI / 2), '#f59e0b', at(0, 0.27, 0)), // scarf
     part(new THREE.CylinderGeometry(0.03, 0.03, 0.7, 6), '#7c5a3a', at(0.72, 0.65, 0.15)), // lantern stick
-    part(new RoundedBoxGeometry(0.26, 0.32, 0.26, 2, 0.06), '#5b3a29', at(0.72, 0.24, 0.15)), // lantern
-    part(new THREE.SphereGeometry(0.11, 10, 8), '#fff3b0', at(0.72, 0.24, 0.15)), // flame
+    part(new RoundedBoxGeometry(0.26, 0.32, 0.26, 1, 0.06), '#5b3a29', at(0.72, 0.24, 0.15)), // lantern
+    part(new THREE.SphereGeometry(0.11, 8, 6), '#fff3b0', at(0.72, 0.24, 0.15)), // flame
   ];
   for (const x of [-0.24, 0.24]) {
-    parts.push(part(new THREE.SphereGeometry(0.19, 14, 10), '#ffffff', at(x, 0.78, 0.43))); // big eyes
-    parts.push(part(new THREE.SphereGeometry(0.1, 10, 8), '#1e1b2e', at(x, 0.76, 0.58))); // pupils
-    parts.push(part(new THREE.SphereGeometry(0.035, 6, 4), '#ffffff', at(x + 0.04, 0.81, 0.66))); // shine
+    parts.push(part(new THREE.SphereGeometry(0.19, 9, 6), '#ffffff', at(x, 0.78, 0.43))); // big eyes
+    parts.push(part(new THREE.SphereGeometry(0.1, 7, 5), '#1e1b2e', at(x, 0.76, 0.58))); // pupils
+    parts.push(part(new THREE.SphereGeometry(0.035, 5, 3), '#ffffff', at(x + 0.04, 0.81, 0.66))); // shine
   }
-  for (const x of [-0.4, 0.4]) parts.push(part(new THREE.SphereGeometry(0.07, 8, 6), '#ff9eb5', at(x, 0.6, 0.44, 1, 0.6, 0.4))); // cheeks
+  for (const x of [-0.4, 0.4]) parts.push(part(new THREE.SphereGeometry(0.07, 6, 4), '#ff9eb5', at(x, 0.6, 0.44, 1, 0.6, 0.4))); // cheeks
   const g = mergeGeometries(parts, false);
   for (const p of parts) p.dispose();
   if (!g) throw new Error('could not merge Scout geometry');
