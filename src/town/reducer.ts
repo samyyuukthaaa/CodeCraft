@@ -12,6 +12,7 @@ import {
   TownFileInput,
 } from './types';
 import { AGGREGATE_THRESHOLD, computeRoads, districtOf, kindOf } from './grammar';
+import { SCOUT_HOME, scoutAfter } from './scout';
 
 export const MIN_BUILDING_HEIGHT = 1;
 export const MAX_BUILDING_HEIGHT = 20;
@@ -37,7 +38,7 @@ export function createEmptyStats(): SceneStats {
 }
 
 export function initialSceneState(): SceneState {
-  return { districts: {}, buildings: {}, activeBuildingId: undefined, totalBuildings: 0, stats: createEmptyStats(), power: { status: 'healthy' }, roads: [], aggregated: false, journey: [], version: 0 };
+  return { districts: {}, buildings: {}, activeBuildingId: undefined, totalBuildings: 0, stats: createEmptyStats(), power: { status: 'healthy' }, roads: [], aggregated: false, journey: [], scout: SCOUT_HOME, running: false, version: 0 };
 }
 
 function calculateStats(buildings: Record<string, Building>): SceneStats {
@@ -156,6 +157,8 @@ function step(state: SceneState, event: TownEvent): SceneState {
   switch (event.type) {
     case 'init':
       return { ...initSceneFromFiles(event.files), power: state.power };
+    case 'scout_navigate':
+      return state; // Scout only (below): a click is not an agent action
     case 'reset':
     case 'run_started': {
       const idle = STATE_VISUALS.idle;
@@ -165,11 +168,11 @@ function step(state: SceneState, event: TownEvent): SceneState {
         buildings[id] = { ...rest, state: 'idle', testStatus: 'unknown', color: idle.color, icon: idle.icon, label: idle.label };
       }
       const base = { ...state, buildings, activeBuildingId: undefined, stats: calculateStats(buildings), tests: undefined, journey: [] };
-      if (event.type === 'reset') return { ...base, power: { status: 'healthy', ...(state.power.model ? { model: state.power.model } : {}) } };
-      return { ...base, runId: event.runId, power: { status: 'healthy', ...(state.power.model ? { model: state.power.model } : {}), at: event.at } };
+      if (event.type === 'reset') return { ...base, running: false, power: { status: 'healthy', ...(state.power.model ? { model: state.power.model } : {}) } };
+      return { ...base, running: true, runId: event.runId, power: { status: 'healthy', ...(state.power.model ? { model: state.power.model } : {}), at: event.at } };
     }
     case 'run_finished':
-      return state;
+      return { ...state, running: false };
     case 'file_planned': {
       const b = state.buildings[normalizePath(event.path)];
       const detail = `planned to ${event.action}${event.why ? `: ${event.why}` : ''}`;
@@ -240,7 +243,8 @@ function step(state: SceneState, event: TownEvent): SceneState {
 }
 
 export function sceneReducer(state: SceneState, event: TownEvent): SceneState {
-  return { ...step(state, event), lastEvent: event, version: state.version + 1 };
+  const next = step(state, event);
+  return { ...next, scout: scoutAfter(state.scout, next, event), lastEvent: event, version: state.version + 1 };
 }
 
 /** Folds events into a scene (used for reloads and replay). */

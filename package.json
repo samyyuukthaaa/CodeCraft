@@ -87,6 +87,18 @@
           "maximum": 65535,
           "description": "Loopback port for the CodeCraft editor-tools MCP server that TrueForge calls. If it is in use, a random free port is used."
         },
+        "codecraft.scout": {
+          "type": "string",
+          "default": "on",
+          "enum": ["on", "muted"],
+          "enumDescriptions": ["Scout walks to what the agent is doing and shows short tips", "Hide Scout, its speech bubble and its tips (Ask Scout still answers when you ask)"],
+          "description": "Scout, the Code Town guide. It never edits files, runs tasks or calls a model."
+        },
+        "codecraft.scoutAskCamera": {
+          "type": "boolean",
+          "default": true,
+          "description": "When you ask Scout a question, the Code Town camera eases over to frame him (never with reduced motion)."
+        },
         "codecraft.townReducedMotion": {
           "type": "string",
           "default": "auto",

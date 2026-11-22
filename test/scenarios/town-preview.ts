@@ -12,6 +12,7 @@ import { townEventsFromJournal } from '../../src/town/fromJournal';
 import { buildTownHtml } from '../../src/town/html';
 import { foldEvents, initialSceneState, sceneReducer } from '../../src/town/reducer';
 import type { TownEvent } from '../../src/town/types';
+import { cdp } from './town-perf';
 
 const arg = (name: string, def = ''): string => {
   const i = process.argv.indexOf(`--${name}`);
@@ -50,6 +51,64 @@ function demoEvents(at0: number): TownEvent[] {
   ];
 }
 
+/**
+ * --talk-check (with --realtime): drives Ask Scout in the real page and prints what it saw: the bubble in 3D (and
+ * Scout held still), Show more, a replacing question, Esc, the patrol resuming, the same bubble in 2D (close
+ * button), and mute (answer only in the panel). Screenshots: <out>-3d.png, <out>-3d-more.png, <out>-2d.png.
+ */
+async function talkCheck(c: { send: (m: string, p?: object) => Promise<{ result?: { value?: unknown } }> }, outFile: string): Promise<void> {
+  const ev = async (expression: string): Promise<unknown> => (await c.send('Runtime.evaluate', { expression, returnByValue: true })).result?.value;
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const stats = async (): Promise<{ talk: Record<string, unknown>; scout?: { at: number[] } }> => JSON.parse(String(await ev('JSON.stringify(window.__townStats())')));
+  const shot = async (suffix: string): Promise<string> => {
+    const file = outFile.replace(/.png$/, `-${suffix}.png`);
+    const s = (await c.send('Page.captureScreenshot', { format: 'png' })) as unknown as { data?: string };
+    if (s.data) fs.writeFileSync(file, Buffer.from(s.data, 'base64'));
+    return path.basename(file);
+  };
+  const ask = (q: string) =>
+    ev(`(() => { const t = document.getElementById('ask-toggle'); if (t.getAttribute('aria-expanded') !== 'true') t.click(); document.getElementById('ask-input').value = ${JSON.stringify(q)}; document.getElementById('ask-form').requestSubmit(); })()`);
+  const box = async () => JSON.parse(String(await ev("JSON.stringify((() => { const b = document.getElementById('scout-talk'); const r = b.getBoundingClientRect(); return { visible: !b.classList.contains('hidden') && r.height > 0, left: Math.round(r.left), top: Math.round(r.top), bottom: Math.round(r.bottom), height: Math.round(r.height), vh: innerHeight, more: !document.getElementById('talk-more').classList.contains('hidden'), text: document.getElementById('talk-text').textContent, kw: document.querySelector('#talk-text .kw')?.textContent, panel: document.getElementById('ask-answer').textContent.length, panelShown: document.getElementById('ask-answer').getBoundingClientRect().width > 2, history: document.querySelectorAll('#ask-history-list li').length }; })())")));
+  const out: Record<string, unknown> = {};
+  await wait(6000); // the patrol is under way
+  const before = (await stats()).scout?.at;
+  await ask('What do the building colours mean?');
+  await wait(1500);
+  const a = (await stats()).scout?.at;
+  await wait(2000);
+  const b = (await stats()).scout?.at;
+  out.ask3d = { ...(await stats()).talk, box: await box(), stoodStill: JSON.stringify(a) === JSON.stringify(b), patrolBefore: before, at: b, shot: await shot('3d') };
+  await ev("document.getElementById('talk-more').click()");
+  await wait(400);
+  out.showMore = { expanded: (await stats()).talk.expanded, box: await box(), shot: await shot('3d-more') };
+  await ask('How do I stop a run?');
+  await wait(600);
+  out.replaced = { question: (await stats()).talk.question, expanded: (await stats()).talk.expanded, open: (await stats()).talk.open };
+  await ev("window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))");
+  await wait(300);
+  const esc = await stats();
+  const atEsc = esc.scout?.at;
+  await wait(4000);
+  out.escape = { open: esc.talk.open, held: esc.talk.held, talking: esc.talk.talking, walksAgain: JSON.stringify((await stats()).scout?.at) !== JSON.stringify(atEsc) };
+  await ev("document.getElementById('btn-toggle-view').click()");
+  await wait(500);
+  await ask('What do the building colours mean?');
+  await wait(600);
+  out.ask2d = { ...(await stats()).talk, box: await box(), shot: await shot('2d') };
+  await ev("document.getElementById('talk-close').click()");
+  await wait(300);
+  out.close2d = { open: (await stats()).talk.open, held: (await stats()).talk.held };
+  await ev("document.getElementById('ask-history').open = true");
+  await wait(200);
+  out.history = { entries: await ev("document.querySelectorAll('#ask-history-list li').length"), shot: await shot('history') };
+  await ev("window.postMessage({ type: 'settings', reducedMotion: 'off', scout: 'muted', askCamera: true }, '*')");
+  await wait(300);
+  await ask('How can I undo that?');
+  await wait(500);
+  out.muted = { open: (await stats()).talk.open, held: (await stats()).talk.held, bubbleVisible: (await box()).visible, panelChars: (await box()).panel };
+  console.log(JSON.stringify(out, null, 1));
+}
+
 async function main(): Promise<void> {
   const root = path.resolve(arg('root', 'fixtures/flask'));
   const outFile = path.resolve(arg('out', 'out/town-preview/shot.png'));
@@ -72,7 +131,7 @@ async function main(): Promise<void> {
   const measure = has('measure');
   fs.writeFileSync(
     path.join(dir, 'stub.js'),
-    `window.acquireVsCodeApi = () => ({ postMessage: (m) => { window.__sent = (window.__sent || []).concat([m]);
+    `window.acquireVsCodeApi = () => ({ getState: () => window.__vsState, setState: (v) => { window.__vsState = v; }, postMessage: (m) => { window.__sent = (window.__sent || []).concat([m]);
   if (m.type === 'replay_run') setTimeout(() => window.postMessage({ type: 'replay', runId: 'ab12ab12ab12ab12', base: window.__base, events: window.__replay }, '*'), 10); } });
 window.__base = ${JSON.stringify(has('replay') ? start : null)};
 window.__replay = ${JSON.stringify(has('replay') ? events : [])};
@@ -83,6 +142,7 @@ window.addEventListener('load', () => {
   ${has('replay') ? `window.postMessage({ type: 'runs', runs: [{ runId: 'ab12ab12ab12ab12', request: 'Add a --env-file option', at: 1700000000000, status: 'done' }] }, '*'); setTimeout(() => document.getElementById('btn-replay').click(), 300);` : ''}
   ${arg('mode') ? `setTimeout(() => document.getElementById('mode-${arg('mode')}').click(), 100);` : ''}
   ${arg('inspect') ? `setTimeout(() => window.postMessage({ type: 'focus', path: ${JSON.stringify(arg('inspect'))} }, '*'), 150);` : ''}
+  ${arg('ask') ? `setTimeout(() => { document.getElementById('ask-toggle').click(); document.getElementById('ask-input').value = ${JSON.stringify(arg('ask'))}; document.getElementById('ask-form').requestSubmit(); }, 250);` : ''}
   const evs = window.__events; let i = 0;
   const step = () => { if (i < evs.length) { window.postMessage({ type: 'event', event: evs[i++] }, '*'); setTimeout(step, ${Number(arg('interval', '60'))}); } };
   setTimeout(step, 200);
@@ -97,7 +157,8 @@ window.addEventListener('load', () => {
   }
 });`,
   );
-  const html = buildTownHtml({ cspSource: 'file:', nonce: 'N', scriptUri: 'codetown.js' }).replace('<script nonce="N" src="codetown.js">', '<script nonce="N" src="stub.js"></script>\n  <script nonce="N" src="codetown.js">');
+  // --motion on|off|auto (default off: headless browsers may report reduced motion)
+  const html = buildTownHtml({ cspSource: 'file:', nonce: 'N', scriptUri: 'codetown.js', reducedMotion: (arg('motion', 'off') as 'on' | 'off' | 'auto'), scout: arg('scout', 'on') === 'muted' ? 'muted' : 'on' }).replace('<script nonce="N" src="codetown.js">', '<script nonce="N" src="stub.js"></script>\n  <script nonce="N" src="codetown.js">');
   const page = path.join(dir, 'index.html');
   fs.writeFileSync(page, html);
 
@@ -110,6 +171,64 @@ window.addEventListener('load', () => {
   const common = ['--headless=new', '--hide-scrollbars', ...gl, '--enable-precise-memory-info', `--window-size=${size}`, '--allow-file-access-from-files', `--user-data-dir=${path.join(dir, 'profile')}`];
   const url = `file:///${page.replace(/\\/g, '/')}`;
   const budget = arg('budget', measure ? String(Number(arg('window', '5000')) + 4000) : '6000');
+  if (arg('realtime')) {
+    // --realtime <seconds>: REAL time (virtual time runs too few animation frames for walks): open the page over
+    // the DevTools protocol, wait, print the stats (incl. Scout), take the screenshot, then close the browser.
+    const port = 9600 + Math.floor(Math.random() * 300);
+    const child = cp.spawn(browser, [...common, `--remote-debugging-port=${port}`, url], { stdio: 'ignore' });
+    try {
+      let ws = '';
+      for (let i = 0; i < 60 && !ws; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        try {
+          const list = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()) as Array<{ type: string; webSocketDebuggerUrl: string }>;
+          ws = list.find((t) => t.type === 'page')?.webSocketDebuggerUrl ?? '';
+        } catch {
+          // not up yet
+        }
+      }
+      if (!ws) throw new Error('the browser did not open a debugging port');
+      const c = await cdp(ws);
+      if (arg('click')) {
+        // --click <id>: press a panel button 1.5 s after load (e.g. btn-find-scout)
+        await new Promise((r) => setTimeout(r, 1500));
+        await c.send('Runtime.evaluate', { expression: `document.getElementById(${JSON.stringify(arg('click'))})?.click()` });
+      }
+      if (has('talk-check')) {
+        await talkCheck(c, outFile);
+        c.close();
+        return;
+      }
+      await new Promise((r) => setTimeout(r, Number(arg('realtime')) * 1000));
+      const stats = (await c.send('Runtime.evaluate', { expression: 'JSON.stringify(window.__townStats && window.__townStats())', returnByValue: true })).result?.value;
+      console.log('stats', String(stats));
+      const shot = (await c.send('Page.captureScreenshot', { format: 'png' })) as unknown as { data?: string };
+      if (shot.data) fs.writeFileSync(outFile, Buffer.from(shot.data, 'base64'));
+      c.close();
+    } finally {
+      try {
+        const v = (await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()) as { webSocketDebuggerUrl?: string };
+        if (v.webSocketDebuggerUrl) void (await cdp(v.webSocketDebuggerUrl)).send('Browser.close');
+      } catch {
+        // closed
+      }
+      if (process.platform === 'win32' && child.pid) {
+        try {
+          cp.execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+        } catch {
+          // gone
+        }
+      }
+    }
+    console.log(`${files.length} files, ${events.length} events -> ${outFile} (real time ${arg('realtime')} s)`);
+    return;
+  }
+  if (has('probe')) {
+    // --probe: print the page's stats (incl. Scout's position) shortly before the time budget ends
+    fs.appendFileSync(path.join(dir, 'stub.js'), `\nwindow.addEventListener('load', () => setTimeout(() => { document.title = 'PROBE ' + JSON.stringify(window.__townStats && window.__townStats()); }, ${Number(budget) - 800}));\n`);
+    const dom = cp.execFileSync(browser, [...common, `--virtual-time-budget=${budget}`, '--dump-dom', url], { encoding: 'utf8', timeout: 180_000 });
+    console.log((/PROBE ([^<]*)/.exec(dom)?.[1] ?? 'no probe').replace(/&quot;/g, '"'));
+  }
   if (measure) {
     const dom = cp.execFileSync(browser, [...common, `--virtual-time-budget=${budget}`, '--run-all-compositor-stages-before-draw', '--dump-dom', url], { encoding: 'utf8', timeout: 180_000 });
     const m = /MEASURE (\{[^<]*\})/.exec(dom);

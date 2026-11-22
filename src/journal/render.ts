@@ -55,6 +55,7 @@ function line(e: JournalEntry): string | undefined {
     case 'report_exported':
       return `- ${time(e.at)} report exported for run ${e.reportRunId}`;
     case 'file_read':
+    case 'scout_navigate':
       return undefined; // shown in Code Town; too frequent for the edit history
     case 'op_proposed':
       return `- ${time(e.at)} proposed: ${e.files.map((f) => `${f.path} [${f.intent}] ${f.hunks} hunk(s)${f.created ? ' (new file)' : ''}`).join('; ')}`;

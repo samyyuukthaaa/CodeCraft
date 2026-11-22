@@ -12,8 +12,8 @@ import { eventsFromRecord } from './scenarios/town-perf';
 
 test('reduced motion: the setting reaches the page (auto by default)', () => {
   const base = { cspSource: 'x', nonce: 'N', scriptUri: 'a.js' };
-  assert.match(buildTownHtml(base), /<body data-reduced-motion="auto">/);
-  assert.match(buildTownHtml({ ...base, reducedMotion: 'on' }), /<body data-reduced-motion="on">/);
+  assert.match(buildTownHtml(base), /<body data-reduced-motion="auto"[ >]/);
+  assert.match(buildTownHtml({ ...base, reducedMotion: 'on' }), /<body data-reduced-motion="on"[ >]/);
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8')) as { contributes: { configuration: { properties: Record<string, { enum?: string[]; default?: string }> } } };
   const s = pkg.contributes.configuration.properties['codecraft.townReducedMotion']!;
   assert.deepEqual([s.enum, s.default], [['auto', 'on', 'off'], 'auto']);

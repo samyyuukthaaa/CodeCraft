@@ -1,0 +1,255 @@
+{
+ "record": "task2-2026-11-21T12-28-18-245Z.json",
+ "recordedDurationS": 542,
+ "streamedOverS": 300,
+ "events": 54,
+ "buildings": 234,
+ "gpu": "hardware",
+ "renderer": "ANGLE (Intel, Intel(R) UHD Graphics (0x0000A7A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+ "motion": "off",
+ "mode": "scout patrol, no run",
+ "heapAfterGcStartMB": 6.3,
+ "heapAfterGcEndMB": 6.4,
+ "samples": [
+  {
+   "t": 4,
+   "phase": "idle (before the run)",
+   "events": 0,
+   "fps": 138.8,
+   "heapMB": 8.2,
+   "geometries": 16,
+   "textures": 54,
+   "drawCalls": 67,
+   "rebuilds": 2,
+   "incremental": 0,
+   "rendered": 556,
+   "listeners": 28,
+   "scoutAt": [
+    4.6,
+    0,
+    4.8
+   ],
+   "scoutWalking": true
+  },
+  {
+   "t": 35,
+   "phase": "Scout patrolling",
+   "events": 0,
+   "fps": 144,
+   "heapMB": 6.7,
+   "geometries": 16,
+   "textures": 54,
+   "drawCalls": 67,
+   "rebuilds": 2,
+   "incremental": 0,
+   "rendered": 5021,
+   "listeners": 28,
+   "scoutAt": [
+    -43,
+    0.1,
+    -37.6
+   ],
+   "scoutWalking": true
+  },
+  {
+   "t": 65,
+   "phase": "Scout patrolling",
+   "events": 0,
+   "fps": 144,
+   "heapMB": 7.1,
+   "geometries": 16,
+   "textures": 54,
+   "drawCalls": 67,
+   "rebuilds": 2,
+   "incremental": 0,
+   "rendered": 9341,
+   "listeners": 28,
+   "scoutAt": [
+    69.2,
+    0,
+    0.2
+   ],
+   "scoutWalking": true
+  },
+  {
+   "t": 95,
+   "phase": "Scout patrolling",
+   "events": 0,
+   "fps": 144,
+   "heapMB": 7.4,
+   "geometries": 16,
+   "textures": 54,
+   "drawCalls": 67,
+   "rebuilds": 2,
+   "incremental": 0,
+   "rendered": 13662,
+   "listeners": 28,
+   "scoutAt": [
+    53.5,
+    0,
+    30.8
+   ],
+   "scoutWalking": true
+  },
+  {
+   "t": 125,
+   "phase": "Scout patrolling",
+   "events": 0,
+   "fps": 144,
+   "heapMB": 6.8,
+   "geometries": 16,
+   "textures": 54,
+   "drawCalls": 67,
+   "rebuilds": 2,
+   "incremental": 0,
+   "rendered": 17982,
+   "listeners": 28,
+   "scoutAt": [
+    28.5,
+    0.1,
+    -37.6
+   ],
+   "scoutWalking": true
+  },
+  {
+   "t": 155,
+   "phase": "Scout patrolling",
+   "events": 0,
+   "fps": 144,
+   "heapMB": 7.3,
+   "geometries": 16,
+   "textures": 54,
+   "drawCalls": 67,
+   "rebuilds": 2,
+   "incremental": 0,
+   "rendered": 22302,
+   "listeners": 28,
+   "scoutAt": [
+    68.5,
+    0.1,
+    30.8
+   ],
+   "scoutWalking": true
+  },
+  {
+   "t": 185,
+   "phase": "Scout patrolling",
+   "events": 0,
+   "fps": 144,
+   "heapMB": 6.6,
+   "geometries": 16,
+   "textures": 54,
+   "drawCalls": 67,
+   "rebuilds": 2,
+   "incremental": 0,
+   "rendered": 26623,
+   "listeners": 28,
+   "scoutAt": [
+    -68.9,
+    0,
+    30.8
+   ],
+   "scoutWalking": true
+  },
+  {
+   "t": 215,
+   "phase": "Scout patrolling",
+   "events": 0,
+   "fps": 144,
+   "heapMB": 6.9,
+   "geometries": 16,
+   "textures": 54,
+   "drawCalls": 67,
+   "rebuilds": 2,
+   "incremental": 0,
+   "rendered": 30944,
+   "listeners": 28,
+   "scoutAt": [
+    -69.2,
+    0,
+    -18
+   ],
+   "scoutWalking": true
+  },
+  {
+   "t": 245,
+   "phase": "Scout patrolling",
+   "events": 0,
+   "fps": 144,
+   "heapMB": 7.3,
+   "geometries": 16,
+   "textures": 54,
+   "drawCalls": 67,
+   "rebuilds": 2,
+   "incremental": 0,
+   "rendered": 35264,
+   "listeners": 28,
+   "scoutAt": [
+    -9.9,
+    0.1,
+    30.8
+   ],
+   "scoutWalking": true
+  },
+  {
+   "t": 275,
+   "phase": "Scout patrolling",
+   "events": 0,
+   "fps": 144,
+   "heapMB": 7.9,
+   "geometries": 16,
+   "textures": 54,
+   "drawCalls": 67,
+   "rebuilds": 2,
+   "incremental": 0,
+   "rendered": 39585,
+   "listeners": 28,
+   "scoutAt": [
+    53.2,
+    0.1,
+    -11.6
+   ],
+   "scoutWalking": true
+  },
+  {
+   "t": 305,
+   "phase": "Scout patrolling",
+   "events": 0,
+   "fps": 144,
+   "heapMB": 6.7,
+   "geometries": 16,
+   "textures": 54,
+   "drawCalls": 67,
+   "rebuilds": 2,
+   "incremental": 0,
+   "rendered": 43905,
+   "listeners": 28,
+   "scoutAt": [
+    -69.2,
+    0.1,
+    -26.6
+   ],
+   "scoutWalking": true
+  },
+  {
+   "t": 305,
+   "phase": "Scout patrolling (end)",
+   "events": 0,
+   "fps": 0,
+   "heapMB": 6.7,
+   "geometries": 16,
+   "textures": 54,
+   "drawCalls": 67,
+   "rebuilds": 2,
+   "incremental": 0,
+   "rendered": 43905,
+   "listeners": 28,
+   "scoutAt": [
+    -69.2,
+    0.1,
+    -26.6
+   ],
+   "scoutWalking": true
+  }
+ ]
+}

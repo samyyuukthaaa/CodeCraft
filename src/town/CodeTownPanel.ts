@@ -13,12 +13,23 @@ function motionSetting(): 'on' | 'off' | 'auto' {
   return v === 'on' || v === 'off' ? v : 'auto';
 }
 
+/** codecraft.scout: 'muted' hides Scout and its tips (Ask Scout stays available on request). */
+function askCameraSetting(): boolean {
+  return vscode.workspace.getConfiguration('codecraft').get<boolean>('scoutAskCamera', true) !== false;
+}
+
+function scoutSetting(): 'on' | 'muted' {
+  return vscode.workspace.getConfiguration('codecraft').get<string>('scout', 'on') === 'muted' ? 'muted' : 'on';
+}
+
 export interface TownSources {
   /** The repository index (layout). */
   loadFiles: () => Promise<TownFileInput[]>;
   /** The append-only journal: the only source of what happened. */
   journal: Journal;
   onOpenFile: (path: string) => Promise<void>;
+  /** Writes a line to the CodeCraft output channel (optional). */
+  log?: (line: string) => void;
 }
 
 /**
@@ -57,9 +68,10 @@ export class CodeTownPanel {
     this.panel = panel;
     const nonce = crypto.randomBytes(16).toString('base64');
     const scriptUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(mediaRoot, 'codetown.js')).toString();
-    panel.webview.html = buildTownHtml({ cspSource: panel.webview.cspSource, nonce, scriptUri, reducedMotion: motionSetting() });
+    panel.webview.html = buildTownHtml({ cspSource: panel.webview.cspSource, nonce, scriptUri, reducedMotion: motionSetting(), scout: scoutSetting(), askCamera: askCameraSetting() });
     const cfg = vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration('codecraft.townReducedMotion')) this.post({ type: 'settings', reducedMotion: motionSetting() });
+      if (e.affectsConfiguration('codecraft.townReducedMotion') || e.affectsConfiguration('codecraft.scout') || e.affectsConfiguration('codecraft.scoutAskCamera'))
+        this.post({ type: 'settings', reducedMotion: motionSetting(), scout: scoutSetting(), askCamera: askCameraSetting() });
     });
     this.disposables.push(() => cfg.dispose());
 
@@ -76,6 +88,17 @@ export class CodeTownPanel {
         } catch {
           void vscode.window.showErrorMessage(`CodeCraft: could not open "${msg.path}"`);
         }
+      } else if (msg.type === 'navigate') {
+        // Only a building that is in the town: journal the click (Scout walks there, replay reproduces it), then open it.
+        if (!this.state.buildings[msg.path]) return;
+        await sources.journal.append({ t: 'scout_navigate', path: msg.path });
+        try {
+          await sources.onOpenFile(msg.path);
+        } catch {
+          void vscode.window.showErrorMessage(`CodeCraft: could not open "${msg.path}"`);
+        }
+      } else if (msg.type === 'scout_fallback') {
+        sources.log?.('[Code Town] Scout figure failed to build in the webview; a simple marker is shown instead.');
       } else if (msg.type === 'replay_run') {
         this.postReplay(msg.runId);
       }

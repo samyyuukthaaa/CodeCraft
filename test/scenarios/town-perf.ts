@@ -6,6 +6,10 @@
 // textures), draw calls, scene-graph rebuilds. No virtual time: these are wall-clock numbers.
 // Usage: node out/scenarios/town-perf.js [--record docs/results/task2-....json] [--seconds 60] [--gpu software|hardware]
 //        [--motion auto|on|off] [--size 1400,900]
+// --patrol: no run at all, Scout patrols the idle town for --seconds; samples every 30 s, plus the JS heap after a
+//           forced garbage collection at the start and at the end (a leak shows up as growth there).
+// --ask (with --patrol): keeps Scout's Ask Scout bubble open the whole time: a question every 15 s (cycling, each
+//           one replaces the bubble) and Show more pressed on every second one.
 import * as cp from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -60,7 +64,7 @@ export function eventsFromRecord(rec: Record, t0: number): TownEvent[] {
   return evs;
 }
 
-async function cdp(wsUrl: string): Promise<{ send: (method: string, params?: object) => Promise<{ result?: { value?: unknown } }>; close: () => void }> {
+export async function cdp(wsUrl: string): Promise<{ send: (method: string, params?: object) => Promise<{ result?: { value?: unknown } }>; close: () => void }> {
   const ws = new WebSocket(wsUrl);
   await new Promise<void>((res, rej) => {
     ws.onopen = () => res();
@@ -87,36 +91,49 @@ async function main(): Promise<void> {
   const recPath = arg('record') || path.join('docs/results', fs.readdirSync('docs/results').filter((f) => f.startsWith('task2-')).sort().at(-1)!);
   const rec = (JSON.parse(fs.readFileSync(recPath, 'utf8')) as Record[])[0]!;
   const seconds = Number(arg('seconds', '60'));
+  const patrol = process.argv.includes('--patrol');
+  const askOpen = patrol && process.argv.includes('--ask');
   const dir = path.resolve('out/town-perf');
   fs.mkdirSync(dir, { recursive: true });
   const index = await new IndexService(path.resolve('fixtures/flask'), undefined).get();
   const files = Object.values(index.files).map((f) => ({ path: f.path, lines: f.lines, size: f.size, language: f.language, isTest: f.isTest, imports: f.imports }));
   const events = eventsFromRecord(rec, Date.parse(rec.startedAt));
   const state = sceneReducer(initialSceneState(), { type: 'init', files, at: 0 });
-  fs.copyFileSync(path.resolve('out/codetown.js'), path.join(dir, 'codetown.js'));
+  // --bundle: measure another build of the webview (e.g. main's) with the same harness
+  fs.copyFileSync(path.resolve(arg('bundle', 'out/codetown.js')), path.join(dir, 'codetown.js'));
   const interval = (seconds * 1000) / events.length;
+  const streamed = patrol ? [] : events;
+  const every = patrol ? 30000 : 5000;
   fs.writeFileSync(
     path.join(dir, 'stub.js'),
     `window.acquireVsCodeApi = () => ({ postMessage: () => {} });
 window.__perf = [];
 window.addEventListener('load', () => {
   window.postMessage({ type: 'scene', state: ${JSON.stringify(state)} }, '*');
-  const evs = ${JSON.stringify(events)}; let i = 0;
+  const evs = ${JSON.stringify(streamed)}; let i = 0;
   const t0 = performance.now(); let lastFrames = 0, lastT = t0;
   const sample = (phase) => { const s = window.__townStats(); const now = performance.now();
     window.__perf.push({ t: Math.round((now - t0) / 1000), phase, events: i, fps: Math.round(((s.frames - lastFrames) / ((now - lastT) / 1000)) * 10) / 10,
       heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 104857.6) / 10 : -1, geometries: s.geometries, textures: s.textures,
-      drawCalls: s.drawCalls, rebuilds: s.graph && s.graph.rebuilds, incremental: s.graph && s.graph.incremental, rendered: s.renderedFrames, listeners: s.listeners });
+      drawCalls: s.drawCalls, rebuilds: s.graph && s.graph.rebuilds, incremental: s.graph && s.graph.incremental, rendered: s.renderedFrames, listeners: s.listeners, scoutAt: s.scout && s.scout.at, scoutWalking: s.scout && s.scout.animating, bubbleOpen: s.talk && s.talk.open, scoutHeld: s.talk && s.talk.held });
     lastFrames = s.frames; lastT = now; };
   setTimeout(() => sample('idle (before the run)'), 4000);
+  if (${askOpen}) {
+    const qs = ['What do the building colours mean?', 'How do I stop a run?', 'How does failover work?', 'How do I undo a change?'];
+    let k = 0;
+    const askNext = () => { const t = document.getElementById('ask-toggle'); if (t.getAttribute('aria-expanded') !== 'true') t.click();
+      document.getElementById('ask-input').value = qs[k % qs.length]; document.getElementById('ask-form').requestSubmit();
+      if (k % 2 === 1) setTimeout(() => document.getElementById('talk-more').click(), 500); k++; };
+    setTimeout(() => { askNext(); setInterval(askNext, 15000); }, 4500);
+  }
   setTimeout(() => {
     const iv = setInterval(() => { if (i < evs.length) window.postMessage({ type: 'event', event: evs[i++] }, '*'); else clearInterval(iv); }, ${interval});
-    const sv = setInterval(() => sample(i < evs.length ? 'task2 streaming' : 'after the run'), 5000);
-    setTimeout(() => { clearInterval(sv); sample('after the run'); document.title = 'PERF DONE'; }, ${seconds * 1000 + 10000});
+    const sv = setInterval(() => sample(${askOpen} ? 'bubble open' : ${patrol} ? 'Scout patrolling' : i < evs.length ? 'task2 streaming' : 'after the run'), ${every});
+    setTimeout(() => { clearInterval(sv); sample(${patrol} ? 'Scout patrolling (end)' : 'after the run'); document.title = 'PERF DONE'; }, ${seconds * 1000 + (patrol ? 0 : 10000)});
   }, 5000);
 });`,
   );
-  const html = buildTownHtml({ cspSource: 'file:', nonce: 'N', scriptUri: 'codetown.js', reducedMotion: (arg('motion', 'off') as 'on' | 'off' | 'auto') }).replace(
+  const html = buildTownHtml({ cspSource: 'file:', nonce: 'N', scriptUri: 'codetown.js', reducedMotion: (arg('motion', 'off') as 'on' | 'off' | 'auto'), scout: arg('scout', 'on') === 'muted' ? 'muted' : 'on' }).replace(
     '<script nonce="N" src="codetown.js">',
     '<script nonce="N" src="stub.js"></script>\n  <script nonce="N" src="codetown.js">',
   );
@@ -152,6 +169,17 @@ window.addEventListener('load', () => {
     }
     if (!ws) throw new Error('the browser did not open a debugging port');
     const c = await cdp(ws);
+    // heap after a forced GC (patrol mode): once the town is up, and again at the end
+    const gcHeap = async (): Promise<number> => {
+      await c.send('HeapProfiler.collectGarbage', {});
+      const v = (await c.send('Runtime.evaluate', { expression: 'performance.memory.usedJSHeapSize', returnByValue: true })).result?.value;
+      return Math.round(Number(v) / 104857.6) / 10;
+    };
+    let heapAfterGcStartMB: number | undefined;
+    if (patrol) {
+      await new Promise((r) => setTimeout(r, 6000));
+      heapAfterGcStartMB = await gcHeap();
+    }
     const deadline = Date.now() + (seconds + 40) * 1000;
     let title = '';
     while (Date.now() < deadline && title !== 'PERF DONE') {
@@ -159,17 +187,40 @@ window.addEventListener('load', () => {
       title = String((await c.send('Runtime.evaluate', { expression: 'document.title', returnByValue: true })).result?.value ?? '');
     }
     const perf = (await c.send('Runtime.evaluate', { expression: 'JSON.stringify(window.__perf)', returnByValue: true })).result?.value;
+    const heapAfterGcEndMB = patrol ? await gcHeap() : undefined;
     const renderer = (await c.send('Runtime.evaluate', {
       expression: "(() => { const g = document.querySelector('canvas')?.getContext('webgl2'); const d = g && g.getExtension('WEBGL_debug_renderer_info'); return d ? g.getParameter(d.UNMASKED_RENDERER_WEBGL) : 'unknown'; })()",
       returnByValue: true,
     })).result?.value;
     c.close();
-    console.log(JSON.stringify({ record: path.basename(recPath), recordedDurationS: Math.round(rec.durationMs / 1000), streamedOverS: seconds, events: events.length, buildings: files.length, gpu, renderer, motion: arg('motion', 'off'), samples: JSON.parse(String(perf ?? '[]')) }, null, 1));
+    console.log(JSON.stringify({ record: path.basename(recPath), recordedDurationS: Math.round(rec.durationMs / 1000), streamedOverS: seconds, events: events.length, buildings: files.length, gpu, renderer, motion: arg('motion', 'off'), ...(patrol ? { mode: askOpen ? 'Ask Scout bubble open (re-asked every 15 s), no run' : 'scout patrol, no run', heapAfterGcStartMB, heapAfterGcEndMB } : {}), samples: JSON.parse(String(perf ?? '[]')) }, null, 1));
   } finally {
-    child.kill();
+    // Ask the browser to close itself first: on Windows the launched msedge.exe hands off to a broker process that
+    // is not its child, so killing the process tree alone left the browser (and its renderers) running.
+    try {
+      const v = (await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()) as { webSocketDebuggerUrl?: string };
+      if (v.webSocketDebuggerUrl) {
+        const b = await cdp(v.webSocketDebuggerUrl);
+        void b.send('Browser.close');
+        await new Promise((r) => setTimeout(r, 1500));
+        b.close();
+      }
+    } catch {
+      // already closed
+    }
+    // Then end the WHOLE browser process tree: killing only the launcher left the renderer processes running (observed:
+    // 165 orphaned headless Edge processes after repeated runs, which skewed every later measurement).
+    if (process.platform === 'win32' && child.pid) {
+      try {
+        cp.execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+      } catch {
+        // already gone
+      }
+    } else child.kill('SIGKILL');
   }
 }
-if (require.main === module)
+// Run only as the town-perf script itself (bundled into other scripts, `require.main === module` would be true there too)
+if (/town-perf\.(js|ts)$/.test(process.argv[1] ?? ''))
   main().catch((e) => {
     console.error('FAILED', e instanceof Error ? e.message : e);
     process.exitCode = 1;

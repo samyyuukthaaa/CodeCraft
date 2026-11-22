@@ -497,6 +497,7 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
           const idx = await h.index.get();
           return Object.values(idx.files).map((f) => ({ path: f.path, lines: f.lines, size: f.size, language: f.language, isTest: f.isTest, imports: f.imports }));
         },
+        log: (line) => out.appendLine(line),
         onOpenFile: async (relPath) => {
           if (!folder) return;
           const doc = await vscode.workspace.openTextDocument(vscode.Uri.joinPath(folder.uri, relPath));

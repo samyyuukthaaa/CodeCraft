@@ -1,6 +1,7 @@
 // Code Town scene model. Pure data: no VS Code, no Three.js. The scene is laid out from the repository index and
 // changed ONLY by town events, which are a projection of the append-only journal (src/town/fromJournal.ts).
 import type { BuildingKind, Road } from './grammar';
+import type { Scout } from './scout';
 
 export type BuildingState = 'idle' | 'planned' | 'read' | 'proposed' | 'applied' | 'rejected' | 'failed' | 'recovered';
 
@@ -14,12 +15,12 @@ export interface StateVisual {
 }
 
 export const STATE_VISUALS: Record<BuildingState, StateVisual> = {
-  idle: { color: '#475569', icon: '◻', label: 'Idle' },
+  idle: { color: '#7f8ea8', icon: '◻', label: 'Idle' },
   planned: { color: '#a78bfa', icon: '☐', label: 'Planned' },
   read: { color: '#0284c7', icon: '👁', label: 'Read' },
   proposed: { color: '#f59e0b', icon: '✏', label: 'Proposed' },
   applied: { color: '#16a34a', icon: '✔', label: 'Applied' },
-  rejected: { color: '#94a3b8', icon: '⊘', label: 'Rejected' },
+  rejected: { color: '#c4a98f', icon: '⊘', label: 'Rejected' },
   failed: { color: '#ef4444', icon: '⚠', label: 'Failed' },
   recovered: { color: '#14b8a6', icon: '↺', label: 'Recovered' },
 };
@@ -115,6 +116,8 @@ export type TownEvent =
   | { type: 'file_failed'; path: string; reason: string; at: number }
   | { type: 'provider'; status: PowerStatus; model?: string; detail?: string; at: number }
   | { type: 'file_note'; path: string; reason: string; plain: string; confidence: string; at: number }
+  /** The user clicked a building or file: Scout walks there (journaled by the host, so replay reproduces it). */
+  | { type: 'scout_navigate'; path: string; at: number }
   | { type: 'reset' };
 
 export type SceneStats = Record<BuildingState, number>;
@@ -132,6 +135,10 @@ export interface SceneState {
   aggregated: boolean;
   /** The run the scene shows. */
   runId?: string;
+  /** True between run_started and run_finished (Scout follows the agent; otherwise he patrols). */
+  running: boolean;
+  /** Scout, the guide: derived only from events (src/town/scout.ts). */
+  scout: Scout;
   /** The path the agent took through the town in this run (Agent Journey mode), in order. */
   journey: JourneyStep[];
   /** Last real test run of the run. */

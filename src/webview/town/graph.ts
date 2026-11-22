@@ -9,10 +9,15 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { diffScenes } from '../../town/diff';
-import { KIND_VISUALS, POWER_VISUALS } from '../../town/grammar';
+import { KIND_VISUALS, LANTERN_COLORS, POWER_VISUALS, REPLAY_RAINBOW, districtColors } from '../../town/grammar';
 import { FOOTPRINT, Layout, layoutScene } from '../../town/layout';
 import type { Building, SceneState } from '../../town/types';
 import { ViewMode, journeyStops } from '../../town/view';
+import type { ScoutPlace } from '../../town/scout';
+import { SCOUT_SCALE, ScoutFigure } from './scout3d';
+import { Confetti } from './confetti';
+import { Pt, frontOf, patrolStops, plantStop, plaza, route } from '../../town/patrol';
+import { DEFAULT_THEME, THEMES, ThemePalette, TownTheme } from '../../town/theme';
 
 export interface CaptionPart {
   text: string;
@@ -24,6 +29,8 @@ export interface CaptionPart {
 export interface TextureFactory {
   caption(parts: CaptionPart[]): { texture: THREE.Texture; aspect: number };
   windows(): THREE.Texture | undefined;
+  /** Soft round glow (Scout's lantern); optional. */
+  glow?(): THREE.Texture | undefined;
 }
 
 const NAVY = new THREE.Color('#0b1430');
@@ -45,11 +52,33 @@ const VERB: Partial<Record<string, string>> = {
 /** Chunky low-poly blocks: 1 to about 7 units tall for 1 to 20 height steps (footprint 2.2). */
 export const buildingHeight = (b: Building): number => 0.9 + b.height * 0.32;
 
-/** Body colour: idle buildings are a dark tint of their kind; any other state shows its state colour. */
-export function bodyColor(b: Building, mode: ViewMode = 'journey'): THREE.Color {
-  if (mode === 'architecture') return new THREE.Color(KIND_VISUALS[b.kind].color).lerp(NAVY, 0.3);
-  return b.state === 'idle' ? new THREE.Color(KIND_VISUALS[b.kind].color).lerp(NAVY, 0.55) : new THREE.Color(b.color);
+/** A district colour in a theme: saturation and lightness boosted, optionally mixed with the theme's dim colour. */
+function tint(hex: string, p: ThemePalette, dimmed: boolean): THREE.Color {
+  const c = new THREE.Color(hex);
+  if (p.saturate || p.lighten) c.offsetHSL(0, p.saturate, p.lighten);
+  return dimmed ? c.lerp(new THREE.Color(p.dim), p.dimAmount) : c;
 }
+
+/**
+ * Body colour: idle buildings wear their district's wall colour (per theme); any other state shows its state
+ * colour, the same in both themes (colour + icon + text).
+ */
+export function bodyColor(b: Building, mode: ViewMode = 'journey', theme: TownTheme = DEFAULT_THEME): THREE.Color {
+  if (mode === 'architecture') return new THREE.Color(KIND_VISUALS[b.kind].color).lerp(NAVY, theme === 'day' ? 0.05 : 0.3);
+  // idle: the district's warm wall colour, dimmed at night so touched buildings (state colours) stand out
+  return b.state === 'idle' ? tint(districtColors(b.district).wall, THEMES[theme], true) : new THREE.Color(b.color);
+}
+
+/** Roof colour: the district's rooftop colour, more saturated by day (kind colour in Architecture mode). */
+export function roofColor(b: Building, mode: ViewMode = 'journey', theme: TownTheme = DEFAULT_THEME): THREE.Color {
+  return mode === 'architecture' ? new THREE.Color(KIND_VISUALS[b.kind].color).lerp(NAVY, theme === 'day' ? 0.2 : 0.55) : tint(districtColors(b.district).roof, THEMES[theme], false);
+}
+
+/** Buildings that earn festival lanterns: an applied change, or a test that passes again. */
+export const celebrates = (b: Building): boolean => b.state === 'applied' || b.state === 'recovered';
+export const LANTERNS_PER_BUILDING = 5;
+/** String light spacing along roads, and the bulbs per garland over each district's front edge. */
+export const BULB_SPACING = 1.6;
 
 export interface GraphStats {
   rebuilds: number;
@@ -70,6 +99,11 @@ export class TownGraph {
   // shared, created once
   private readonly boxGeo = this.own(new RoundedBoxGeometry(FOOTPRINT, 1, FOOTPRINT, 2, 0.22).translate(0, 0.5, 0));
   private readonly beaconGeo = this.own(new THREE.OctahedronGeometry(0.42, 0));
+  // plain boxes: rooftops are thin, and rounded caps cost many vertices for no visible gain (software rendering)
+  private readonly roofGeo = this.own(new THREE.BoxGeometry(FOOTPRINT + 0.25, 0.3, FOOTPRINT + 0.25));
+  private readonly lanternGeo = this.own(new THREE.SphereGeometry(0.34, 10, 8));
+  private readonly roofMat = this.own(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 }));
+  private readonly lanternMat = this.own(new THREE.MeshBasicMaterial({ color: 0xffffff }));
   private readonly slabGeo = this.own(new RoundedBoxGeometry(1, 0.3, 1, 2, 0.12).translate(0, -0.15, 0));
   private readonly bodyMat: THREE.MeshStandardMaterial;
   private readonly beaconMat = this.own(new THREE.MeshBasicMaterial({ color: 0xffffff }));
@@ -78,6 +112,11 @@ export class TownGraph {
   // per build
   private buildings: THREE.InstancedMesh | undefined;
   private beacons: THREE.InstancedMesh | undefined;
+  private roofs: THREE.InstancedMesh | undefined;
+  private lanterns: THREE.InstancedMesh | undefined;
+  private replay = false;
+  /** Lantern pool: only celebrating buildings hold a slot, and only used slots are drawn. */
+  private readonly lanternSlots = new Map<string, number>();
   private porch: THREE.Points | undefined;
   private stringLights: THREE.Points | undefined;
   private readonly idByIndex: string[] = [];
@@ -93,6 +132,27 @@ export class TownGraph {
   private selectRing: THREE.Mesh | undefined;
   private selected: string | undefined;
   private mode: ViewMode = 'journey';
+  private theme: TownTheme = DEFAULT_THEME;
+  // Scout: created once, survives rebuilds
+  private readonly scout: ScoutFigure;
+  private scoutBubble: THREE.Sprite | undefined;
+  private scoutMove = -1;
+  private scoutVisible = true;
+  // Scout's director: reducer moves (agent, clicks) and the renderer-only seeded patrol
+  private anchor: Pt | undefined; // the street point Scout belongs to right now
+  private onRoof: string | undefined; // the building whose roof he stands on, if any
+  private stops: string[] = [];
+  private stopIndex = 0;
+  private patrolling = false;
+  private pauseUntil = 0;
+  private nameTag: THREE.Sprite | undefined;
+  // confetti over an applied change: one pooled Points object, created once (renderer only)
+  private readonly confetti = new Confetti((x) => this.own(x));
+  private clockT = 0;
+  // Ask Scout (renderer only): held = no patrol and agent moves wait; the rest of a halted patrol walk
+  private held = false;
+  private talking = false;
+  private resumePts: THREE.Vector3[] = [];
 
   private readonly counters = { rebuilds: 0, buildingRebuilds: 0, incremental: 0 };
   private readonly tmp = new THREE.Matrix4();
@@ -100,8 +160,11 @@ export class TownGraph {
   constructor(
     private readonly textures: TextureFactory,
     private reducedMotion = false,
+    opts: { scoutBuild?: () => THREE.BufferGeometry; log?: (msg: string, err: unknown) => void } = {},
   ) {
     const windows = textures.windows();
+    const glow = textures.glow?.();
+    this.scout = new ScoutFigure((x) => this.own(x), { ...(glow ? { glow: this.own(glow) } : {}), ...(opts.scoutBuild ? { build: opts.scoutBuild } : {}), ...(opts.log ? { log: opts.log } : {}) });
     this.bodyMat = this.own(
       new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0, ...(windows ? { emissiveMap: this.own(windows), emissive: WARM, emissiveIntensity: 0.9 } : {}) }),
     );
@@ -141,6 +204,36 @@ export class TownGraph {
     this.applyModeVisibility();
   }
 
+  get townTheme(): TownTheme {
+    return this.theme;
+  }
+
+  /** Day or Night: recolours idle walls, rooftops, slabs and roads once (a user action); string lights stay on. */
+  setTheme(theme: TownTheme): void {
+    if (theme === this.theme) return;
+    this.theme = theme;
+    const p = THEMES[theme];
+    this.slabMat.color.set(p.slab);
+    if (this.bodyMat.emissiveMap) this.bodyMat.emissiveIntensity = p.windows;
+    const s = this.scene;
+    if (s) {
+      for (const [id, i] of this.indexById) this.placeBuilding(s.buildings[id]!, i);
+      this.flush();
+    }
+    this.applyModeVisibility();
+  }
+
+  /** Replay accent on or off (the path turns rainbow while a finished run is replayed). */
+  setReplay(on: boolean): void {
+    if (on === this.replay) return;
+    this.replay = on;
+    if (this.scene) this.updateJourney(this.scene);
+  }
+
+  get replaying(): boolean {
+    return this.replay;
+  }
+
   /** Highlights the inspected building (or none). */
   select(id: string | undefined): void {
     this.selected = id;
@@ -155,13 +248,14 @@ export class TownGraph {
     if (this.roads) {
       const m = this.roads.material as THREE.LineBasicMaterial;
       m.opacity = journey ? 0.35 : 1;
-      m.color.set(journey ? '#2b4a7a' : '#7aa2e3');
+      m.color.set(journey ? THEMES[this.theme].road : '#7aa2e3');
     }
     if (this.journeyLine) this.journeyLine.visible = journey;
     for (const sp of this.stopLabels.values()) sp.visible = journey;
     if (this.beacons) this.beacons.visible = journey;
     if (this.shaft) this.shaft.visible = journey && Boolean(this.scene?.activeBuildingId && this.layout?.buildings[this.scene.activeBuildingId]);
-    if (this.activeCaption) this.activeCaption.visible = journey;
+    // Scout's bubble says the same thing next to it; the caption comes back when Scout is muted
+    if (this.activeCaption) this.activeCaption.visible = journey && !this.scoutVisible;
   }
 
   /** The agent's path through the town: a yellow line over the building tops, with numbered stops (first 40). */
@@ -186,7 +280,17 @@ export class TownGraph {
     if (pts.length >= 6) {
       const g = this.build(new THREE.BufferGeometry());
       g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-      this.journeyLine = new THREE.Line(g, this.build(new THREE.LineBasicMaterial({ color: '#facc15', transparent: true, opacity: 0.95 })));
+      if (this.replay) {
+        // rainbow accent while replaying a finished run
+        const cols: number[] = [];
+        const n = pts.length / 3;
+        for (let k = 0; k < n; k++) {
+          const c = new THREE.Color(REPLAY_RAINBOW[Math.floor((k / Math.max(1, n - 1)) * (REPLAY_RAINBOW.length - 1))]!);
+          cols.push(c.r, c.g, c.b);
+        }
+        g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+      }
+      this.journeyLine = new THREE.Line(g, this.build(new THREE.LineBasicMaterial(this.replay ? { vertexColors: true, transparent: true, opacity: 0.95 } : { color: '#facc15', transparent: true, opacity: 0.95 })));
       this.journeyLine.name = 'journey';
       this.root.add(this.journeyLine);
     }
@@ -206,6 +310,16 @@ export class TownGraph {
 
   stats(): GraphStats {
     return { ...this.counters, instances: this.indexById.size, capacity: this.buildings?.count ?? 0, owned: this.owned.size };
+  }
+
+  /** Lanterns shown over a building (0 or 3), for tests and the perf check. */
+  lanternsOver(id: string): number {
+    return this.lanternSlots.has(id) ? LANTERNS_PER_BUILDING : 0;
+  }
+
+  /** Lantern instances drawn (only the slots in use). */
+  get lanternsDrawn(): number {
+    return this.lanterns?.count ?? 0;
   }
 
   /** Building id under the ray, if any. */
@@ -248,6 +362,7 @@ export class TownGraph {
       for (const id of d.changed) {
         const i = this.indexById.get(id);
         if (i !== undefined) this.placeBuilding(next.buildings[id]!, i);
+        this.celebrate(id, next);
       }
       this.flush();
     }
@@ -255,7 +370,22 @@ export class TownGraph {
     if (d.powerChanged) this.updatePower(next);
     // the path line is small (at most MAX_JOURNEY points): replaced (old one disposed) when the journey changes
     if (this.scene?.journey !== next.journey) this.updateJourney(next);
+    this.updateScout(next);
     this.scene = next;
+  }
+
+  /** Confetti when a change is newly applied (Journey view, motion on). Renderer only. */
+  private celebrate(id: string, next: SceneState): void {
+    const b = next.buildings[id];
+    const lot = this.layout?.buildings[id];
+    if (!b || !lot || b.state !== 'applied' || this.scene?.buildings[id]?.state === 'applied') return;
+    if (this.reducedMotion || this.mode !== 'journey') return;
+    this.confetti.burst(lot.x, buildingHeight(b) + 0.8, lot.z, this.clockT);
+  }
+
+  /** Confetti particles in flight. */
+  get confettiActive(): number {
+    return this.confetti.active;
   }
 
   // ---------- full build (init only) ----------
@@ -286,7 +416,16 @@ export class TownGraph {
         const [bx, bz] = r.points[k + 1]!;
         roadPts.push(ax, 0.04, az, bx, 0.04, bz);
         const len = Math.hypot(bx - ax, bz - az);
-        for (let t = 1.5; t < len; t += 2.5) bulbs.push(ax + ((bx - ax) * t) / len, 1.1, az + ((bz - az) * t) / len);
+        for (let t = 1.2; t < len; t += BULB_SPACING) bulbs.push(ax + ((bx - ax) * t) / len, 1.1, az + ((bz - az) * t) / len);
+      }
+    }
+    // festive garlands: a sagging string of bulbs over the front edge of every district
+    for (const id of ids) {
+      const d = L.districts[id]!;
+      const n = Math.max(4, Math.round(d.w / 1.2));
+      for (let k = 0; k <= n; k++) {
+        const u = k / n;
+        bulbs.push(d.x - d.w / 2 + u * d.w, 1.9 - 0.6 * Math.sin(Math.PI * u), d.z + d.d / 2 + 0.2);
       }
     }
     const roadGeo = this.build(new THREE.BufferGeometry());
@@ -297,7 +436,13 @@ export class TownGraph {
     this.root.add(roads);
     const bulbGeo = this.build(new THREE.BufferGeometry());
     bulbGeo.setAttribute('position', new THREE.Float32BufferAttribute(bulbs, 3));
-    this.stringLights = new THREE.Points(bulbGeo, this.build(new THREE.PointsMaterial({ color: '#ffe7a3', size: 0.32, transparent: true, opacity: 0.75, depthWrite: false })));
+    const bulbColors: number[] = [];
+    for (let k = 0; k < bulbs.length / 3; k++) {
+      const c = new THREE.Color(LANTERN_COLORS[k % LANTERN_COLORS.length]!).lerp(new THREE.Color('#fff3c4'), 0.25);
+      bulbColors.push(c.r, c.g, c.b);
+    }
+    bulbGeo.setAttribute('color', new THREE.Float32BufferAttribute(bulbColors, 3));
+    this.stringLights = new THREE.Points(bulbGeo, this.build(new THREE.PointsMaterial({ vertexColors: true, size: 0.38, transparent: true, opacity: 0.85, depthWrite: false })));
     this.stringLights.name = 'string-lights';
     this.root.add(this.stringLights);
 
@@ -334,6 +479,225 @@ export class TownGraph {
     this.root.add(this.selectRing);
     this.select(this.selected && s.buildings[this.selected] ? this.selected : undefined);
     this.updateJourney(s);
+    this.root.add(this.scout.root);
+    this.confetti.clear();
+    this.root.add(this.confetti.points);
+    this.scoutMove = -1;
+    this.anchor = undefined;
+    this.onRoof = undefined;
+    this.stops = patrolStops(s);
+    this.stopIndex = 0;
+    this.patrolling = false;
+    if (this.nameTag) this.scout.root.remove(this.nameTag);
+    this.nameTag = this.screenSprite([{ text: '🏮 Scout', yellow: true }], 0.032, SCOUT_SCALE);
+    this.root.remove(this.nameTag);
+    this.nameTag.name = 'scout-name';
+    // anchored at the head in SCREEN units: the name tag just above, the bubble one label higher (no overlap at any zoom)
+    this.nameTag.center.set(0.5, -0.2);
+    this.nameTag.position.set(0, 1.45, 0);
+    this.scout.root.add(this.nameTag);
+    this.updateScout(s, true);
+  }
+
+  /** Scout's figure mode: 'figure', or 'fallback' if the mesh failed to build (a simple marker is shown). */
+  get scoutMode(): 'figure' | 'fallback' {
+    return this.scout.mode;
+  }
+
+  /** Where Scout ends up for a scene place: on a building's roof, beside the power plant, or on the plaza. */
+  scoutPosition(place: ScoutPlace, s: SceneState | undefined = this.scene): THREE.Vector3 {
+    const L = this.layout;
+    if (L && place.kind === 'building') {
+      const lot = L.buildings[place.id];
+      const b = s?.buildings[place.id];
+      if (lot) return new THREE.Vector3(lot.x, b ? buildingHeight(b) : 0, lot.z);
+    }
+    if (L && place.kind === 'plant') {
+      const p = plantStop(L);
+      return new THREE.Vector3(p.x, 0, p.z);
+    }
+    const p = L ? plaza(L) : { x: 0, z: 0 };
+    return new THREE.Vector3(p.x, 0, p.z);
+  }
+
+  /** Scout's world position (Find Scout, Follow Scout). */
+  scoutWorldPosition(out: THREE.Vector3): THREE.Vector3 {
+    return out.copy(this.scout.root.position);
+  }
+
+  /** The street point for a place (where Scout walks before any roof hop). */
+  private streetFor(place: ScoutPlace): Pt {
+    const L = this.layout!;
+    if (place.kind === 'building') return frontOf(L, place.id) ?? plaza(L);
+    if (place.kind === 'plant') return plantStop(L);
+    return plaza(L);
+  }
+
+  /** The waypoints from where Scout stands to a place: down from a roof, along the streets, then up a roof. */
+  private pathTo(place: ScoutPlace, s: SceneState, roof: boolean): THREE.Vector3[] {
+    const L = this.layout!;
+    const from = this.anchor ?? plaza(L);
+    const pts: THREE.Vector3[] = [];
+    if (this.onRoof) pts.push(new THREE.Vector3(from.x, 0, from.z)); // hop down to the street in front
+    for (const p of route(L, from, this.streetFor(place))) pts.push(new THREE.Vector3(p.x, 0, p.z));
+    if (roof && place.kind === 'building') pts.push(this.scoutPosition(place, s));
+    return pts;
+  }
+
+  private setBubble(text: string, key: string): void {
+    if (this.scoutBubble) {
+      this.scout.root.remove(this.scoutBubble);
+      this.dropSprite(this.scoutBubble);
+    }
+    // the building name (if any) is the one yellow keyword
+    const i = key ? text.indexOf(key) : -1;
+    const parts: CaptionPart[] = i >= 0 ? [{ text: text.slice(0, i) }, { text: key, yellow: true }, { text: text.slice(i + key.length) }].filter((p) => p.text) : [{ text }];
+    this.scoutBubble = this.screenSprite(parts, 0.03, SCOUT_SCALE);
+    this.root.remove(this.scoutBubble);
+    this.scoutBubble.name = 'scout-bubble';
+    this.scoutBubble.center.set(0.5, -1.55);
+    this.scoutBubble.position.set(0, 1.45, 0);
+    this.scoutBubble.visible = !this.talking; // the Ask Scout bubble replaces it while open
+    this.scout.root.add(this.scoutBubble);
+  }
+
+  /** Follows the scene's Scout: an agent move or a click interrupts the patrol and walks there (fades with
+   * reduced motion); the bubble shows what happened. */
+  private updateScout(s: SceneState, first = false): void {
+    const sc = s.scout;
+    if (sc.move === this.scoutMove) return;
+    if (this.held && !first) return; // Ask Scout: the move waits until he has answered (pendingTarget tells the user)
+    this.scoutMove = sc.move;
+    this.scout.setMood(sc.mood);
+    const key = sc.at.kind === 'building' ? (s.buildings[sc.at.id]?.name ?? '') : '';
+    this.setBubble(sc.bubble, key);
+    this.scout.root.visible = this.scoutVisible;
+    const moved = !this.anchor || sc.at.kind !== 'building' || this.onRoof !== sc.at.id || this.patrolling;
+    if (first || !this.layout) {
+      this.scout.place(this.scoutPosition(sc.at, s));
+    } else if (moved) {
+      this.scout.settle();
+      this.scout.walk(this.pathTo(sc.at, s, true), 18, this.reducedMotion);
+    }
+    if (this.layout) {
+      this.anchor = this.streetFor(sc.at);
+      this.onRoof = sc.at.kind === 'building' ? sc.at.id : undefined;
+    }
+    this.patrolling = false;
+    this.pauseUntil = this.scout.lastTick + 4;
+  }
+
+  /** Renderer-only patrol (cosmetic, seeded): not in the reducer, not in the journal, never during a run. */
+  private stepScout(t: number): void {
+    const moving = this.scout.tick(t, !this.reducedMotion);
+    const s = this.scene;
+    if (!s || !this.layout) return;
+    if (this.held) {
+      this.scout.takeArrived();
+      return; // Ask Scout: no patrol while a question is waiting or answered
+    }
+    if (this.scout.takeArrived()) {
+      if (this.patrolling) {
+        const id = this.stops[(this.stopIndex - 1 + this.stops.length) % this.stops.length];
+        const name = id ? (s.buildings[id]?.name ?? id) : '';
+        if (name) this.setBubble(`This is ${name}`, name);
+        this.pauseUntil = t + 2.5;
+      } else this.pauseUntil = t + (s.running ? 0 : 5);
+    }
+    if (moving || s.running || !this.scoutVisible || t < this.pauseUntil) return;
+    if (this.reducedMotion) {
+      // no patrol: he waits on the plaza (a fade brings him back after a run)
+      const home = plaza(this.layout);
+      if (this.anchor && (this.anchor.x !== home.x || this.anchor.z !== home.z || this.onRoof)) {
+        this.scout.walk([new THREE.Vector3(home.x, 0, home.z)], 0, true);
+        this.anchor = home;
+        this.onRoof = undefined;
+        this.setBubble("I'm on the plaza. Click a building and I'll take you there.", '');
+      }
+      return;
+    }
+    const id = this.stops[this.stopIndex % Math.max(1, this.stops.length)];
+    if (!id || !this.layout.buildings[id]) return;
+    this.stopIndex++;
+    this.patrolling = true;
+    this.scout.walk(this.pathTo({ kind: 'building', id }, s, false), 5, false);
+    this.anchor = this.streetFor({ kind: 'building', id });
+    this.onRoof = undefined;
+  }
+
+  /**
+   * Ask Scout: hold (true) stops his patrol at once (a patrol walk halts where he is; the rest of its street path is
+   * kept) and makes agent moves wait; a walk to a target is finished first. Release (false) does the waiting move
+   * first, otherwise continues the halted patrol walk. Renderer only: nothing reaches the scene state or journal.
+   */
+  holdScout(on: boolean): void {
+    if (on === this.held) return;
+    this.held = on;
+    if (on) {
+      if (this.patrolling && this.scout.animating) this.resumePts = this.scout.halt();
+      return;
+    }
+    this.setTalking(false);
+    const s = this.scene;
+    const rest = this.resumePts;
+    this.resumePts = [];
+    if (s && s.scout.move !== this.scoutMove) {
+      this.updateScout(s);
+      return;
+    }
+    this.pauseUntil = this.scout.lastTick;
+    if (rest.length && this.patrolling && s && !s.running) this.scout.walk(rest, 5, this.reducedMotion);
+  }
+
+  get scoutHeld(): boolean {
+    return this.held;
+  }
+
+  /** True while Scout walks to a target (the agent's file or a clicked building), not on patrol. */
+  get walkingToTarget(): boolean {
+    return this.scout.animating && !this.patrolling;
+  }
+
+  /** The talking animation, facing the given ground point (the camera); the small 3D bubble hides meanwhile. */
+  setTalking(on: boolean, faceX?: number, faceZ?: number): void {
+    this.talking = on;
+    this.scout.setTalking(on);
+    if (on && faceX !== undefined && faceZ !== undefined) this.scout.faceTowards(faceX, faceZ);
+    if (this.scoutBubble) this.scoutBubble.visible = !on;
+  }
+
+  get scoutTalking(): boolean {
+    return this.scout.isTalking;
+  }
+
+  /** Where the agent's next move will take Scout once he has answered (undefined if nothing is waiting). */
+  get pendingTarget(): string | undefined {
+    const s = this.scene;
+    if (!this.held || !s || s.scout.move === this.scoutMove) return undefined;
+    const at = s.scout.at;
+    return at.kind === 'building' ? (s.buildings[at.id]?.name ?? at.id) : at.kind === 'plant' ? 'the power plant' : 'the plaza';
+  }
+
+  /** The point just above Scout's name tag (world), where the Ask Scout bubble is anchored. */
+  scoutHead(out: THREE.Vector3): THREE.Vector3 {
+    return out.copy(this.scout.root.position).setY(this.scout.root.position.y + 1.6 * SCOUT_SCALE);
+  }
+
+  /** Mute: hides Scout, his name tag and bubble (the scene state still tracks him); the patrol pauses. */
+  setScoutVisible(v: boolean): void {
+    this.scoutVisible = v;
+    this.scout.root.visible = v;
+    this.applyModeVisibility();
+  }
+
+  /** True while Scout is walking or fading: reduced-motion rendering still draws these frames. */
+  get animating(): boolean {
+    return this.scout.animating;
+  }
+
+  /** Finishes Scout's current move at once (replay jumps). */
+  settleScout(): void {
+    this.scout.settle();
   }
 
   private addDistrict(s: SceneState, id: string, slabsIn?: THREE.InstancedMesh): void {
@@ -369,6 +733,20 @@ export class TownGraph {
     return sp;
   }
 
+  /**
+   * A label with a CONSTANT size on screen (`screenFraction` of the view height), whatever the camera distance:
+   * Scout's name tag and bubble stay readable in the whole-town view. `parentScale` undoes the parent's scale.
+   */
+  private screenSprite(parts: CaptionPart[], screenFraction: number, parentScale: number): THREE.Sprite {
+    const { texture, aspect } = this.textures.caption(parts);
+    this.build(texture);
+    const sp = new THREE.Sprite(this.build(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false, depthTest: false, sizeAttenuation: false })));
+    const h = (screenFraction * 2 * Math.tan((45 / 2) * (Math.PI / 180))) / parentScale; // camera fov 45
+    sp.scale.set(h * aspect, h, 1);
+    sp.renderOrder = 10; // always on top: never hidden behind a building
+    return sp;
+  }
+
   private dropSprite(sp: THREE.Sprite | undefined): void {
     if (!sp) return;
     this.root.remove(sp);
@@ -379,7 +757,7 @@ export class TownGraph {
   // ---------- buildings (instanced) ----------
   private rebuildBuildings(s: SceneState, counted = true): void {
     if (counted) this.counters.buildingRebuilds++;
-    for (const obj of [this.buildings, this.beacons]) {
+    for (const obj of [this.buildings, this.beacons, this.roofs, this.lanterns]) {
       if (!obj) continue;
       this.root.remove(obj);
       this.release(obj);
@@ -397,6 +775,12 @@ export class TownGraph {
     this.buildings.name = 'buildings';
     this.beacons = this.build(new THREE.InstancedMesh(this.beaconGeo, this.beaconMat, capacity));
     this.beacons.name = 'beacons';
+    this.roofs = this.build(new THREE.InstancedMesh(this.roofGeo, this.roofMat, capacity));
+    this.roofs.name = 'roofs';
+    this.lanterns = this.build(new THREE.InstancedMesh(this.lanternGeo, this.lanternMat, capacity * LANTERNS_PER_BUILDING));
+    this.lanterns.name = 'lanterns';
+    this.lanterns.count = 0;
+    this.lanternSlots.clear();
     const porchGeo = this.build(new THREE.BufferGeometry());
     porchGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(capacity * 3), 3));
     porchGeo.setDrawRange(0, 0);
@@ -409,10 +793,16 @@ export class TownGraph {
       this.beacons.setMatrixAt(i, zero);
       this.buildings.setColorAt(i, NAVY);
       this.beacons.setColorAt(i, NAVY);
+      this.roofs.setMatrixAt(i, zero);
+      this.roofs.setColorAt(i, NAVY);
+      for (let k = 0; k < LANTERNS_PER_BUILDING; k++) {
+        this.lanterns.setMatrixAt(i * LANTERNS_PER_BUILDING + k, zero);
+        this.lanterns.setColorAt(i * LANTERNS_PER_BUILDING + k, new THREE.Color(LANTERN_COLORS[k % LANTERN_COLORS.length]!));
+      }
     }
     for (const id of ids) this.placeBuilding(s.buildings[id]!, this.allocate(id));
     this.flush();
-    this.root.add(this.buildings, this.beacons, this.porch);
+    this.root.add(this.buildings, this.beacons, this.roofs, this.lanterns, this.porch);
   }
 
   private allocate(id: string): number {
@@ -429,11 +819,37 @@ export class TownGraph {
     const footprint = b.placeholder ? 0.6 : 1;
     this.tmp.compose(new THREE.Vector3(lot.x, 0, lot.z), new THREE.Quaternion(), new THREE.Vector3(footprint, h, footprint));
     this.buildings.setMatrixAt(i, this.tmp);
-    this.buildings.setColorAt(i, bodyColor(b, this.mode));
+    this.buildings.setColorAt(i, bodyColor(b, this.mode, this.theme));
     const showBeacon = b.state !== 'idle';
     this.tmp.compose(new THREE.Vector3(lot.x, h + 0.7, lot.z), new THREE.Quaternion(), new THREE.Vector3().setScalar(showBeacon ? 1 : 0));
     this.beacons.setMatrixAt(i, this.tmp);
     this.beacons.setColorAt(i, new THREE.Color(b.color));
+    if (this.roofs) {
+      this.tmp.compose(new THREE.Vector3(lot.x, h + 0.05, lot.z), new THREE.Quaternion(), new THREE.Vector3(footprint, 1, footprint));
+      this.roofs.setMatrixAt(i, this.tmp);
+      this.roofs.setColorAt(i, roofColor(b, this.mode, this.theme));
+    }
+    if (this.lanterns) {
+      // festival lanterns over a success: fixed spots around the roof (no randomness), from a small pool
+      const on = celebrates(b) && this.mode === 'journey';
+      let slot = this.lanternSlots.get(b.id);
+      if (on && slot === undefined) {
+        const used = new Set(this.lanternSlots.values());
+        slot = 0;
+        while (used.has(slot)) slot++;
+        this.lanternSlots.set(b.id, slot);
+      }
+      if (slot !== undefined) {
+        for (let k = 0; k < LANTERNS_PER_BUILDING; k++) {
+          const a = (k / LANTERNS_PER_BUILDING) * Math.PI * 2 + 0.6;
+          this.tmp.compose(new THREE.Vector3(lot.x + Math.cos(a) * 1.6, h + 1.6 + (k % 2) * 0.45, lot.z + Math.sin(a) * 1.6), new THREE.Quaternion(), new THREE.Vector3().setScalar(on ? 1 : 0));
+          this.lanterns.setMatrixAt(slot * LANTERNS_PER_BUILDING + k, this.tmp);
+        }
+        if (!on) this.lanternSlots.delete(b.id);
+      }
+      const top = this.lanternSlots.size ? Math.max(...this.lanternSlots.values()) + 1 : 0;
+      this.lanterns.count = top * LANTERNS_PER_BUILDING; // draw only the slots in use
+    }
     const pos = this.porch.geometry.getAttribute('position') as THREE.BufferAttribute;
     pos.setXYZ(i, lot.x, 0.35, lot.z + FOOTPRINT / 2 + 0.25);
     pos.needsUpdate = true;
@@ -446,6 +862,11 @@ export class TownGraph {
     if (this.buildings.instanceColor) this.buildings.instanceColor.needsUpdate = true;
     this.beacons.instanceMatrix.needsUpdate = true;
     if (this.beacons.instanceColor) this.beacons.instanceColor.needsUpdate = true;
+    for (const m of [this.roofs, this.lanterns]) {
+      if (!m) continue;
+      m.instanceMatrix.needsUpdate = true;
+      if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    }
   }
 
   // ---------- active building and power plant ----------
@@ -485,14 +906,19 @@ export class TownGraph {
     if (this.stringLights) (this.stringLights.material as THREE.PointsMaterial).opacity = 0.75;
     if (this.shaft) (this.shaft.material as THREE.MeshBasicMaterial).opacity = 0.13;
     if (this.powerGlow) this.powerGlow.rotation.y = 0;
+    this.confetti.clear();
   }
 
   /** Per-frame animation (skipped entirely with reduced motion). Never allocates. */
   tick(t: number): void {
+    this.clockT = t;
+    this.stepScout(t); // Scout moves even with reduced motion (as a short fade); the patrol needs motion
     if (this.reducedMotion) return;
+    this.confetti.tick(t);
     if (this.stringLights) (this.stringLights.material as THREE.PointsMaterial).opacity = 0.6 + 0.2 * Math.sin(t * 1.7);
     if (this.powerGlow) this.powerGlow.rotation.y = t * 0.6;
     if (this.shaft?.visible) (this.shaft.material as THREE.MeshBasicMaterial).opacity = 0.11 + 0.04 * Math.sin(t * 2.4);
+    if (this.lanterns) this.lanterns.position.y = Math.sin(t * 1.3) * 0.12; // the lanterns bob gently together
   }
 
   dispose(): void {

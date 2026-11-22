@@ -34,6 +34,8 @@ export type JournalEntry =
   | { t: 'file_read'; runId: string; at: number; path: string }
   | { t: 'op_proposed'; runId: string; at: number; files: Array<{ path: string; intent: string; hunks: number; created: boolean }>; reason?: string }
   | { t: 'review'; runId: string; at: number; files: Array<{ path: string; accepted: number; rejected: number }> }
+  /** The user clicked a building or file in Code Town (Scout walks there and the file opens). */
+  | { t: 'scout_navigate'; runId: string; at: number; path: string }
   | { t: 'metrics'; runId: string; at: number; model: string; inputTokens?: number; outputTokens?: number; costUsd?: number; elapsedMs: number; filesRead: number; filesTotal: number };
 
 /** Which test run a `tests` entry is: the agent's run_tests, or CodeCraft's own runs around a change (P5). */
