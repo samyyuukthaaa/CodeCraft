@@ -228,9 +228,7 @@ ${stateRules}
       <div id="ask-answer" role="status" aria-live="polite"></div>
       <details id="ask-history" class="hidden"><summary>Chat history (<span id="ask-history-count">0</span>)</summary><ol id="ask-history-list" aria-label="Questions and Scout's answers"></ol></details>
       <div id="ask-suggest" class="chips" aria-label="Suggested questions"></div>
-      <form id="ask-form"><input id="ask-input" type="text" maxlength="200" placeholder="Ask about CodeCraft…" aria-label="Your question"><button type="submit">Ask</button></form>
-      <p class="muted">Answers come from a built-in guide and the town; no model is called.</p>
-    </div>
+      <form id="ask-form"><input id="ask-input" type="text" maxlength="200" placeholder="Ask about CodeCraft…" aria-label="Your question"><button type="submit">Ask</button></form>    </div>
   </aside>
 
   <div id="tip" class="hud-panel hidden" role="status" aria-live="polite"><span id="tip-text"></span><button id="tip-close" type="button" aria-label="Dismiss this tip">✕</button></div>
