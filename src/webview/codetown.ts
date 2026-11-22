@@ -8,6 +8,7 @@ import { initialSceneState, sceneReducer } from '../town/reducer';
 import type { Building, SceneState, TownEvent } from '../town/types';
 import type { HostToTown, TownToHost } from '../town/protocol';
 import { CaptionPart, TextureFactory, TownGraph } from './town/graph';
+import { Flight, SCOUT_VIEW_OFFSET, flightStep, flightTo, followStep, framing } from './town/camera';
 import { VIEW_MODES, ViewMode, inspect, legendFor } from '../town/view';
 import { SUGGESTED, Tip, askScout, tipFor } from '../town/help';
 import { Player, createPlayer, delayToNext, pause, play, positionText, seek, setSpeed, step } from '../town/replay';
@@ -213,6 +214,7 @@ function loop(): void {
   if (reducedMotion && !dirty && !graph?.animating) return; // render on demand (and while Scout fades)
   dirty = false;
   graph?.tick(clock.getElapsedTime());
+  moveCamera(clock.getElapsedTime());
   renderer.render(scene3, camera);
   renderedFrames++;
 }
@@ -233,16 +235,52 @@ function loop(): void {
   buildings: Object.keys(current.buildings).length,
 });
 
+// Find Scout / Follow Scout (the camera only; Scout himself is unaffected)
+let flight: Flight | undefined;
+let following = false;
+const scoutPos = new THREE.Vector3();
+
+/** Frames the whole town, the power plant and Scout. */
 function resetCamera(): void {
   if (!camera) return;
-  const b = graph?.bounds;
-  // frame the whole town plus the power plant on its east side
-  const minX = b ? b.minX : -20;
-  const maxX = b ? b.maxX + 18 : 20;
-  const span = b ? Math.max(maxX - minX, b.maxZ - b.minZ) : 40;
-  cameraTarget.set((minX + maxX) / 2, 0, b ? (b.minZ + b.maxZ) / 2 : 0);
-  camera.position.set(cameraTarget.x, span * 0.58 + 8, cameraTarget.z + span * 0.72 + 10);
+  flight = undefined;
+  setFollow(false);
+  const f = framing(graph?.bounds, graph && !scoutMuted ? graph.scoutWorldPosition(scoutPos) : undefined);
+  cameraTarget.copy(f.target);
+  camera.position.copy(f.pos);
   camera.lookAt(cameraTarget);
+  dirty = true;
+}
+
+function findScout(): void {
+  if (!camera || !graph || scoutMuted) return;
+  flight = flightTo(camera.position, cameraTarget, graph.scoutWorldPosition(scoutPos), clock.getElapsedTime(), reducedMotion ? 0 : undefined);
+  dirty = true;
+}
+
+function setFollow(on: boolean): void {
+  following = on && !scoutMuted;
+  $('btn-follow-scout').setAttribute('aria-pressed', String(following));
+  if (following) findScout();
+}
+
+/** Per frame: the Find flight, then Follow (smooth; a snap with reduced motion). No allocation. */
+function moveCamera(t: number): void {
+  if (!camera) return;
+  if (flight) {
+    // home in on where Scout is NOW (he may be walking), without allocating
+    if (graph) {
+      graph.scoutWorldPosition(scoutPos);
+      flight.toTarget.set(scoutPos.x, 2, scoutPos.z);
+      flight.toPos.copy(flight.toTarget).add(SCOUT_VIEW_OFFSET);
+    }
+    if (!flightStep(flight, t, camera.position, cameraTarget)) flight = undefined;
+    camera.lookAt(cameraTarget);
+    dirty = true;
+  } else if (following && graph) {
+    followStep(camera.position, cameraTarget, graph.scoutWorldPosition(scoutPos), reducedMotion ? 1 : 0.08);
+    camera.lookAt(cameraTarget);
+  }
 }
 
 // orbit (left drag), pan (right drag), zoom (wheel), hover tooltip, click opens the file
@@ -701,8 +739,14 @@ function setScoutMuted(muted: boolean): void {
   scoutMuted = muted;
   document.body.classList.toggle('scout-muted', muted);
   graph?.setScoutVisible(!muted);
-  if (muted) tipBox.classList.add('hidden');
+  if (muted) {
+    tipBox.classList.add('hidden');
+    setFollow(false);
+  }
 }
+
+on($('btn-find-scout'), 'click', findScout);
+on($('btn-follow-scout'), 'click', () => setFollow(!following));
 
 on(askToggle, 'click', () => {
   const open = ask.classList.toggle('collapsed') === false;

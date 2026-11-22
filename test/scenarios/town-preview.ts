@@ -131,6 +131,11 @@ window.addEventListener('load', () => {
       }
       if (!ws) throw new Error('the browser did not open a debugging port');
       const c = await cdp(ws);
+      if (arg('click')) {
+        // --click <id>: press a panel button 1.5 s after load (e.g. btn-find-scout)
+        await new Promise((r) => setTimeout(r, 1500));
+        await c.send('Runtime.evaluate', { expression: `document.getElementById(${JSON.stringify(arg('click'))})?.click()` });
+      }
       await new Promise((r) => setTimeout(r, Number(arg('realtime')) * 1000));
       const stats = (await c.send('Runtime.evaluate', { expression: 'JSON.stringify(window.__townStats && window.__townStats())', returnByValue: true })).result?.value;
       console.log('stats', String(stats));

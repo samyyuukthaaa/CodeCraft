@@ -101,7 +101,8 @@ ${stateRules}
   #ask-input { flex: 1; background: rgba(30, 41, 59, 0.92); color: #e2e8f0; border: 1px solid var(--border-color); border-radius: 6px; padding: 5px 8px; font-size: 12px; }
   #tip { position: absolute; top: 112px; left: 50%; transform: translateX(-50%); z-index: 12; display: flex; gap: 10px; align-items: flex-start; max-width: 520px; font-size: 12px; border-color: rgba(250, 204, 21, 0.6); }
   #tip button { padding: 2px 8px; }
-  body.scout-muted #tip, body.scout-muted #scout-dock { display: none !important; }
+  body.scout-muted #tip, body.scout-muted #scout-dock, body.scout-muted .scout-ctl, body.flat .scout-ctl { display: none !important; }
+  #btn-follow-scout[aria-pressed="true"] { background: #facc15; color: #0a1330; font-weight: 700; }
   .fallback-card.active { border-color: var(--warm); box-shadow: 0 0 10px rgba(250, 204, 21, 0.35); }
   .fallback-card-title { font-size: 12px; font-weight: 700; color: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .fallback-card-meta { font-size: 11px; color: #94a3b8; }
@@ -154,6 +155,8 @@ ${stateRules}
       <button id="btn-replay" type="button" title="Replay a finished run from the journal" disabled>▶ Replay</button>
       <button id="btn-toggle-view" type="button">Switch to 2D</button>
       <button id="btn-reset-cam" type="button">Reset View</button>
+      <button id="btn-find-scout" class="scout-ctl" type="button" title="Fly the camera to Scout">🏮 Find Scout</button>
+      <button id="btn-follow-scout" class="scout-ctl" type="button" aria-pressed="false" title="The camera follows Scout (off by default)">Follow Scout</button>
     </div>
   </div>
 
