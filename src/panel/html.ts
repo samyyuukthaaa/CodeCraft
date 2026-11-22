@@ -65,7 +65,7 @@ export function buildHtml(opts: { cspSource: string; nonce: string; scriptUri: s
     <button type="button" class="secondary" data-task="tests">Add tests</button>
   </div>
   <label for="prompt">Prompt</label>
-  <textarea id="prompt" maxlength="8000">Say hello.</textarea>
+  <textarea id="prompt" maxlength="8000" placeholder="Describe what to change — e.g. &quot;Fix the type error in auth.ts&quot;"></textarea>
   <div><button id="send" type="button">Send</button> <span id="status" role="status" aria-live="polite">idle</span></div>
   <section id="question" hidden aria-labelledby="question-h">
     <h4 id="question-h">The agent has a question</h4>
