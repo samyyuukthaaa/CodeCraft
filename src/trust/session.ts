@@ -187,22 +187,33 @@ export class TrustSession {
       return;
     }
     const cmp = compareRuns(base, after);
-    const summary = after.exitCode === 0 ? 'all tests pass' : `${failingTests(after).length} failing${cmp.stillFailing.length && cmp.baselineKnown ? ` (${cmp.stillFailing.length} already failed before the change)` : ''}`;
+    const allFailing = failingTests(after);
+    const summary = after.exitCode === 0 ? 'all tests pass' : `${allFailing.length} failing${cmp.stillFailing.length && cmp.baselineKnown ? ` (${cmp.stillFailing.length} already failed before the change)` : ''}`;
     this.deps.post({ type: 'event', event: { type: 'tests.after', summary: `Tests after the changes: ${summary}${cmp.baselineKnown ? '' : '; the run before the change is unknown, so no test counts as newly broken'}`, failed: after.exitCode !== 0 } });
-    if (!cmp.regressed.length) {
+
+    // Detect new tests that fail (weren't in baseline, now fail)
+    const baselineFailing = base && base.ran ? new Set(failingTests(base)) : new Set<string>();
+    const newlyFailing = allFailing.filter(t => !baselineFailing.has(t));
+    const anyNewFailures = cmp.baselineKnown && newlyFailing.length > 0;
+
+    // Fix if regressions exist OR new tests fail
+    if (!cmp.regressed.length && !anyNewFailures) {
       await this.setTestStatus(after.exitCode === 0 ? 'passed' : 'failed');
       return;
     }
     await this.setTestStatus('regressed');
-    await this.deps.journal.append({ t: 'regression', tests: cmp.regressed });
-    this.deps.post({ type: 'event', event: { type: 'tests.regressed', summary: `Tests that passed before now fail: ${cmp.regressed.join(', ')}. Trying ONE automatic fix.`, failed: true } });
+    // Report all failures to agent for fixing: regressions take priority, then new failures
+    const failingToReport = cmp.regressed.length > 0 ? cmp.regressed : newlyFailing;
+    await this.deps.journal.append({ t: 'regression', tests: failingToReport });
+    const failureMsg = `Tests failed: ${failingToReport.join(', ')}. Trying ONE automatic fix.`;
+    this.deps.post({ type: 'event', event: { type: 'tests.regressed', summary: failureMsg, failed: true } });
     if (this.fixAttempted) return; // exactly one automatic fix per run
     this.fixAttempted = true;
-    await this.deps.journal.append({ t: 'autofix', status: 'started', detail: cmp.regressed.join(', ') });
-    const fix = await runFix(fixPrompt(cmp.regressed, after.output));
+    await this.deps.journal.append({ t: 'autofix', status: 'started', detail: failingToReport.join(', ') });
+    const fix = await runFix(fixPrompt(failingToReport, after.output));
     if (!fix.applied) {
       await this.deps.journal.append({ t: 'autofix', status: 'not_applied', detail: 'no fix was applied (rejected, refused or none proposed)' });
-      this.deps.post({ type: 'event', event: { type: 'autofix', summary: `Automatic fix: no change was applied. Still failing: ${cmp.regressed.join(', ')}`, failed: true } });
+      this.deps.post({ type: 'event', event: { type: 'autofix', summary: `Automatic fix: no change was applied. Still failing: ${failingToReport.join(', ')}`, failed: true } });
       return;
     }
     const again = await this.testRun('after_fix', 'CodeCraft runs the tests again after the automatic fix.');
@@ -212,13 +223,16 @@ export class TrustSession {
       return;
     }
     const cmp2 = compareRuns(base, again);
-    if (cmp2.regressed.length) {
-      await this.deps.journal.append({ t: 'autofix', status: 'still_failing', detail: cmp2.regressed.join(', ') });
-      this.deps.post({ type: 'event', event: { type: 'autofix', summary: `Automatic fix applied, but these still fail: ${cmp2.regressed.join(', ')}. No further automatic fix.`, failed: true } });
+    const allFailing2 = failingTests(again);
+    // Check if the tests we asked the agent to fix are now passing
+    const fixedTestsNowFailing = failingToReport.filter(t => allFailing2.includes(t));
+    if (fixedTestsNowFailing.length) {
+      await this.deps.journal.append({ t: 'autofix', status: 'still_failing', detail: fixedTestsNowFailing.join(', ') });
+      this.deps.post({ type: 'event', event: { type: 'autofix', summary: `Automatic fix applied, but these still fail: ${fixedTestsNowFailing.join(', ')}. No further automatic fix.`, failed: true } });
       await this.setTestStatus('regressed');
     } else {
-      await this.deps.journal.append({ t: 'autofix', status: 'fixed', detail: `${cmp.regressed.join(', ')} pass again` });
-      this.deps.post({ type: 'event', event: { type: 'autofix', summary: `Automatic fix worked: ${cmp.regressed.join(', ')} pass again${again.exitCode === 0 ? '; all tests pass' : ''}.` } });
+      await this.deps.journal.append({ t: 'autofix', status: 'fixed', detail: `${failingToReport.join(', ')} pass again` });
+      this.deps.post({ type: 'event', event: { type: 'autofix', summary: `Automatic fix worked: ${failingToReport.join(', ')} pass again${again.exitCode === 0 ? '; all tests pass' : ''}.` } });
       await this.setTestStatus(again.exitCode === 0 ? 'passed' : 'failed');
     }
   }

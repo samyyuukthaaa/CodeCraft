@@ -166,6 +166,26 @@ test('after the run: fix applied but still failing, and fix not applied, are bot
   }
 });
 
+test('after the run: new failing test is detected and triggers fix attempt', async () => {
+  // Baseline: all tests pass
+  // After: baseline still passes, but a NEW test file was added with a failing test
+  const s = await setup([PASS, failing('tests/test_new.py::test_new')]);
+  try {
+    await applyOne(s);
+    let fixWasCalled = false;
+    await s.trust.afterRun(async () => {
+      fixWasCalled = true;
+      return { applied: false };
+    });
+    assert.equal(fixWasCalled, true, 'fix should be attempted for new failing tests');
+    assert.match(ofType(s.posts, 'event').at(-2)!.event.summary, /Tests failed/);
+    const regEntry = s.journal.all().filter((e) => e.t === 'regression').at(-1);
+    assert.ok(regEntry && regEntry.t === 'regression' && regEntry.tests?.[0] === 'tests/test_new.py::test_new', 'journal should record new failing test');
+  } finally {
+    await s.ws.cleanup();
+  }
+});
+
 test('after the run: no regression -> no fix; nothing written -> no tests; unknown baseline -> never claims a regression', async () => {
   const s = await setup([PASS, PASS]);
   try {
