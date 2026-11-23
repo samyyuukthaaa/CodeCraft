@@ -363,6 +363,27 @@ test('report: what changed, why, what failed, how it recovered, models used, fro
     assert.match(md, re);
 });
 
+test('after the run: failure in a new untracked test file (not in baseline, not in baseline output) is detected and reported', async () => {
+  // This tests the scenario where: a new test file (e.g., tests/test_config_cli.py) is added
+  // by the change set, it has a failing test, and the pytest output shows the failure
+  // from this new, previously-unseen test file. It should be detected as newly failing.
+  const s = await setup([PASS, failing('tests/test_config_cli.py::test_config_command')]);
+  try {
+    await applyOne(s);
+    let fixWasCalled = false;
+    await s.trust.afterRun(async () => {
+      fixWasCalled = true;
+      return { applied: false };
+    });
+    assert.equal(fixWasCalled, true, 'fix should be attempted for failures in new test files');
+    assert.match(ofType(s.posts, 'event').at(-2)!.event.summary, /Tests failed/);
+    const regEntry = s.journal.all().filter((e) => e.t === 'regression').at(-1);
+    assert.ok(regEntry && regEntry.t === 'regression' && regEntry.tests?.[0] === 'tests/test_config_cli.py::test_config_command', 'journal should record failure from new test file');
+  } finally {
+    await s.ws.cleanup();
+  }
+});
+
 test('panel messages: answer is length-checked; rollback and export take no parameters', () => {
   assert.deepEqual(parseWebviewMessage({ type: 'answer', text: ' add ' }), { type: 'answer', text: 'add' });
   assert.equal(parseWebviewMessage({ type: 'answer', text: '' }), undefined);
