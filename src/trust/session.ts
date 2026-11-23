@@ -62,6 +62,7 @@ export class TrustSession {
   private total = 0;
   private pendingAnswer: ((text: string) => void) | undefined;
   fixAttempted = false;
+  private changesAppliedAfterLastTestRun = false;
 
   constructor(
     private readonly deps: TrustDeps,
@@ -107,6 +108,7 @@ export class TrustSession {
 
   async onApplied(info: { opId: string; groups: Array<{ intent: string; files: string[]; note?: GroupNote }> }): Promise<void> {
     this.wroteAny = true;
+    this.changesAppliedAfterLastTestRun = true;
     for (const g of info.groups) {
       const v = [...this.groups].reverse().find((x) => x.view.status === 'proposed' && x.view.intent === g.intent && g.files.every((p) => x.view.files.includes(p)));
       if (v) v.view.status = 'applied';
@@ -163,6 +165,7 @@ export class TrustSession {
 
   /** The agent's own run_tests result. */
   async onAgentTests(passed: boolean, exitCode: number | null, output = ''): Promise<void> {
+    this.changesAppliedAfterLastTestRun = false;
     const run: TestRun = { ran: true, exitCode, output };
     await this.deps.journal.append({ t: 'tests', phase: 'agent', passed, exitCode, failing: failingTests(run) });
     const base = await this.baseline;
@@ -242,6 +245,11 @@ export class TrustSession {
   /** Stop Run while a question is open. */
   cancelQuestion(): void {
     this.pendingAnswer?.(NO_ANSWER);
+  }
+
+  /** Check if changes were applied but tests haven't been run yet. */
+  needsTestValidation(): boolean {
+    return this.wroteAny && this.changesAppliedAfterLastTestRun;
   }
 
   // ---------- cost and speed ----------

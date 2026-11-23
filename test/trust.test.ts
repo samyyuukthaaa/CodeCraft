@@ -239,6 +239,17 @@ test('cost and speed: tokens summed over turns (latest total per turn), model sw
   assert.ok(j && j.t === 'metrics' && j.inputTokens === 300 && j.elapsedMs === 12_500 && j.filesRead === 3 && j.filesTotal === 120);
 });
 
+test('needsTestValidation: true when changes applied but tests not run after, false otherwise', async () => {
+  const journal = new Journal(new MemorySink());
+  const posts: HostToWebview[] = [];
+  const t = new TrustSession({ journal, post: (m) => posts.push(m), runTests: async () => PASS, index: async () => undefined, plan: () => undefined }, 'p/a');
+  assert.equal(t.needsTestValidation(), false, 'initially false');
+  await t.onApplied({ opId: 'op1', groups: [{ intent: 'edit', files: ['a.py'] }] });
+  assert.equal(t.needsTestValidation(), true, 'true after changes applied');
+  await t.onAgentTests(true, 0);
+  assert.equal(t.needsTestValidation(), false, 'false after tests run');
+});
+
 // ---------- ask_user_question through the real run loop ----------
 const gen = (events: unknown[]) =>
   (async function* () {

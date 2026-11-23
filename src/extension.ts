@@ -388,6 +388,21 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
         result = await runWithFailover(nudgeText, attempts, options);
         outcome = result.outcome;
       }
+      // Auto-nudge to run tests if changes applied but tests not run yet (up to MAX_PLAN_NUDGES times)
+      let testNudgeCount = 0;
+      while (
+        outcome.status === 'done' &&
+        trust?.needsTestValidation() &&
+        testNudgeCount < MAX_PLAN_NUDGES &&
+        !abort.signal.aborted
+      ) {
+        testNudgeCount++;
+        const nudgeText = 'Run the tests against your proposed changes now and fix any failure before finishing.';
+        out.appendLine(`[test-nudge] ${testNudgeCount}: ${nudgeText}`);
+        post({ type: 'event', event: { type: 'agent.nudge', summary: `Nudging agent to run tests (${testNudgeCount}/${MAX_PLAN_NUDGES})`, failed: false } });
+        result = await runWithFailover(nudgeText, attempts, options);
+        outcome = result.outcome;
+      }
       // After changes were applied: run the tests; if a test that passed before now fails, exactly ONE automatic
       // fix (through the same review gate), then the tests again. Skipped when the user stopped the run.
       if (trust && host && outcome.status !== 'cancelled' && !abort.signal.aborted) {
