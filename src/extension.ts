@@ -399,13 +399,20 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
       } else if (outcome.status === 'cancelled') {
         post({ type: 'event', event: { type: 'run.cancelled', summary: 'stopped' } });
       } else {
-        // the final message, honest whatever the model said: failing tests are named first
-        const final = honestSummary(outcome.text, lastAgentTests);
-        post({ type: 'final', text: final });
-        if (final !== outcome.text) {
-          const head = final.split('\n')[0]!;
-          out.appendLine(`[final] ${head}`);
-          post({ type: 'event', event: { type: 'run.tests_failing', summary: head, failed: true } });
+        const hasChangesApplied = trust?.wroteAny ?? false;
+        if (outcome.changesProposed && !hasChangesApplied) {
+          post({ type: 'final', text: 'No changes were applied. The proposed changes were not reviewed or were rejected.' });
+          out.appendLine('[final] No changes were applied');
+          post({ type: 'event', event: { type: 'run.failed', summary: 'No changes were applied', failed: true } });
+        } else {
+          // the final message, honest whatever the model said: failing tests are named first
+          const final = honestSummary(outcome.text, lastAgentTests);
+          post({ type: 'final', text: final });
+          if (final !== outcome.text) {
+            const head = final.split('\n')[0]!;
+            out.appendLine(`[final] ${head}`);
+            post({ type: 'event', event: { type: 'run.tests_failing', summary: head, failed: true } });
+          }
         }
       }
     } catch (e) {

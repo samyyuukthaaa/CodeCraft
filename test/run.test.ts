@@ -79,7 +79,7 @@ test('run: live-shaped pause -> approve -> resume the SAME turn after the last s
       },
     },
   });
-  assert.deepEqual(out, { status: 'done', text: 'applied 1 of 1 hunk(s)', rounds: 2 });
+  assert.deepEqual(out, { status: 'done', text: 'applied 1 of 1 hunk(s)', rounds: 2, changesProposed: false });
   assert.equal(f.calls.length, 2);
   assert.deepEqual(f.calls[1], {
     kind: 'resumePaused',
@@ -200,6 +200,36 @@ test('manifestMatches: a stored manifest with server-filled defaults (observed l
   assert.equal(manifestMatches({ ...stored, mcpServers: [{ name: EDITOR_SERVER_NAME, requireApprovalForTools: ['propose_write'] }] } as typeof wanted, wanted), false);
   assert.equal(manifestMatches({ ...stored, model: { name: 'other/model' } } as typeof wanted, wanted), false);
   assert.equal(manifestMatches({ ...stored, instructions: 'old' } as typeof wanted, wanted), false);
+});
+
+test('run: tracks changesProposed when propose_changes is approved', async () => {
+  const f = fakeDriver(pausedStart('c1', 'propose_changes', { plan: 'fix bug', groups: [] }), [finish('applied changes')]);
+  const out = await runWithApprovals('go', {
+    driver: f.driver,
+    approver: { approve: async () => ({ allow: true }) },
+  });
+  assert.equal(out.status, 'done');
+  assert.equal(out.changesProposed, true);
+});
+
+test('run: does not set changesProposed when propose_changes is denied', async () => {
+  const f = fakeDriver(pausedStart('c1', 'propose_changes', { plan: 'fix bug', groups: [] }), [finish('agent gave up')]);
+  const out = await runWithApprovals('go', {
+    driver: f.driver,
+    approver: { approve: async () => ({ allow: false }) },
+  });
+  assert.equal(out.status, 'done');
+  assert.equal(out.changesProposed, false);
+});
+
+test('run: does not set changesProposed for other tools like propose_write', async () => {
+  const f = fakeDriver(pausedStart('c1', 'propose_write', { path: 'a', newContent: 'x', reason: 'r' }), [finish('wrote file')]);
+  const out = await runWithApprovals('go', {
+    driver: f.driver,
+    approver: { approve: async () => ({ allow: true }) },
+  });
+  assert.equal(out.status, 'done');
+  assert.equal(out.changesProposed, false);
 });
 
 test('manifest: both agents mount the editor server with approval required for propose_write, propose_changes and run_tests', () => {

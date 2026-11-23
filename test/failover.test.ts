@@ -44,7 +44,7 @@ test('failover: a provider error on the primary switches to the fallback, which 
     onSwitch: (s) => switched.push(s),
   });
   assert.equal(r.agent, 'fallback');
-  assert.deepEqual(r.outcome, { status: 'done', text: 'done by fallback', rounds: 1 });
+  assert.deepEqual(r.outcome, { status: 'done', text: 'done by fallback', rounds: 1, changesProposed: false });
   assert.equal(switched.length, 1);
   assert.equal(switched[0]!.from, 'primary');
   assert.match(switched[0]!.reason, /400/);

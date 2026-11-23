@@ -89,7 +89,7 @@ export const TOOL_MAPPING_LIMIT = 2;
 export const MAX_STREAM_RESUMES = 2;
 
 export type RunOutcome =
-  | { status: 'done'; text: string; rounds: number }
+  | { status: 'done'; text: string; rounds: number; changesProposed?: boolean }
   | { status: 'error'; message: string; rounds: number }
   | { status: 'cancelled'; rounds: number }
   | { status: 'unsupported'; message: string; rounds: number };
@@ -153,6 +153,7 @@ export async function runWithApprovals(text: string, opts: RunOptions): Promise<
   let resumes = 0;
   let notMapped = 0;
   let notMappedTool = '';
+  let changesProposed = false;
 
   const makeStream = (() => {
     let next: (signal: AbortSignal) => AsyncIterable<TurnEvent> = (s) => opts.driver.start(text, s);
@@ -265,7 +266,7 @@ export async function runWithApprovals(text: string, opts: RunOptions): Promise<
     if (pending.size === 0 && toAnswer.size === 0) {
       if (paused) return { status: 'error', message: 'the turn paused without a pending approval', rounds: round };
       const c = done?.status === 'done' ? done.output?.content : undefined;
-      return { status: 'done', text: typeof c === 'string' ? redact(c) : '', rounds: round };
+      return { status: 'done', text: typeof c === 'string' ? redact(c) : '', rounds: round, changesProposed };
     }
 
     // Normal pause: ask the user about each pending call, then resume.
@@ -275,6 +276,9 @@ export async function runWithApprovals(text: string, opts: RunOptions): Promise<
       const shown = summarizeCall(c?.name ?? 'unknown_tool', c?.args ?? '');
       const decision = await opts.approver.approve({ toolCallId, threadId, name: shown.name, summary: shown.summary });
       if (opts.signal?.aborted) return { status: 'cancelled', rounds: round };
+      if (decision.allow && (shown.name === 'propose_changes' || shown.name.endsWith('/propose_changes'))) {
+        changesProposed = true;
+      }
       approvals.push({
         type: 'user.tool_approval',
         threadId,
