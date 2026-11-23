@@ -181,7 +181,7 @@ test('cut stream: a stream that throws mid-turn is resumed too', async () => {
     resumeStream: (_t, after) => gen([done('d', `resumed after ${after}`)]),
   };
   const out = await runWithApprovals('x', { driver, approver });
-  assert.deepEqual(out, { status: 'done', text: 'resumed after t1-c', rounds: 2, changesProposed: false });
+  assert.deepEqual(out, { status: 'done', text: 'resumed after t1-c', rounds: 2, changesProposed: false, planSubmittedButNotProposed: false });
 });
 
 test('journal: per-run sequence numbers survive a reload; lastPosition returns the latest stream position', async () => {

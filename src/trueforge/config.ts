@@ -24,6 +24,12 @@ export const DEFAULT_CONFIG: CodeCraftConfig = {
  */
 export const MAX_FAILED_TEST_RUNS = 3;
 
+/**
+ * Maximum automatic nudges per run when the agent submits a plan but forgets to propose changes.
+ * After this many nudges, the "No changes were applied" banner is shown if still no proposal.
+ */
+export const MAX_PLAN_NUDGES = 2;
+
 export const PRIMARY_AGENT_NAME = 'codecraft-primary';
 export const FALLBACK_AGENT_NAME = 'codecraft-fallback';
 

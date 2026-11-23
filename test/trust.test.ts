@@ -266,7 +266,7 @@ test('run loop: tool.response_required for ask_user_question is answered with us
   };
   const asked: unknown[] = [];
   const out = await runWithApprovals('rename it', { driver, approver: { approve: async () => ({ allow: true }) }, responder: { answer: async (q) => (asked.push(q), 'add') } });
-  assert.deepEqual(out, { status: 'done', text: 'Renamed add.', rounds: 2, changesProposed: false });
+  assert.deepEqual(out, { status: 'done', text: 'Renamed add.', rounds: 2, changesProposed: false, planSubmittedButNotProposed: false });
   assert.deepEqual(asked, [{ toolCallId: 'call-1', threadId: 'main', name: 'ask_user_question', question: 'Rename which function?', options: ['add', 'sub'] }]);
   assert.deepEqual(sent, [[{ type: 'user.tool_response', threadId: 'main', toolCallId: 'call-1', content: 'add' }]]);
 });

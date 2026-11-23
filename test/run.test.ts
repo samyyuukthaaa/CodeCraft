@@ -79,7 +79,7 @@ test('run: live-shaped pause -> approve -> resume the SAME turn after the last s
       },
     },
   });
-  assert.deepEqual(out, { status: 'done', text: 'applied 1 of 1 hunk(s)', rounds: 2, changesProposed: false });
+  assert.deepEqual(out, { status: 'done', text: 'applied 1 of 1 hunk(s)', rounds: 2, changesProposed: false, planSubmittedButNotProposed: false });
   assert.equal(f.calls.length, 2);
   assert.deepEqual(f.calls[1], {
     kind: 'resumePaused',
@@ -210,6 +210,22 @@ test('run: tracks changesProposed when propose_changes is approved', async () =>
   });
   assert.equal(out.status, 'done');
   assert.equal(out.changesProposed, true);
+  assert.equal(out.planSubmittedButNotProposed, false);
+});
+
+test('run: tracks planSubmittedButNotProposed when submit_plan called but no proposal', async () => {
+  const f = fakeDriver(
+    [
+      ev({ type: 'turn.created', id: 'e1', turnId: 'TURN1', state: { status: 'running' } }),
+      ...callToolDeltas('m1', 'c1', 'submit_plan', { summary: 'fix bug', files: [] }),
+      ev({ type: 'tool.response', id: 'e11', threadId: 'main', toolCallId: 'c1', content: '{}' }),
+      ev({ type: 'turn.done', id: 'e5', threadId: null, state: { status: 'done', output: { type: 'model.message', id: 'm2', content: 'plan submitted' }, requiredActions: [] } }),
+    ],
+    [],
+  );
+  const out = await runWithApprovals('go', { driver: f.driver, approver: { approve: async () => ({ allow: true }) } });
+  assert.equal(out.status, 'done');
+  assert.equal(out.planSubmittedButNotProposed, true);
 });
 
 test('run: does not set changesProposed when propose_changes is denied', async () => {

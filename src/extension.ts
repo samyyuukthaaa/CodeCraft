@@ -36,7 +36,7 @@ import {
   registerEditorServer,
   sessionDriver,
 } from './trueforge/client';
-import { CodeCraftConfig, FALLBACK_AGENT_NAME, PRIMARY_AGENT_NAME, validateConfig } from './trueforge/config';
+import { CodeCraftConfig, FALLBACK_AGENT_NAME, PRIMARY_AGENT_NAME, MAX_PLAN_NUDGES, validateConfig } from './trueforge/config';
 import { toDisplay } from './trueforge/events';
 import { CircuitBreaker, circuitOpenBanner, providerOf } from './trueforge/breaker';
 import { healthRows, probeProviders } from './trueforge/health';
@@ -370,8 +370,24 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
         },
       };
       trust?.postMetrics();
-      const result = await runWithFailover(prompt, attempts, options);
-      const outcome = result.outcome;
+      let nudgeCount = 0;
+      let result = await runWithFailover(prompt, attempts, options);
+      let outcome = result.outcome;
+      // Auto-nudge if plan submitted but no changes proposed, up to MAX_PLAN_NUDGES times
+      while (
+        outcome.status === 'done' &&
+        outcome.planSubmittedButNotProposed &&
+        nudgeCount < MAX_PLAN_NUDGES &&
+        !abort.signal.aborted
+      ) {
+        nudgeCount++;
+        const nudgeText =
+          'You submitted a plan but have not proposed any changes yet. Propose the planned changes now with hunk-based propose_changes; do not read more files unless needed.';
+        out.appendLine(`[nudge] ${nudgeCount}: ${nudgeText}`);
+        post({ type: 'event', event: { type: 'agent.nudge', summary: `Nudging agent to propose changes (${nudgeCount}/${MAX_PLAN_NUDGES})`, failed: false } });
+        result = await runWithFailover(nudgeText, attempts, options);
+        outcome = result.outcome;
+      }
       // After changes were applied: run the tests; if a test that passed before now fails, exactly ONE automatic
       // fix (through the same review gate), then the tests again. Skipped when the user stopped the run.
       if (trust && host && outcome.status !== 'cancelled' && !abort.signal.aborted) {
@@ -400,7 +416,7 @@ export function activate(context: vscode.ExtensionContext): { gate: WriteGate | 
         post({ type: 'event', event: { type: 'run.cancelled', summary: 'stopped' } });
       } else {
         const hasChangesApplied = trust?.wroteAny ?? false;
-        if (outcome.changesProposed && !hasChangesApplied) {
+        if ((outcome.changesProposed && !hasChangesApplied) || (outcome.planSubmittedButNotProposed && nudgeCount >= MAX_PLAN_NUDGES)) {
           post({ type: 'final', text: 'No changes were applied. The proposed changes were not reviewed or were rejected.' });
           out.appendLine('[final] No changes were applied');
           post({ type: 'event', event: { type: 'run.failed', summary: 'No changes were applied', failed: true } });
