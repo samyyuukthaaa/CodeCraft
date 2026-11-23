@@ -188,22 +188,25 @@ export class TrustSession {
     }
     const cmp = compareRuns(base, after);
     const allFailing = failingTests(after);
-    const summary = after.exitCode === 0 ? 'all tests pass' : `${allFailing.length} failing${cmp.stillFailing.length && cmp.baselineKnown ? ` (${cmp.stillFailing.length} already failed before the change)` : ''}`;
-    this.deps.post({ type: 'event', event: { type: 'tests.after', summary: `Tests after the changes: ${summary}${cmp.baselineKnown ? '' : '; the run before the change is unknown, so no test counts as newly broken'}`, failed: after.exitCode !== 0 } });
+    // Check for failures in output even if exit code is 0 (broken test command)
+    const hasFailuresInOutput = allFailing.length > 0;
+    const summary = after.exitCode === 0 && !hasFailuresInOutput ? 'all tests pass' : `${allFailing.length} failing${cmp.stillFailing.length && cmp.baselineKnown ? ` (${cmp.stillFailing.length} already failed before the change)` : ''}`;
+    this.deps.post({ type: 'event', event: { type: 'tests.after', summary: `Tests after the changes: ${summary}${cmp.baselineKnown ? '' : '; the run before the change is unknown, so no test counts as newly broken'}`, failed: after.exitCode !== 0 || hasFailuresInOutput } });
 
     // Detect new tests that fail (weren't in baseline, now fail)
     const baselineFailing = base && base.ran ? new Set(failingTests(base)) : new Set<string>();
     const newlyFailing = allFailing.filter(t => !baselineFailing.has(t));
     const anyNewFailures = cmp.baselineKnown && newlyFailing.length > 0;
 
-    // Fix if regressions exist OR new tests fail
-    if (!cmp.regressed.length && !anyNewFailures) {
+    // Fix if regressions exist OR (new tests fail when baseline is known) OR (failures detected with broken test command)
+    const isBrokenCommand = after.ran && after.exitCode === 0 && hasFailuresInOutput;
+    if (!cmp.regressed.length && !anyNewFailures && !isBrokenCommand) {
       await this.setTestStatus(after.exitCode === 0 ? 'passed' : 'failed');
       return;
     }
     await this.setTestStatus('regressed');
-    // Report all failures to agent for fixing: regressions take priority, then new failures
-    const failingToReport = cmp.regressed.length > 0 ? cmp.regressed : newlyFailing;
+    // Report all failures to agent for fixing: regressions take priority, then new failures, or failures from broken command
+    const failingToReport = cmp.regressed.length > 0 ? cmp.regressed : (newlyFailing.length > 0 ? newlyFailing : (isBrokenCommand ? allFailing : []));
     await this.deps.journal.append({ t: 'regression', tests: failingToReport });
     const failureMsg = `Tests failed: ${failingToReport.join(', ')}. Trying ONE automatic fix.`;
     this.deps.post({ type: 'event', event: { type: 'tests.regressed', summary: failureMsg, failed: true } });

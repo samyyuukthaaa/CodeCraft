@@ -270,6 +270,23 @@ test('needsTestValidation: true when changes applied but tests not run after, fa
   assert.equal(t.needsTestValidation(), false, 'false after tests run');
 });
 
+test('after the run: exit code 0 with actual test failures is detected and reported', async () => {
+  // Simulate pytest returning exit code 0 but output containing FAILED (broken test command)
+  const s = await setup([PASS, { ran: true, exitCode: 0, output: 'FAILED tests/test_new.py::test_broken' }]);
+  try {
+    await applyOne(s);
+    let fixWasCalled = false;
+    await s.trust.afterRun(async () => {
+      fixWasCalled = true;
+      return { applied: false };
+    });
+    assert.equal(fixWasCalled, true, 'fix should be attempted when tests fail even with exit code 0');
+    assert.match(ofType(s.posts, 'event').at(-2)!.event.summary, /Tests failed|regressed/, 'should report test failure');
+  } finally {
+    await s.ws.cleanup();
+  }
+});
+
 // ---------- ask_user_question through the real run loop ----------
 const gen = (events: unknown[]) =>
   (async function* () {
